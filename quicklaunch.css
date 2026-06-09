@@ -1,0 +1,382 @@
+/* ══════════════════════════════════════════════
+   Quick-Launch — CSS
+══════════════════════════════════════════════ */
+
+.ql-layout {
+  display: grid;
+  grid-template-columns: 1fr 300px;
+  gap: 32px;
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 40px 24px;
+}
+
+@media (max-width: 900px) {
+  .ql-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+.ql-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 40px;
+}
+
+.ql-title {
+  font-size: 2rem;
+  font-weight: 800;
+  margin: 0 0 8px 0;
+  color: var(--text-primary);
+  background: linear-gradient(135deg, var(--primary), #818cf8);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.ql-subtitle {
+  color: var(--text-muted);
+  font-size: 1rem;
+  margin: 0;
+}
+
+/* Folders Grid */
+.ql-folders-container {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 24px;
+  align-items: start;
+}
+
+/* Folder Card */
+.ql-folder {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  padding: 20px;
+  box-shadow: 0 4px 24px rgba(0,0,0,0.04);
+  transition: transform 0.2s, box-shadow 0.2s, border-color 0.2s;
+  position: relative;
+}
+
+.ql-folder:hover {
+  border-color: var(--border-hi);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.08);
+}
+
+.ql-folder.dragging {
+  opacity: 0.5;
+  transform: scale(0.98);
+}
+
+.ql-folder.drag-over {
+  border: 2px dashed var(--primary);
+  background: var(--faint);
+}
+
+.ql-folder-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+  cursor: grab;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.ql-folder-header:active {
+  cursor: grabbing;
+}
+
+.ql-folder-title {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ql-folder-actions {
+  display: flex;
+  gap: 8px;
+  opacity: 0.5;
+  transition: opacity 0.2s;
+}
+
+.ql-folder:hover .ql-folder-actions {
+  opacity: 1;
+}
+
+.ql-action-btn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 14px;
+  padding: 4px;
+  border-radius: 4px;
+  transition: all 0.2s;
+}
+
+.ql-action-btn:hover {
+  background: var(--faint);
+  color: var(--text-primary);
+}
+
+.ql-action-btn.del:hover {
+  color: var(--error);
+  background: rgba(244, 63, 94, 0.1);
+}
+
+/* Links Grid */
+.ql-links-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  gap: 12px;
+}
+
+.ql-link-card {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  padding: 12px;
+  text-decoration: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: all 0.2s;
+  position: relative;
+  group: hover;
+}
+
+.ql-link-card:hover {
+  background: var(--faint);
+  border-color: var(--primary-g);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(6, 182, 212, 0.1);
+}
+
+.ql-link-emoji {
+  font-size: 28px;
+  line-height: 1;
+  transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.ql-link-card:hover .ql-link-emoji {
+  transform: scale(1.2);
+}
+
+.ql-link-name {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  width: 100%;
+}
+
+.ql-link-actions {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  display: flex;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.ql-link-card:hover .ql-link-actions {
+  opacity: 1;
+}
+
+/* Buttons and Inputs */
+.ql-btn {
+  padding: 8px 16px;
+  border-radius: var(--r-sm);
+  font-weight: 600;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: all 0.2s;
+  border: 1px solid var(--border);
+  background: var(--bg2);
+  color: var(--text-primary);
+}
+
+.ql-btn:hover {
+  background: var(--faint);
+  border-color: var(--border-hi);
+}
+
+.ql-btn-primary {
+  background: var(--primary);
+  color: #fff;
+  border-color: var(--primary);
+  box-shadow: 0 4px 12px var(--primary-g);
+}
+
+.ql-btn-primary:hover {
+  background: var(--primary-d);
+  border-color: var(--primary-d);
+}
+
+.ql-input {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 0.95rem;
+  box-sizing: border-box;
+}
+
+.ql-input:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px var(--primary-g);
+}
+
+.ql-input-group {
+  margin-bottom: 16px;
+}
+
+.ql-input-group label {
+  display: block;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+
+/* Modals */
+.ql-modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(4px);
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 1;
+  visibility: visible;
+  transition: all 0.2s;
+}
+
+.ql-modal.hidden {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.ql-modal-content {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  padding: 24px;
+  width: 100%;
+  max-width: 400px;
+  box-shadow: 0 12px 40px rgba(0,0,0,0.2);
+  transform: translateY(0);
+  transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.ql-modal.hidden .ql-modal-content {
+  transform: translateY(20px);
+}
+
+.ql-modal-content h3 {
+  margin: 0 0 20px 0;
+  font-size: 1.2rem;
+  color: var(--text-primary);
+}
+
+.ql-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 24px;
+}
+
+/* Sidebar Emoji Picker */
+.ql-emoji-sidebar {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  padding: 20px;
+  height: max-content;
+  position: sticky;
+  top: 40px;
+}
+
+.ql-emoji-sidebar h3 {
+  margin-top: 0;
+  margin-bottom: 8px;
+  color: var(--text-primary);
+}
+
+.emoji-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(36px, 1fr));
+  gap: 8px;
+  max-height: 60vh;
+  overflow-y: auto;
+  padding-right: 8px;
+}
+
+.emoji-item {
+  font-size: 24px;
+  text-align: center;
+  padding: 4px;
+  cursor: pointer;
+  border-radius: 8px;
+  transition: all 0.2s;
+  user-select: none;
+  background: transparent;
+}
+
+.emoji-item:hover {
+  background: var(--faint);
+  transform: scale(1.1);
+}
+
+.emoji-item:active {
+  transform: scale(0.9);
+}
+
+.copy-toast {
+  position: absolute;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%) translateY(10px);
+  background: var(--success);
+  color: #fff;
+  padding: 6px 12px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 600;
+  opacity: 0;
+  transition: all 0.2s;
+  pointer-events: none;
+  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+}
+
+.copy-toast.show {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+[data-theme="light"] .ql-folder {
+  background: var(--bg2);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.03);
+}
+
+[data-theme="light"] .ql-link-card {
+  background: var(--bg);
+}

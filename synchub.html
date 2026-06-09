@@ -1,0 +1,486 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TestRail Mapping Dashboard</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="app-header">
+    <div class="header-inner">
+      <div style="display:flex; align-items:center;">
+        <div class="brand">
+          <div class="brand-dot"></div>
+          <span class="brand-name">ZORO's <strong>DashBoard</strong></span>
+        </div>
+        <div class="header-nav">
+          <a href="index.html" class="nav-link"><span>🏠</span> Zoro's Dashboard</a>
+          <a href="synchub.html" class="nav-link active"><span>📊</span> Sync Hub</a>
+          <a href="productivity.html" class="nav-link"><span>⚡</span> Productivity</a>
+          <a href="timesheet.html" class="nav-link"><span>📅</span> Timesheet</a>
+          <a href="water.html" class="nav-link"><span>💧</span> Hydration</a>
+          <a href="quicklaunch.html" class="nav-link"><span>🚀</span> Quick-Launch</a>
+        </div>
+      </div>
+      <div class="header-actions">
+        <button id="btnThemeToggle" class="btn-theme-toggle" title="Toggle light/dark mode">🌙</button>
+        <button id="btnMap" class="btn-primary" disabled>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+          Start Sync
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <main class="ide-layout">
+
+    <!-- ════ LEFT SIDEBAR ════ -->
+    <aside class="sidebar-left">
+
+      <div class="card">
+        <div class="card-label"><span class="ci">🔑</span> API Credentials</div>
+        <div class="fields-grid">
+          <div class="field-group">
+            <label for="runId">Run ID</label>
+            <input type="text" id="runId" placeholder="e.g. 8181">
+          </div>
+          <div class="field-group">
+            <label for="username">Username</label>
+            <input type="text" id="username" placeholder="user@elo.com">
+          </div>
+          <div class="field-group">
+            <label for="password">API Key</label>
+            <input type="password" id="password" placeholder="••••••••">
+          </div>
+        </div>
+      </div>
+
+      <div class="card upload-card" id="uploadArea">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+          <div class="card-label" style="margin-bottom: 0;"><span class="ci">📁</span> CSV Upload</div>
+          <button id="btnExportTemplate" class="btn-ghost" style="padding: 2px 8px; font-size: 0.75rem;" title="Download a template to manually add tests">📥 Template</button>
+        </div>
+        <label for="csvFile" class="upload-zone" id="uploadArea">
+          <span class="drop-arrow">⬆</span>
+          <span class="drop-title">Drop CSV files here</span>
+          <span class="drop-hint">click to browse · multiple allowed</span>
+        </label>
+        <div style="display:flex; gap:10px; justify-content:center; margin-top: 0.5rem;">
+          <button id="btnStartManual" class="btn-secondary" style="font-size: 0.75rem; background:var(--bg2); color:var(--text); width: 100%;">📝 Start Empty State</button>
+        </div>
+        <input type="file" id="csvFile" accept=".csv" multiple class="hidden">
+        <div id="fileName" class="file-badge hidden"></div>
+      </div>
+
+
+      <!-- States Panel (Left Column) -->
+      <div class="card states-panel-v2">
+        <div class="sp-header">
+          <div class="card-label" style="margin:0;"><span class="ci">💾</span> Saved States</div>
+          <div class="sp-header-actions">
+            <button id="btnSelectAllStates" class="btn-ghost" style="padding:2px 6px; font-size:0.75rem;">☑ All</button>
+          </div>
+        </div>
+        <input type="text" id="stateSearchInput" class="sp-search" placeholder="🔍 Filter states…" style="width:100%; margin-bottom: 0.5rem;">
+
+        <!-- States Grid -->
+        <div id="modalStatesList" class="sp-list" style="flex:1;">
+          <div class="sp-empty">
+            <span style="font-size:2rem;">💾</span>
+            <span>No saved states yet.</span>
+          </div>
+        </div>
+
+        <!-- Footer: Save + Load -->
+        <div class="sp-footer">
+          <div class="sp-save-row">
+            <input type="text" id="saveName" class="sp-name-input" placeholder="Name…">
+            <button id="btnSaveState" class="btn-secondary sp-save-btn">Save</button>
+          </div>
+          <button id="btnLoadState" class="btn-primary sp-load-btn" style="margin-top:0.25rem;">📂 Load Selected</button>
+      </div>
+
+    </aside>
+
+    <!-- ════ MAIN CONTENT ════ -->
+    <section class="main-content">
+
+      <!-- Progress Bar -->
+      <div class="card progress-card hidden" id="progressCard">
+        <div class="progress-labels">
+          <span class="progress-title">Mapping Progress</span>
+          <span class="progress-stats"><span id="pctMapped">0</span>% Mapped</span>
+        </div>
+        <div class="progress-track">
+          <div class="progress-fill" id="barMapped" style="width: 0%;"></div>
+        </div>
+      </div>
+
+      <!-- Metric Tiles -->
+      <div class="metrics-row">
+        <div class="metric-tile" id="filterTotal">
+          <div class="mt-top"><span class="mt-label">Total Mapped</span><span class="mt-icon" style="--ic:#06b6d4">📊</span></div>
+          <div class="mt-num" id="countTotal">0</div>
+          <div class="mt-sub">Passed + Failed</div>
+          <div class="mt-bar" style="--bc:#06b6d4"></div>
+        </div>
+        <div class="metric-tile" id="filterPassed">
+          <div class="mt-top"><span class="mt-label">Passed</span><span class="mt-icon" style="--ic:#10b981">✅</span></div>
+          <div class="mt-num success-text" id="countPassed">0</div>
+          <div class="mt-sub">Test cases</div>
+          <div class="mt-bar" style="--bc:#10b981"></div>
+        </div>
+        <div class="metric-tile" id="filterFailed">
+          <div class="mt-top"><span class="mt-label">Failed</span><span class="mt-icon" style="--ic:#f43f5e">❌</span></div>
+          <div class="mt-num error-text" id="countFailed">0</div>
+          <div class="mt-sub">Test cases</div>
+          <div class="mt-bar" style="--bc:#f43f5e"></div>
+        </div>
+        <div class="metric-tile" id="filterSkipped">
+          <div class="mt-top"><span class="mt-label">Don't Map</span><span class="mt-icon" style="--ic:#f59e0b">🚫</span></div>
+          <div class="mt-num warning-text" id="countUnmapped">0</div>
+          <div class="mt-sub">Skipped</div>
+          <div class="mt-bar" style="--bc:#f59e0b"></div>
+        </div>
+      </div>
+
+
+      <!-- Table Panel -->
+      <div class="table-panel card hidden" id="tableContainer">
+        <div class="filter-bar">
+          <div class="filter-group">
+            <span class="filter-label">Status</span>
+            <button class="chip chip-passed active" data-type="status" data-value="PASSED">✅ Passed</button>
+            <button class="chip chip-failed active" data-type="status" data-value="FAILED">❌ Failed</button>
+            <button class="chip chip-other active" data-type="status" data-value="OTHER">⚪ Other</button>
+          </div>
+          <span class="vdiv"></span>
+          <div class="filter-group">
+            <span class="filter-label">Mapping</span>
+            <button class="chip chip-map active" data-type="map" data-value="Map">🔗 Map</button>
+            <button class="chip chip-nomap active" data-type="map" data-value="Don't Map">🚫 Don't Map</button>
+          </div>
+          <span class="vdiv"></span>
+          <div class="filter-group" id="tagChipsGroup" style="display:none;">
+            <span class="filter-label">Tags</span>
+            <select id="tagLogicToggle" class="select-sm" style="padding:2px 6px; font-size:0.75rem; border-radius:4px; border:1px solid var(--border); background:var(--bg); color:var(--text); cursor:pointer;">
+              <option value="OR">OR</option>
+              <option value="AND">AND</option>
+            </select>
+            <div id="tagChipsContainer" style="display:flex;flex-wrap:wrap;gap:0.4rem;"></div>
+          </div>
+          <div style="flex:1;"></div>
+          <button class="btn-ghost" id="btnResetFilters">↺ Reset</button>
+        </div>
+
+        <div class="tbl-toolbar">
+          <h2 class="tbl-title">Test Case Details</h2>
+          <div class="tbl-right">
+            <input type="text" id="searchFilter" class="search-box" placeholder="🔍 Search ID, title, tag…">
+            <div id="bulkActionsBar" class="bulk-bar hidden-flex">
+              <input type="text" id="groupTagInput" class="input-sm" placeholder="🏷️ Tag…" list="tagSuggestions">
+              <button id="btnApplyGroupTag" class="btn-secondary">Apply Tag</button>
+              <button id="btnDeleteSelected" class="btn-danger">🗑️ Delete (<span id="selectedCount">0</span>)</button>
+            </div>
+            <button id="btnAddTestCase" class="btn-secondary" style="background:var(--primary);color:var(--bg);" title="Add test case manually">➕ Add Test Case</button>
+            <button id="btnCompare" class="btn-ghost" title="Compare with TestRail CSV">⚖️ Compare CSV</button>
+            <input type="file" id="compareCsvInput" accept=".csv" class="hidden">
+            <button id="btnSummary" class="btn-ghost" title="Generate Execution Summary">📊 Summary</button>
+            <button id="btnExport" class="btn-secondary">📥 Export CSV</button>
+          </div>
+        </div>
+
+        <datalist id="tagSuggestions"></datalist>
+
+        <div class="tbl-scroll">
+          <table id="testCasesTable">
+            <thead>
+              <tr>
+                <th class="col-chk"><input type="checkbox" id="selectAll" title="Select All"></th>
+                <th>Test ID</th>
+                <th>Test Case Title</th>
+                <th>Tags</th>
+                <th>Notes</th>
+                <th>Status</th>
+                <th>Mapping</th>
+                <th>Sync Status</th>
+                <th>Failure Reason</th>
+                <th>⚙</th>
+              </tr>
+            </thead>
+            <tbody id="tableBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Sync Hub Clock & Tasks Widget -->
+      <div class="card" style="margin-top: 1.5rem; padding: 1.5rem; display: flex; align-items: stretch; gap: 2.5rem; border: 1px solid var(--border); background: linear-gradient(135deg, rgba(6,182,212,0.05), var(--bg2) 40%); box-shadow: 0 4px 20px rgba(0,0,0,0.15);">
+        <div style="display: flex; flex-direction: column; justify-content: center; min-width: 160px;">
+          <div style="font-size: 0.7rem; font-weight: 700; text-transform: uppercase; color: var(--primary); letter-spacing: 0.1em; margin-bottom: 0.5rem; display:flex; align-items:center; gap: 4px;">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            Local Time
+          </div>
+          <div id="hubClock" style="font-size: 2.8rem; font-weight: 800; font-variant-numeric: tabular-nums; color: var(--text); line-height: 1; letter-spacing: -1px;">00:00:00</div>
+          <div id="hubDate" style="font-size: 0.9rem; font-weight: 500; color: var(--muted); margin-top: 0.5rem;"></div>
+        </div>
+        <div style="flex: 1; border-left: 1px dashed var(--border-hi); padding-left: 2.5rem; display: flex; flex-direction: column; justify-content: center;">
+          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.8rem;">
+            <div style="font-size: 0.85rem; font-weight: 700; color: var(--text); letter-spacing: 0.05em; display:flex; align-items:center; gap:0.5rem;">
+              <span>✅ UPCOMING TASKS</span>
+            </div>
+            <a href="productivity.html" style="font-size: 0.75rem; color: var(--primary); text-decoration: none; font-weight: 600; padding: 3px 10px; background: rgba(6,182,212,0.1); border-radius: 99px; transition: all 0.2s; border: 1px solid rgba(6,182,212,0.2);">View All &rarr;</a>
+          </div>
+          <div id="hubTasksList" style="display: flex; flex-direction: column; gap: 0.5rem; overflow: hidden;">
+            <div style="color:var(--muted); font-size:0.85rem;">No active tasks.</div>
+          </div>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- ════ RIGHT SIDEBAR ════ -->
+    <aside class="sidebar-right">
+
+      <div class="charts-col hidden" id="chartsContainer">
+        <div class="chart-card">
+          <h3 class="chart-title">Status Overview</h3>
+          <div class="chart-wrapper"><canvas id="statusChart"></canvas></div>
+        </div>
+        <div class="chart-card chart-card-grow">
+          <h3 class="chart-title">Tag Counts</h3>
+          <div id="tagsCountList" class="tags-count-list tags-count-list-full"></div>
+        </div>
+      </div>
+
+      <div class="terminal-card card">
+        <div class="t-bar">
+          <span class="td td-r"></span><span class="td td-y"></span><span class="td td-g"></span>
+          <span class="t-label">Runtime Log</span>
+        </div>
+        <div id="terminal" class="terminal-body"></div>
+      </div>
+
+
+
+      <!-- Session Info -->
+      <div class="card">
+        <div class="card-label" style="margin-bottom:0.85rem;"><span class="ci">📈</span> Session Info</div>
+        <div class="session-info-list">
+          <div class="si-row">
+            <span class="si-label">Total Cases</span>
+            <span class="si-value" id="siTotalCases">0</span>
+          </div>
+          <div class="si-row">
+            <span class="si-label">Pass Rate</span>
+            <span class="si-value success-text" id="siPassRate">—</span>
+          </div>
+          <div class="si-row">
+            <span class="si-label">Fail Rate</span>
+            <span class="si-value error-text" id="siFailRate">—</span>
+          </div>
+          <div class="si-row">
+            <span class="si-label">Unmapped</span>
+            <span class="si-value warning-text" id="siUnmapped">0</span>
+          </div>
+          <div class="si-divider"></div>
+          <div class="si-row">
+            <span class="si-label">Last Saved</span>
+            <span class="si-value muted-text" id="siLastSaved">Never</span>
+          </div>
+          <div class="si-row">
+            <span class="si-label">Session Started</span>
+            <span class="si-value muted-text" id="siSessionStart">—</span>
+          </div>
+        </div>
+      </div>
+
+    </aside>
+
+  </main>
+
+
+
+  <!-- Comparison Modal -->
+  <div id="compareModal" class="modal hidden">
+    <div class="modal-content">
+      <div class="modal-header">
+        <div style="display:flex; align-items:center; gap:0.5rem;">
+          <h2 style="margin:0;">⚖️ TestRail Data Comparison</h2>
+          <button id="btnExportCompareCSV" class="btn-secondary" style="padding: 2px 8px; font-size:0.75rem; margin-left: 1rem;">📥 Export Report</button>
+        </div>
+        <button id="btnCloseCompare" class="btn-ghost" style="padding: 0.25rem 0.5rem; font-size: 1.25rem;">✖</button>
+      </div>
+      <div class="modal-body">
+        
+        <div class="metrics-row" style="margin-bottom:1.5rem; gap:1rem;">
+          <div class="metric-tile" style="padding:0.75rem; flex:1;">
+            <div class="mt-top"><span class="mt-label">Local Passed</span><span class="mt-icon" style="--ic:#10b981">✅</span></div>
+            <div class="mt-num success-text" id="c-our-pass" style="font-size:1.5rem;">0</div>
+          </div>
+          <div class="metric-tile" style="padding:0.75rem; flex:1;">
+            <div class="mt-top"><span class="mt-label">Local Failed</span><span class="mt-icon" style="--ic:#f43f5e">❌</span></div>
+            <div class="mt-num error-text" id="c-our-fail" style="font-size:1.5rem;">0</div>
+          </div>
+          <div class="metric-tile" style="padding:0.75rem; flex:2;">
+            <div class="mt-top"><span class="mt-label">TR Testers (From CSV)</span><span class="mt-icon" style="--ic:#8b5cf6">👤</span></div>
+            <div id="trTesterStats" style="font-size:0.75rem; display:flex; flex-wrap:wrap; gap:0.5rem; margin-top:0.5rem;">
+              <!-- dynamically injected -->
+            </div>
+          </div>
+        </div>
+
+        <div class="compare-tabs">
+          <button class="tab-btn active" data-tab="tab-conflicts">Status Conflicts (<span id="c-strict-conflict">0</span>)</button>
+          <button class="tab-btn" data-tab="tab-needs-sync">Needs Sync to TR (<span id="c-needs-sync">0</span>)</button>
+          <button class="tab-btn" data-tab="tab-tr-only">Updated in TR Only (<span id="c-tr-only">0</span>)</button>
+          <button class="tab-btn" data-tab="tab-missing-tr">Missing in TR (<span id="c-missing-tr">0</span>)</button>
+          <button class="tab-btn" data-tab="tab-missing-local">Missing Locally (<span id="c-missing-local">0</span>)</button>
+        </div>
+        
+        <div id="tab-conflicts" class="tab-content active">
+          <p style="font-size:0.8rem; color:var(--muted); margin-bottom:0.5rem;">Both TR and Local have results, but they differ (e.g. Pass vs Fail).</p>
+          <table class="compare-table">
+            <thead><tr><th>ID</th><th>Title</th><th>Our Status</th><th>TestRail Status</th><th>Tested By</th></tr></thead>
+            <tbody id="tbody-strict-conflict"></tbody>
+          </table>
+        </div>
+
+        <div id="tab-needs-sync" class="tab-content">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.5rem;">
+            <p style="font-size:0.8rem; color:var(--muted); margin:0;">We have a result, but TestRail is Untested. You should sync these.</p>
+            <button id="btnMarkSynced" class="btn-ghost" style="font-size:0.75rem; padding: 0.2rem 0.5rem;">✔️ Mark as Synced</button>
+          </div>
+          <table class="compare-table">
+            <thead><tr><th>ID</th><th>Title</th><th>Our Status</th><th>TestRail Status</th></tr></thead>
+            <tbody id="tbody-needs-sync"></tbody>
+          </table>
+        </div>
+        
+        <div id="tab-tr-only" class="tab-content">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.5rem;">
+            <p style="font-size:0.8rem; color:var(--muted); margin:0;">TestRail has a result, but we do not (or someone manually overrode it).</p>
+            <button id="btnAcceptTrResults" class="btn-primary" style="font-size:0.75rem; padding: 0.2rem 0.5rem;">Accept TR Results</button>
+          </div>
+          <table class="compare-table">
+            <thead><tr><th>ID</th><th>Title</th><th>Our Status</th><th>TestRail Status</th><th>Tested By</th></tr></thead>
+            <tbody id="tbody-tr-only"></tbody>
+          </table>
+        </div>
+
+        <div id="tab-missing-tr" class="tab-content">
+          <p style="font-size:0.8rem; color:var(--muted); margin-bottom:0.5rem;">These test cases exist in our automation data, but are completely missing from the TestRail run.</p>
+          <table class="compare-table">
+            <thead><tr><th>ID</th><th>Title</th><th>Our Status</th></tr></thead>
+            <tbody id="tbody-missing-tr"></tbody>
+          </table>
+        </div>
+
+        <div id="tab-missing-local" class="tab-content">
+          <p style="font-size:0.8rem; color:var(--muted); margin-bottom:0.5rem;">These test cases exist in the TestRail run, but are completely missing from our local data.</p>
+          <table class="compare-table">
+            <thead><tr><th>ID</th><th>Title</th><th>TestRail Status</th><th>Tested By</th></tr></thead>
+            <tbody id="tbody-missing-local"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Execution Summary Modal -->
+  <div id="summaryModal" class="modal hidden">
+    <div class="modal-content" style="max-width: 800px;">
+      <div class="modal-header">
+        <h2 style="margin:0;">📊 Execution Summary</h2>
+        <button id="btnCloseSummary" class="btn-ghost" style="padding: 0.25rem 0.5rem; font-size: 1.25rem;">✖</button>
+      </div>
+      <div class="modal-body">
+        <div style="margin-bottom: 1.5rem;">
+          <label style="display:block; font-size:0.85rem; font-weight:600; color:var(--muted); margin-bottom:0.5rem;">Define Columns by Tags (comma separated):</label>
+          <input type="text" id="summaryTagsInput" class="search-box" value="Offline, Online, E2E" style="width: 100%; max-width:100%;">
+        </div>
+        
+        <table class="compare-table" id="summaryTable" style="margin-bottom: 1rem;">
+          <!-- dynamically generated -->
+        </table>
+
+        <div style="text-align: right;">
+          <button id="btnCopySummary" class="btn-secondary">📋 Copy Table to Clipboard</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="toastContainer" class="toast-container"></div>
+  
+  <!-- Add Test Case Modal -->
+  <div id="addTestCaseModal" class="modal hidden">
+    <div class="modal-content" style="max-width: 500px;">
+      <div class="modal-header">
+        <h2 style="margin:0;">➕ Add Test Case Manually</h2>
+        <button id="btnCloseAddTestCase" class="btn-ghost" style="padding: 0.25rem 0.5rem; font-size: 1.25rem;">✖</button>
+      </div>
+      <div class="modal-body" style="display:flex; flex-direction:column; gap: 1rem;">
+        <div>
+          <label style="display:block; font-size:0.85rem; font-weight:600; color:var(--muted); margin-bottom:0.5rem;">Test Case ID (Optional)</label>
+          <input type="text" id="manualTestId" class="search-box" style="width:100%; max-width:100%;" placeholder="e.g. C12345">
+        </div>
+        <div>
+          <label style="display:block; font-size:0.85rem; font-weight:600; color:var(--muted); margin-bottom:0.5rem;">Test Case Title *</label>
+          <input type="text" id="manualTestTitle" class="search-box" style="width:100%; max-width:100%;" placeholder="Enter title">
+        </div>
+        <div>
+          <label style="display:block; font-size:0.85rem; font-weight:600; color:var(--muted); margin-bottom:0.5rem;">Tags (comma separated)</label>
+          <input type="text" id="manualTestTags" class="search-box" style="width:100%; max-width:100%;" placeholder="e.g. Offline, Sync">
+        </div>
+        <div>
+          <label style="display:block; font-size:0.85rem; font-weight:600; color:var(--muted); margin-bottom:0.5rem;">Status</label>
+          <select id="manualTestStatus" class="search-box" style="width:100%; max-width:100%;">
+            <option value="PASSED">Passed</option>
+            <option value="FAILED">Failed</option>
+            <option value="UNTESTED">Untested</option>
+          </select>
+        </div>
+        <div style="text-align: right; margin-top: 1rem;">
+          <button id="btnSaveManualTestCase" class="btn-primary">Add Test Case</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Custom Confirm Modal -->
+  <div id="customConfirmModal" class="modal hidden" style="z-index: 9999;">
+    <div class="modal-content" style="max-width: 400px;">
+      <div class="modal-header">
+        <h2 id="confirmModalTitle" style="margin:0; font-size: 1.1rem;">Confirm Action</h2>
+        <button id="btnCancelConfirmTop" class="btn-ghost" style="padding: 0.25rem 0.5rem; font-size: 1.25rem;">✖</button>
+      </div>
+      <div class="modal-body">
+        <p id="confirmModalMessage" style="font-size: 0.9rem; color: var(--muted); margin-bottom: 1.5rem; line-height: 1.4;"></p>
+        <div style="display:flex; justify-content:flex-end; gap: 0.5rem;">
+          <button id="btnCancelConfirm" class="btn-ghost">Cancel</button>
+          <button id="btnAcceptConfirm" class="btn-primary">Confirm</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="script.js?v=7"></script>
+  <script>
+    // Theme logic port for dashboard
+    (function() {
+      const saved = localStorage.getItem('tr-theme') || 'dark';
+      document.documentElement.setAttribute('data-theme', saved);
+      const btn = document.getElementById('btnThemeToggle');
+      if (btn) btn.textContent = saved === 'dark' ? '🌙' : '☀️';
+    })();
+    document.getElementById('btnThemeToggle').addEventListener('click', () => {
+      const current = document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+      document.documentElement.setAttribute('data-theme', current);
+      localStorage.setItem('tr-theme', current);
+      document.getElementById('btnThemeToggle').textContent = current === 'dark' ? '🌙' : '☀️';
+    });
+  </script>
+</body>
+</html>

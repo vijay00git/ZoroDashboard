@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Productivity Hub - Test Reporter</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="productivity.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/themes/dark.css">
+  <!-- Markdown parser library -->
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <!-- Flatpickr for modern date/time picker -->
+  <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+</head>
+<body>
+  <header class="app-header">
+    <div class="header-inner">
+      <div style="display:flex; align-items:center;">
+        <div class="brand">
+          <div class="brand-dot"></div>
+          <span class="brand-name">ZORO's <strong>DashBoard</strong></span>
+        </div>
+        <div class="header-nav">
+          <a href="index.html" class="nav-link"><span>🏠</span> Zoro's Dashboard</a>
+          <a href="synchub.html" class="nav-link"><span>📊</span> Sync Hub</a>
+          <a href="productivity.html" class="nav-link active"><span>⚡</span> Productivity</a>
+          <a href="timesheet.html" class="nav-link"><span>📅</span> Timesheet</a>
+          <a href="water.html" class="nav-link"><span>💧</span> Hydration</a>
+          <a href="quicklaunch.html" class="nav-link"><span>🚀</span> Quick-Launch</a>
+        </div>
+      </div>
+      <div class="header-actions">
+        <div class="ph-clock-mini" id="phClockMini">
+          <span id="phClockTime">--:--:--</span>
+          <span id="phClockDate" class="ph-clock-date"></span>
+        </div>
+        <button id="btnThemeToggle" class="btn-theme-toggle" title="Toggle light/dark mode">🌙</button>
+      </div>
+    </div>
+  </header>
+
+  <main class="ph-layout">
+
+    <!-- ═══ Notes Sidebar ═══ -->
+    <aside class="ph-sidebar">
+      <div class="ph-sidebar-header">
+        <span class="ph-sidebar-title">📂 Notes</span>
+        <span class="ph-note-count" id="noteCount">0</span>
+        <button id="btnNewNote" class="ph-icon-btn" title="New Note">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        </button>
+      </div>
+      <div id="notesSidebarList" class="ph-notes-list">
+        <!-- JS injects note items -->
+      </div>
+    </aside>
+
+    <!-- ═══ Center: Notes Editor ═══ -->
+    <section class="ph-editor">
+      <div class="ph-editor-toolbar">
+        <h2 id="activeNoteTitle" class="ph-editor-title">📝 Session Note</h2>
+        <div class="ph-editor-tabs" id="editorTabs">
+          <button class="ph-editor-tab active" data-view="edit">Write</button>
+          <button class="ph-editor-tab" data-view="preview">Preview</button>
+        </div>
+        <div class="ph-editor-actions">
+          <button id="btnRenameNote" class="ph-tool-btn" title="Rename Note">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
+            <span>Rename</span>
+          </button>
+          <button id="btnExportNote" class="ph-tool-btn" title="Export as .txt">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            <span>Export</span>
+          </button>
+          <button id="btnDeleteNote" class="ph-tool-btn ph-tool-btn--danger" title="Delete Note">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+          </button>
+        </div>
+      </div>
+      <div class="ph-editor-body">
+        <div class="ph-format-toolbar" id="phFormatToolbar">
+          <button class="ph-format-btn" data-format="heading" title="Heading"><b>H</b></button>
+          <button class="ph-format-btn" data-format="bold" title="Bold"><b>B</b></button>
+          <button class="ph-format-btn" data-format="italic" title="Italic"><i>I</i></button>
+          <button class="ph-format-btn" data-format="strikethrough" title="Strikethrough"><s>S</s></button>
+          <div class="ph-format-divider"></div>
+          <button class="ph-format-btn" data-format="blockquote" title="Quote">❞</button>
+          <button class="ph-format-btn" data-format="code" title="Inline Code"><code>&lt;/&gt;</code></button>
+          <button class="ph-format-btn" data-format="codeblock" title="Code Block">📄</button>
+          <button class="ph-format-btn" data-format="link" title="Link">🔗</button>
+          <div class="ph-format-divider"></div>
+          <button class="ph-format-btn" data-format="list-ul" title="Bullet List">• List</button>
+          <button class="ph-format-btn" data-format="list-ol" title="Numbered List">1. List</button>
+          <button class="ph-format-btn" data-format="task-list" title="Task List">☑ Task</button>
+          <div class="ph-format-divider"></div>
+          <button class="ph-format-btn" data-format="hr" title="Horizontal Rule">───</button>
+        </div>
+        <textarea id="runNotesInput" class="ph-textarea" placeholder="Start typing your notes here…&#10;&#10;💡 Tip: Use this to save Run IDs, environment details, Jira tickets, or any quick references." spellcheck="false"></textarea>
+        <div id="notePreviewArea" class="ph-preview-area" style="display: none;"></div>
+        <div class="ph-editor-status">
+          <span id="noteCharCount">0 chars</span>
+          <span id="noteLineCount">1 line</span>
+          <span id="noteSaveStatus">Saved ✓</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══ Right: Tasks Panel ═══ -->
+    <section class="ph-tasks">
+      <div class="ph-tasks-header">
+        <h2 class="ph-tasks-title">
+          <span>✅ Tasks</span>
+          <span class="ph-task-stats" id="taskStats"></span>
+        </h2>
+        <div class="ph-tasks-header-actions">
+          <div class="ph-sort-selector" id="taskSortSelector">
+            <button class="ph-sort-btn active" data-sort="auto" title="Auto Sort (Priority & Deadline)">⚡ Auto</button>
+            <button class="ph-sort-btn" data-sort="manual" title="Manual Sort (Drag & Drop)">🖐️ Manual</button>
+          </div>
+          <div class="ph-filter-tabs" id="taskFilterTabs">
+            <button class="ph-filter-tab active" data-filter="all">All</button>
+            <button class="ph-filter-tab" data-filter="active">Active</button>
+            <button class="ph-filter-tab" data-filter="done">Done</button>
+          </div>
+          <button id="btnClearTasks" class="ph-tool-btn ph-tool-btn--danger" title="Clear All Tasks">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+          </button>
+        </div>
+      </div>
+
+      <form id="taskForm" class="ph-task-form">
+        <div class="ph-task-input-wrapper">
+          <input type="text" id="newTaskInput" class="ph-task-input" placeholder="What needs to be done?" autocomplete="off" required>
+          <button type="submit" class="ph-btn-add-task">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            Add
+          </button>
+        </div>
+        <div class="ph-task-meta-wrapper">
+          <div class="ph-deadline-picker">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            <input type="text" id="newTaskDeadline" class="ph-deadline-input" placeholder="Set deadline...">
+            <div class="ph-quick-deadlines">
+              <button type="button" class="ph-quick-btn" data-hours="1">1h</button>
+              <button type="button" class="ph-quick-btn" data-hours="3">3h</button>
+              <button type="button" class="ph-quick-btn" data-preset="today">EOD</button>
+              <button type="button" class="ph-quick-btn" data-preset="tomorrow">Tmrw</button>
+            </div>
+          </div>
+          <div class="ph-task-priority-picker">
+            <span class="ph-priority-label">Priority:</span>
+            <button type="button" class="ph-priority-btn ph-priority--none active" data-priority="none" title="No Priority">None</button>
+            <button type="button" class="ph-priority-btn ph-priority--low" data-priority="low" title="Low Priority">Low</button>
+            <button type="button" class="ph-priority-btn ph-priority--medium" data-priority="medium" title="Medium Priority">Med</button>
+            <button type="button" class="ph-priority-btn ph-priority--high" data-priority="high" title="High Priority">High</button>
+          </div>
+        </div>
+      </form>
+
+      <div class="ph-task-progress" id="taskProgressBar">
+        <div class="ph-task-progress-fill" id="taskProgressFill" style="width: 0%"></div>
+      </div>
+
+      <ul id="todoList" class="ph-todo-list">
+        <!-- Tasks injected via JS -->
+      </ul>
+    </section>
+
+  </main>
+
+  <div id="toastContainer" class="toast-container"></div>
+  
+  <script src="productivity.js"></script>
+</body>
+</html>

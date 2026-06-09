@@ -1,0 +1,24 @@
+# Dependencies
+node_modules/
+package-lock.json
+
+# User Data & Storage (Do not commit personal data!)
+saved_matrices/
+saved_notes/
+saved_quicklaunch/
+saved_timesheets/
+*.ics
+
+# Server Logs
+*.log
+
+# Temp or Scratch scripts
+check_*.js
+test_*.js
+fix_*.js
+get_in_holidays.js
+
+# OS Files
+.DS_Store
+Thumbs.db
+check.js
