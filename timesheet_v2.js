@@ -226,14 +226,25 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function loadHistoryDropdown() {
     tsHistory.innerHTML = '<option value="">History...</option>';
+    let months = [];
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i);
-      if (key.startsWith(STORAGE_KEY_PREFIX)) {
-        const monthKey = key.replace(STORAGE_KEY_PREFIX, '');
-        const option = document.createElement('option');
-        option.value = monthKey;
-        option.textContent = monthKey;
-        tsHistory.appendChild(option);
+      if (key && key.startsWith(STORAGE_KEY_PREFIX)) {
+        months.push(key.replace(STORAGE_KEY_PREFIX, ''));
+      }
+    }
+    // Sort descending (latest month first)
+    months.sort().reverse().forEach(monthKey => {
+      const option = document.createElement('option');
+      option.value = monthKey;
+      option.textContent = monthKey;
+      tsHistory.appendChild(option);
+    });
+
+    // Auto-select the current month if it's in the list
+    if (tsMonthYear && tsMonthYear.value) {
+      if (Array.from(tsHistory.options).some(opt => opt.value === tsMonthYear.value)) {
+        tsHistory.value = tsMonthYear.value;
       }
     }
   }
@@ -380,27 +391,45 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  function loadDataForMonth(monthVal) {
+  async function loadDataForMonth(monthVal) {
     const [y, m] = monthVal.split('-');
-    const savedDataStr = localStorage.getItem(getSaveKey());
     
-    if (savedDataStr) {
-      currentData = JSON.parse(savedDataStr);
-    } else {
-      currentData = { empId: '', empName: '', org: '', rows: [] };
-      const days = getDaysInMonth(y, m);
-      for (let d = 1; d <= days; d++) {
-        const dateStr = `${String(d).padStart(2, '0')}-${m}-${y}`;
-        const dayName = getDayName(y, m, d);
-        const isWeekend = dayName === 'Saturday' || dayName === 'Sunday';
-        const defType = isWeekend ? 'WeekEnd' : 'Office';
-        currentData.rows.push({
-          date: dateStr, day: dayName, type: defType,
-          inTime: isWeekend ? '' : DEFAULT_IN, outTime: isWeekend ? '' : DEFAULT_OUT,
-          extra: "0:00:00", proj: "0:00:00", meet: "0:00:00", total: "0:00:00"
-        });
+    let loadedFromServer = false;
+    try {
+      const res = await fetch(`http://localhost:3000/api/timesheet/${monthVal}`);
+      if (res.ok) {
+        currentData = await res.json();
+        localStorage.setItem(getSaveKey(), JSON.stringify(currentData));
+        loadedFromServer = true;
+      }
+    } catch (err) {
+      console.warn("Failed to fetch from server:", err);
+    }
+
+    if (!loadedFromServer) {
+      const savedDataStr = localStorage.getItem(getSaveKey());
+      if (savedDataStr) {
+        currentData = JSON.parse(savedDataStr);
+      } else {
+        // Fallback: Create blank month
+        currentData = { empId: '', empName: '', org: '', rows: [] };
+        const days = getDaysInMonth(y, m);
+        for (let d = 1; d <= days; d++) {
+          const dateStr = `${String(d).padStart(2, '0')}-${m}-${y}`;
+          const dayName = getDayName(y, m, d);
+          const isWeekend = dayName === 'Saturday' || dayName === 'Sunday';
+          const defType = isWeekend ? 'WeekEnd' : 'Office';
+          currentData.rows.push({
+            date: dateStr, day: dayName, type: defType,
+            inTime: isWeekend ? '' : DEFAULT_IN, outTime: isWeekend ? '' : DEFAULT_OUT,
+            extra: "0:00:00", proj: "0:00:00", meet: "0:00:00", total: "0:00:00"
+          });
+        }
       }
     }
+
+    // Refresh history dropdown to reflect server data if synced
+    loadHistoryDropdown();
     
     tsEmpId.value = currentData.empId || '';
     tsEmpName.value = currentData.empName || '';
@@ -411,6 +440,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
     renderTable();
     fetchAndDisplayUpcomingEvents();
+
+    // Sync history dropdown
+    if (tsHistory) {
+      if (Array.from(tsHistory.options).some(opt => opt.value === monthVal)) {
+        tsHistory.value = monthVal;
+      } else {
+        tsHistory.value = '';
+      }
+    }
   }
 
   function calculateRowLogic(rowObj) {

@@ -17,9 +17,10 @@ trap "echo '🛑 Shutting down proxy server...'; kill $SERVER_PID; exit" SIGINT 
 # Wait a second for it to initialize
 sleep 1
 
-# Open the HTML file in the default browser
-echo "🌐 Opening Test Reporter Dashboard..."
-xdg-open index.html
+# Open the app via the local server (IMPORTANT: file:// URLs cannot make fetch calls)
+echo "🌐 Opening Test Reporter Dashboard at http://localhost:3000 ..."
+sleep 1
+xdg-open http://localhost:3000/index.html
 
 echo ""
 echo "✅ Proxy server is running in the background."

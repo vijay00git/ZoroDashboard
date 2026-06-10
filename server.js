@@ -228,6 +228,55 @@ app.post('/api/timesheet', (req, res) => {
     }
 });
 
+app.get('/api/timesheet/:month', (req, res) => {
+    const month = req.params.month;
+    if (!month.match(/^\d{4}-\d{2}$/)) return res.status(400).json({ error: 'Invalid month format' });
+    
+    try {
+        const files = fs.readdirSync(TS_DIR);
+        // Find all files matching the month
+        const matches = files.filter(f => f.includes(`_${month}_Timesheet.csv`));
+        if (!matches.length) return res.status(404).json({ error: 'Not found' });
+        
+        // Sort by modified time descending to get the most recent one
+        matches.sort((a, b) => {
+            return fs.statSync(path.join(TS_DIR, b)).mtimeMs - fs.statSync(path.join(TS_DIR, a)).mtimeMs;
+        });
+        
+        const target = matches[0]; // the newest file
+        
+        const data = fs.readFileSync(path.join(TS_DIR, target), 'utf8');
+        const lines = data.split('\n');
+        
+        // Parse metadata line
+        const metaParts = lines[0].split(',');
+        const empId = metaParts[3] || '';
+        const empName = metaParts[5] || '';
+        const org = metaParts[7] || '';
+        
+        const rows = [];
+        for (let i = 3; i < lines.length; i++) {
+            const line = lines[i].trim();
+            if (!line || line.startsWith('TOTAL')) break;
+            const cols = line.split(',');
+            rows.push({
+                date: cols[0] || '',
+                day: cols[1] || '',
+                type: cols[2] || '',
+                inTime: cols[3] || '',
+                outTime: cols[4] || '',
+                extra: cols[5] || '0:00:00',
+                proj: cols[6] || '0:00:00',
+                meet: cols[7] || '0:00:00',
+                total: cols[8] || '0:00:00'
+            });
+        }
+        res.status(200).json({ empId, empName, org, rows });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
 // --- Quick Launch API ---
 app.get('/api/quicklaunch', (req, res) => {
     const filePath = path.join(QL_DIR, 'data.json');
@@ -251,6 +300,68 @@ app.post('/api/quicklaunch', (req, res) => {
         res.status(500).json({ error: e.message });
     }
 });
+
+// --- AI Proxy API (Gemini) ---
+
+// List available models for the user's key
+app.get('/api/ai/models', async (req, res) => {
+    const key = req.query.key;
+    if (!key) return res.status(400).json({ error: 'Missing key' });
+    try {
+        const response = await fetch(
+            `https://generativelanguage.googleapis.com/v1beta/models?key=${key}`
+        );
+        const data = await response.json();
+        if (!response.ok) return res.status(response.status).json({ error: data?.error?.message });
+        const models = (data.models || [])
+            .filter(m => m.supportedGenerationMethods?.includes('generateContent'))
+            .map(m => ({ id: m.name.replace('models/', ''), displayName: m.displayName }));
+        res.json({ models });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.post('/api/ai/chat', async (req, res) => {
+    const { key, model, system, prompt } = req.body;
+
+    if (!key || !prompt) {
+        return res.status(400).json({ error: 'Missing key or prompt' });
+    }
+
+    const modelId = model || 'gemini-1.5-flash';
+    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent?key=${key}`;
+
+    const contents = [];
+    if (system) {
+        contents.push({ role: 'user', parts: [{ text: system }] });
+        contents.push({ role: 'model', parts: [{ text: 'Understood. I will follow these instructions.' }] });
+    }
+    contents.push({ role: 'user', parts: [{ text: prompt }] });
+
+    try {
+        const response = await fetch(endpoint, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ contents, generationConfig: { temperature: 0.7, maxOutputTokens: 1024 } })
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+            const errMsg = data?.error?.message || `Gemini API error ${response.status}`;
+            return res.status(response.status).json({ error: errMsg });
+        }
+
+        const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+        res.status(200).json({ text });
+    } catch (err) {
+        console.error('AI Proxy error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+
 
 // --- Holidays Proxy API ---
 app.get('/api/holidays/:year/:country', async (req, res) => {
