@@ -100,6 +100,19 @@ document.addEventListener('DOMContentLoaded', () => {
   const folderModalTitle = document.getElementById('folderModalTitle');
   let editingFolderId = null;
 
+  const folderColorInput = document.getElementById('folderColorInput');
+  const colorSwatches = document.querySelectorAll('.color-swatch');
+
+  if (colorSwatches) {
+    colorSwatches.forEach(swatch => {
+      swatch.addEventListener('click', () => {
+        colorSwatches.forEach(s => s.classList.remove('selected'));
+        swatch.classList.add('selected');
+        if (folderColorInput) folderColorInput.value = swatch.dataset.color;
+      });
+    });
+  }
+
   const linkModal = document.getElementById('linkModal');
   const linkModalTitle = document.getElementById('linkModalTitle');
   const linkFolderIdInput = document.getElementById('linkFolderId');
@@ -111,6 +124,15 @@ document.addEventListener('DOMContentLoaded', () => {
   const btnSaveLink = document.getElementById('btnSaveLink');
 
   // ── Render ──
+  function getFaviconUrl(url) {
+    try {
+      const hostname = new URL(url).hostname;
+      return `https://www.google.com/s2/favicons?domain=${hostname}&sz=32`;
+    } catch(e) {
+      return '';
+    }
+  }
+
   function renderFolders() {
     foldersContainer.innerHTML = '';
     
@@ -125,52 +147,80 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
-    folders.forEach((folder, index) => {
+    const allLinks = [];
+    folders.forEach(f => {
+      if (f.links) f.links.forEach(l => allLinks.push({ ...l, folderId: f.id }));
+    });
+    
+    const mostUsedLinks = allLinks.filter(l => l.clicks && l.clicks > 0).sort((a, b) => b.clicks - a.clicks).slice(0, 5);
+    
+    const displayFolders = [];
+    if (mostUsedLinks.length > 0) {
+      displayFolders.push({
+        id: 'smart_most_used',
+        name: 'Most Used',
+        links: mostUsedLinks,
+        isSmart: true
+      });
+    }
+    displayFolders.push(...folders);
+
+    displayFolders.forEach((folder, index) => {
       const folderEl = document.createElement('div');
       folderEl.className = 'ql-folder';
-      folderEl.draggable = true;
       folderEl.dataset.id = folder.id;
 
-      // Drag events for folder re-ordering
-      folderEl.addEventListener('dragstart', (e) => {
-        folderEl.classList.add('dragging');
-        e.dataTransfer.setData('text/plain', folder.id);
-        e.dataTransfer.effectAllowed = 'move';
-      });
+      if (folder.color && folder.color !== 'default') {
+        folderEl.style.setProperty('--folder-accent', folder.color);
+        folderEl.style.borderColor = folder.color;
+      }
 
-      folderEl.addEventListener('dragend', () => {
-        folderEl.classList.remove('dragging');
-        document.querySelectorAll('.ql-folder').forEach(el => el.classList.remove('drag-over'));
-      });
+      if (folder.isSmart) {
+        folderEl.classList.add('smart-folder');
+        folderEl.draggable = false;
+      } else {
+        folderEl.draggable = true;
+        // Drag events for folder re-ordering
+        folderEl.addEventListener('dragstart', (e) => {
+          folderEl.classList.add('dragging');
+          e.dataTransfer.setData('text/plain', folder.id);
+          e.dataTransfer.effectAllowed = 'move';
+        });
 
-      folderEl.addEventListener('dragover', (e) => {
-        e.preventDefault();
-        e.dataTransfer.dropEffect = 'move';
-        const draggingEl = document.querySelector('.ql-folder.dragging');
-        if (draggingEl && draggingEl !== folderEl) {
-          folderEl.classList.add('drag-over');
-        }
-      });
+        folderEl.addEventListener('dragend', () => {
+          folderEl.classList.remove('dragging');
+          document.querySelectorAll('.ql-folder').forEach(el => el.classList.remove('drag-over'));
+        });
 
-      folderEl.addEventListener('dragleave', () => {
-        folderEl.classList.remove('drag-over');
-      });
-
-      folderEl.addEventListener('drop', (e) => {
-        e.preventDefault();
-        folderEl.classList.remove('drag-over');
-        const draggedId = e.dataTransfer.getData('text/plain');
-        if (draggedId && draggedId !== folder.id) {
-          const fromIndex = folders.findIndex(f => f.id === draggedId);
-          const toIndex = folders.findIndex(f => f.id === folder.id);
-          if (fromIndex !== -1 && toIndex !== -1) {
-            const [moved] = folders.splice(fromIndex, 1);
-            folders.splice(toIndex, 0, moved);
-            saveData();
-            renderFolders();
+        folderEl.addEventListener('dragover', (e) => {
+          e.preventDefault();
+          e.dataTransfer.dropEffect = 'move';
+          const draggingEl = document.querySelector('.ql-folder.dragging');
+          if (draggingEl && draggingEl !== folderEl) {
+            folderEl.classList.add('drag-over');
           }
-        }
-      });
+        });
+
+        folderEl.addEventListener('dragleave', () => {
+          folderEl.classList.remove('drag-over');
+        });
+
+        folderEl.addEventListener('drop', (e) => {
+          e.preventDefault();
+          folderEl.classList.remove('drag-over');
+          const draggedId = e.dataTransfer.getData('text/plain');
+          if (draggedId && draggedId !== folder.id) {
+            const fromIndex = folders.findIndex(f => f.id === draggedId);
+            const toIndex = folders.findIndex(f => f.id === folder.id);
+            if (fromIndex !== -1 && toIndex !== -1) {
+              const [moved] = folders.splice(fromIndex, 1);
+              folders.splice(toIndex, 0, moved);
+              saveData();
+              renderFolders();
+            }
+          }
+        });
+      }
 
       // Header
       const header = document.createElement('div');
@@ -183,40 +233,45 @@ document.addEventListener('DOMContentLoaded', () => {
       const actions = document.createElement('div');
       actions.className = 'ql-folder-actions';
 
-      const btnAdd = document.createElement('button');
-      btnAdd.className = 'ql-action-btn';
-      btnAdd.title = 'Add Link';
-      btnAdd.textContent = '➕';
-      btnAdd.addEventListener('click', (e) => {
-        e.stopPropagation();
-        openLinkModal(folder.id);
-      });
+      if (!folder.isSmart) {
+        const btnAdd = document.createElement('button');
+        btnAdd.className = 'ql-action-btn';
+        btnAdd.title = 'Add Link';
+        btnAdd.textContent = '➕';
+        btnAdd.addEventListener('click', (e) => {
+          e.stopPropagation();
+          openLinkModal(folder.id);
+        });
 
-      const btnEdit = document.createElement('button');
-      btnEdit.className = 'ql-action-btn';
-      btnEdit.title = 'Edit Folder';
-      btnEdit.textContent = '✏️';
-      btnEdit.addEventListener('click', (e) => {
-        e.stopPropagation();
-        openFolderModal(folder.id);
-      });
+        const btnEdit = document.createElement('button');
+        btnEdit.className = 'ql-action-btn';
+        btnEdit.title = 'Edit Folder';
+        btnEdit.textContent = '✏️';
+        btnEdit.addEventListener('click', (e) => {
+          e.stopPropagation();
+          openFolderModal(folder.id);
+        });
 
-      const btnDel = document.createElement('button');
-      btnDel.className = 'ql-action-btn del';
-      btnDel.title = 'Delete Folder';
-      btnDel.textContent = '🗑️';
-      btnDel.addEventListener('click', (e) => {
-        e.stopPropagation();
-        if (confirm(`Are you sure you want to delete folder "${folder.name}" and all its links?`)) {
-          folders.splice(index, 1);
-          saveData();
-          renderFolders();
-        }
-      });
+        const btnDel = document.createElement('button');
+        btnDel.className = 'ql-action-btn del';
+        btnDel.title = 'Delete Folder';
+        btnDel.textContent = '🗑️';
+        btnDel.addEventListener('click', (e) => {
+          e.stopPropagation();
+          if (confirm(`Are you sure you want to delete folder "${folder.name}" and all its links?`)) {
+            const trueIndex = folders.findIndex(f => f.id === folder.id);
+            if (trueIndex !== -1) {
+              folders.splice(trueIndex, 1);
+              saveData();
+              renderFolders();
+            }
+          }
+        });
 
-      actions.appendChild(btnAdd);
-      actions.appendChild(btnEdit);
-      actions.appendChild(btnDel);
+        actions.appendChild(btnAdd);
+        actions.appendChild(btnEdit);
+        actions.appendChild(btnDel);
+      }
 
       header.appendChild(title);
       header.appendChild(actions);
@@ -235,51 +290,79 @@ document.addEventListener('DOMContentLoaded', () => {
           card.href = link.url;
           card.target = '_blank';
           card.rel = 'noopener noreferrer';
+          
+          card.addEventListener('click', () => {
+             const actualFolderId = link.folderId || folder.id;
+             const actualFolder = folders.find(f => f.id === actualFolderId);
+             if (actualFolder && actualFolder.links) {
+               const actualLink = actualFolder.links.find(l => l.id === link.id);
+               if (actualLink) {
+                 actualLink.clicks = (actualLink.clicks || 0) + 1;
+                 saveData();
+               }
+             }
+          });
 
           const emoji = document.createElement('div');
           emoji.className = 'ql-link-emoji';
-          emoji.textContent = link.emoji || '🔗';
+          if (link.emoji && link.emoji.trim() !== '') {
+            emoji.textContent = link.emoji;
+          } else {
+            const img = document.createElement('img');
+            img.src = getFaviconUrl(link.url);
+            img.className = 'ql-link-favicon';
+            img.setAttribute('loading', 'lazy');
+            emoji.appendChild(img);
+          }
 
           const name = document.createElement('div');
           name.className = 'ql-link-name';
           name.textContent = link.name;
-          name.title = link.name; // tooltip
+          name.title = link.url; // tooltip
 
-          const linkActions = document.createElement('div');
-          linkActions.className = 'ql-link-actions';
+          if (!folder.isSmart) {
+            const linkActions = document.createElement('div');
+            linkActions.className = 'ql-link-actions';
 
-          const btnEditLink = document.createElement('button');
-          btnEditLink.className = 'ql-action-btn';
-          btnEditLink.title = 'Edit Link';
-          btnEditLink.innerHTML = '✏️';
-          btnEditLink.style.fontSize = '10px';
-          btnEditLink.style.padding = '2px';
-          btnEditLink.addEventListener('click', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            openLinkModal(folder.id, link.id);
-          });
+            const btnEditLink = document.createElement('button');
+            btnEditLink.className = 'ql-action-btn';
+            btnEditLink.title = 'Edit Link';
+            btnEditLink.innerHTML = '✏️';
+            btnEditLink.style.fontSize = '10px';
+            btnEditLink.style.padding = '2px';
+            btnEditLink.addEventListener('click', (e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              openLinkModal(folder.id, link.id);
+            });
 
-          const btnDelLink = document.createElement('button');
-          btnDelLink.className = 'ql-action-btn del';
-          btnDelLink.title = 'Delete Link';
-          btnDelLink.innerHTML = '✕';
-          btnDelLink.style.fontSize = '10px';
-          btnDelLink.style.padding = '2px';
-          btnDelLink.addEventListener('click', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            if (confirm(`Delete link "${link.name}"?`)) {
-              folder.links.splice(lIndex, 1);
-              saveData();
-              renderFolders();
-            }
-          });
+            const btnDelLink = document.createElement('button');
+            btnDelLink.className = 'ql-action-btn del';
+            btnDelLink.title = 'Delete Link';
+            btnDelLink.innerHTML = '✕';
+            btnDelLink.style.fontSize = '10px';
+            btnDelLink.style.padding = '2px';
+            btnDelLink.addEventListener('click', (e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              if (confirm(`Delete link "${link.name}"?`)) {
+                const actualFolder = folders.find(f => f.id === folder.id);
+                if (actualFolder && actualFolder.links) {
+                  const linkIndex = actualFolder.links.findIndex(l => l.id === link.id);
+                  if (linkIndex !== -1) {
+                    actualFolder.links.splice(linkIndex, 1);
+                    saveData();
+                    renderFolders();
+                  }
+                }
+              }
+            });
 
-          linkActions.appendChild(btnEditLink);
-          linkActions.appendChild(btnDelLink);
+            linkActions.appendChild(btnEditLink);
+            linkActions.appendChild(btnDelLink);
+            card.appendChild(linkActions);
+          }
 
-          card.appendChild(linkActions);
           card.appendChild(emoji);
           card.appendChild(name);
           linksGrid.appendChild(card);
@@ -298,10 +381,23 @@ document.addEventListener('DOMContentLoaded', () => {
       const folder = folders.find(f => f.id === id);
       folderModalTitle.textContent = 'Edit Folder';
       folderNameInput.value = folder.name;
+      if (folderColorInput) folderColorInput.value = folder.color || 'default';
     } else {
       folderModalTitle.textContent = 'New Folder';
       folderNameInput.value = '';
+      if (folderColorInput) folderColorInput.value = 'default';
     }
+    
+    if (colorSwatches && folderColorInput) {
+      colorSwatches.forEach(s => {
+        if (s.dataset.color === folderColorInput.value) {
+          s.classList.add('selected');
+        } else {
+          s.classList.remove('selected');
+        }
+      });
+    }
+
     folderModal.classList.remove('hidden');
     folderNameInput.focus();
   }
@@ -320,7 +416,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const folder = folders.find(f => f.id === folderId);
       const link = folder.links.find(l => l.id === linkId);
       linkModalTitle.textContent = 'Edit Link';
-      linkEmojiInput.value = link.emoji || '🔗';
+      linkEmojiInput.value = link.emoji || '';
       linkNameInput.value = link.name;
       linkUrlInput.value = link.url;
     } else {
@@ -348,15 +444,20 @@ document.addEventListener('DOMContentLoaded', () => {
   
   btnSaveFolder.addEventListener('click', () => {
     const name = folderNameInput.value.trim();
+    const color = folderColorInput ? folderColorInput.value : 'default';
     if (!name) return;
     
     if (editingFolderId) {
       const folder = folders.find(f => f.id === editingFolderId);
-      if (folder) folder.name = name;
+      if (folder) {
+        folder.name = name;
+        folder.color = color;
+      }
     } else {
       folders.push({
         id: 'folder_' + Date.now(),
         name: name,
+        color: color,
         links: []
       });
     }
@@ -370,7 +471,7 @@ document.addEventListener('DOMContentLoaded', () => {
   btnSaveLink.addEventListener('click', () => {
     const folderId = linkFolderIdInput.value;
     const linkId = linkIdInput.value;
-    const emoji = linkEmojiInput.value.trim() || '🔗';
+    const emoji = linkEmojiInput.value.trim();
     const name = linkNameInput.value.trim();
     let url = linkUrlInput.value.trim();
 
@@ -397,7 +498,8 @@ document.addEventListener('DOMContentLoaded', () => {
         id: 'link_' + Date.now(),
         emoji: emoji,
         name: name,
-        url: url
+        url: url,
+        clicks: 0
       });
     }
     saveData();

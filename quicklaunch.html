@@ -6,6 +6,20 @@
   <title>Quick-Launch - Test Reporter</title>
   <link rel="stylesheet" href="style.css">
   <link rel="stylesheet" href="quicklaunch.css">
+  <style>
+    body {
+      background-image: 
+        radial-gradient(circle at 10% 20%, rgba(139, 92, 246, 0.05), transparent 30%),
+        radial-gradient(circle at 90% 80%, rgba(56, 189, 248, 0.05), transparent 30%);
+      background-attachment: fixed;
+    }
+    
+    [data-theme="light"] body {
+      background-image: 
+        radial-gradient(circle at 10% 20%, rgba(139, 92, 246, 0.08), transparent 30%),
+        radial-gradient(circle at 90% 80%, rgba(56, 189, 248, 0.08), transparent 30%);
+    }
+  </style>
 </head>
 <body>
   <!-- Global Application Header -->
@@ -62,7 +76,24 @@
   <div id="folderModal" class="ql-modal hidden">
     <div class="ql-modal-content">
       <h3 id="folderModalTitle">New Folder</h3>
-      <input type="text" id="folderNameInput" class="ql-input" placeholder="Folder Name (e.g. Work, Social)">
+      <div class="ql-input-group">
+        <label>Folder Name</label>
+        <input type="text" id="folderNameInput" class="ql-input" placeholder="e.g. Work, Social">
+      </div>
+      <div class="ql-input-group">
+        <label>Folder Color</label>
+        <div class="folder-color-picker" id="folderColorPicker">
+          <div class="color-swatch selected" data-color="default" style="background: var(--bg2); border: 1px solid var(--border);" title="Default"></div>
+          <div class="color-swatch" data-color="#ef4444" style="background: #ef4444;" title="Red"></div>
+          <div class="color-swatch" data-color="#f97316" style="background: #f97316;" title="Orange"></div>
+          <div class="color-swatch" data-color="#eab308" style="background: #eab308;" title="Yellow"></div>
+          <div class="color-swatch" data-color="#22c55e" style="background: #22c55e;" title="Green"></div>
+          <div class="color-swatch" data-color="#3b82f6" style="background: #3b82f6;" title="Blue"></div>
+          <div class="color-swatch" data-color="#a855f7" style="background: #a855f7;" title="Purple"></div>
+          <div class="color-swatch" data-color="#ec4899" style="background: #ec4899;" title="Pink"></div>
+        </div>
+        <input type="hidden" id="folderColorInput" value="default">
+      </div>
       <div class="ql-modal-actions">
         <button id="btnCancelFolder" class="ql-btn">Cancel</button>
         <button id="btnSaveFolder" class="ql-btn ql-btn-primary">Save</button>
@@ -78,7 +109,7 @@
       <input type="hidden" id="linkId">
       
       <div class="ql-input-group">
-        <label>Emoji Icon</label>
+        <label>Emoji Icon <span style="font-size: 0.75rem; color: var(--text-muted); font-weight: normal;">(Leave empty for auto favicon)</span></label>
         <input type="text" id="linkEmojiInput" class="ql-input" placeholder="🌟" maxlength="5">
       </div>
       <div class="ql-input-group">
