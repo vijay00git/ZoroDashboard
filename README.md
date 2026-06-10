@@ -45,8 +45,8 @@ Make sure you have [Node.js](https://nodejs.org/) installed on your machine.
 ### Instructions
 1. **Clone the repository:**
    ```bash
-   git clone https://github.com/YOUR_USERNAME/zoro-productivity-suite.git
-   cd zoro-productivity-suite
+   git clone https://github.com/vijay00git/ZoroDashboard.git
+   cd ZoroDashboard
    ```
 
 2. **Install dependencies:**
