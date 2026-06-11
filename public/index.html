@@ -4,9 +4,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>ZORO's DashBoard</title>
-  <link rel="stylesheet" href="style.css">
-  <link rel="stylesheet" href="dashboard.css">
-  <link rel="stylesheet" href="ai.css">
+  <link rel="stylesheet" href="css/style.css">
+  <link rel="stylesheet" href="css/dashboard.css">
+  <link rel="stylesheet" href="css/ai.css">
 </head>
 <body>
   <!-- Global Application Header -->
@@ -19,12 +19,12 @@
         </div>
         <div class="header-nav">
           <a href="index.html" class="nav-link active"><span>🏠</span> Zoro's Dashboard</a>
-          <a href="synchub.html" class="nav-link"><span>📊</span> Sync Hub</a>
-          <a href="productivity.html" class="nav-link"><span>⚡</span> Productivity</a>
-          <a href="timesheet.html" class="nav-link"><span>📅</span> Timesheet</a>
-          <a href="water.html" class="nav-link"><span>💧</span> Hydration</a>
-          <a href="quicklaunch.html" class="nav-link"><span>🚀</span> Quick-Launch</a>
-          <a href="status.html" class="nav-link"><span>📝</span> Daily Status</a>
+          <a href="pages/synchub.html" class="nav-link"><span>📊</span> Sync Hub</a>
+          <a href="pages/productivity.html" class="nav-link"><span>⚡</span> Productivity</a>
+          <a href="pages/timesheet.html" class="nav-link"><span>📅</span> Timesheet</a>
+          <a href="pages/water.html" class="nav-link"><span>💧</span> Hydration</a>
+          <a href="pages/quicklaunch.html" class="nav-link"><span>🚀</span> Quick-Launch</a>
+          <a href="pages/status.html" class="nav-link"><span>📝</span> Daily Status</a>
         </div>
       </div>
       <div class="header-actions">
@@ -90,7 +90,7 @@
     <div class="widgets-grid">
 
       <!-- Sync Hub Widget -->
-      <a href="synchub.html" class="widget-card wc-sync">
+      <a href="pages/synchub.html" class="widget-card wc-sync">
         <div class="wc-header">
           <div class="wc-icon-wrap" style="background: rgba(99,102,241,0.12);"><span>📊</span></div>
           <div>
@@ -107,7 +107,7 @@
       </a>
 
       <!-- Productivity Widget -->
-      <a href="productivity.html" class="widget-card wc-prod">
+      <a href="pages/productivity.html" class="widget-card wc-prod">
         <div class="wc-header">
           <div class="wc-icon-wrap" style="background: rgba(245,158,11,0.12);"><span>⚡</span></div>
           <div>
@@ -126,7 +126,7 @@
       </a>
 
       <!-- Timesheet Widget -->
-      <a href="timesheet.html" class="widget-card wc-ts">
+      <a href="pages/timesheet.html" class="widget-card wc-ts">
         <div class="wc-header">
           <div class="wc-icon-wrap" style="background: rgba(34,197,94,0.12);"><span>📅</span></div>
           <div>
@@ -156,7 +156,7 @@
       </a>
 
       <!-- Hydration Widget -->
-      <a href="water.html" class="widget-card wc-water">
+      <a href="pages/water.html" class="widget-card wc-water">
         <div class="wc-header">
           <div class="wc-icon-wrap" style="background: rgba(14,165,233,0.12);"><span>💧</span></div>
           <div>
@@ -179,7 +179,7 @@
       </a>
 
       <!-- Quick-Launch Widget -->
-      <a href="quicklaunch.html" class="widget-card wc-ql">
+      <a href="pages/quicklaunch.html" class="widget-card wc-ql">
         <div class="wc-header">
           <div class="wc-icon-wrap" style="background: rgba(139,92,246,0.12);"><span>🚀</span></div>
           <div>
@@ -246,7 +246,7 @@
     <div class="quick-tools-section">
       <h3 class="section-label">Quick Tools</h3>
       <div class="quick-tools-grid">
-        <a href="synchub.html" class="qt-card">
+        <a href="pages/synchub.html" class="qt-card">
           <span class="qt-icon">🔄</span>
           <span class="qt-label">Start Sync</span>
         </a>
@@ -258,15 +258,15 @@
           <span class="qt-icon">📝</span>
           <span class="qt-label">New Note</span>
         </a>
-        <a href="timesheet.html" class="qt-card">
+        <a href="pages/timesheet.html" class="qt-card">
           <span class="qt-icon">⏰</span>
           <span class="qt-label">Log Time</span>
         </a>
-        <a href="water.html" class="qt-card">
+        <a href="pages/water.html" class="qt-card">
           <span class="qt-icon">🥤</span>
           <span class="qt-label">Drink Water</span>
         </a>
-        <a href="timesheet.html" class="qt-card">
+        <a href="pages/timesheet.html" class="qt-card">
           <span class="qt-icon">📑</span>
           <span class="qt-label">Export CSV</span>
         </a>
@@ -276,8 +276,8 @@
   </main>
 
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-  <script src="dashboard.js"></script>
-  <script src="ai.js"></script>
+  <script src="js/dashboard.js"></script>
+  <script src="js/ai.js"></script>
   <script>
     // Theme logic port for dashboard
     (function() {

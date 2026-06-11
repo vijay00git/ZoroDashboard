@@ -3,23 +3,19 @@ node_modules/
 package-lock.json
 
 # User Data & Storage (Do not commit personal data!)
-saved_matrices/
-saved_notes/
-saved_quicklaunch/
-saved_timesheets/
-saved_templates/
-*.ics
+data/matrices/
+data/notes/
+data/timesheets/
+data/quicklaunch/
+data/templates/
+data/calendar.ics
 
 # Server Logs
 *.log
 
-# Temp or Scratch scripts
-check_*.js
-test_*.js
-fix_*.js
-get_in_holidays.js
+# Dev/Test Scratch Scripts
+scripts/
 
 # OS Files
 .DS_Store
 Thumbs.db
-check.js

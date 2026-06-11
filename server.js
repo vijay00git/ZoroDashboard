@@ -9,27 +9,16 @@ const PORT = 3000;
 
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
-app.use(express.static(__dirname));
+app.use(express.static(path.join(__dirname, 'public')));
 
-const DATA_DIR = path.join(__dirname, 'saved_matrices');
-if (!fs.existsSync(DATA_DIR)) {
-    fs.mkdirSync(DATA_DIR);
-}
-
-const NOTES_DIR = path.join(__dirname, 'saved_notes');
-if (!fs.existsSync(NOTES_DIR)) {
-    fs.mkdirSync(NOTES_DIR);
-}
-
-const TS_DIR = path.join(__dirname, 'saved_timesheets');
-if (!fs.existsSync(TS_DIR)) {
-    fs.mkdirSync(TS_DIR);
-}
-
-const QL_DIR = path.join(__dirname, 'saved_quicklaunch');
-if (!fs.existsSync(QL_DIR)) {
-    fs.mkdirSync(QL_DIR);
-}
+// Ensure data directories exist
+const DATA_DIR = path.join(__dirname, 'data', 'matrices');
+const NOTES_DIR = path.join(__dirname, 'data', 'notes');
+const TS_DIR = path.join(__dirname, 'data', 'timesheets');
+const QL_DIR = path.join(__dirname, 'data', 'quicklaunch');
+[DATA_DIR, NOTES_DIR, TS_DIR, QL_DIR].forEach(dir => {
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+});
 
 app.post('/api/save', (req, res) => {
     const { name, testCases } = req.body;
@@ -433,7 +422,7 @@ app.use('/api/calendar/upload', express.text({ limit: '10mb', type: '*/*' }));
 app.post('/api/calendar/upload', (req, res) => {
     try {
         if (!req.body) return res.status(400).json({ error: 'No content' });
-        fs.writeFileSync(path.join(__dirname, 'calendar.ics'), req.body, 'utf-8');
+        fs.writeFileSync(path.join(__dirname, 'data', 'calendar.ics'), req.body, 'utf-8');
         res.status(200).json({ success: true });
     } catch (e) {
         res.status(500).json({ error: e.message });
@@ -442,7 +431,7 @@ app.post('/api/calendar/upload', (req, res) => {
 
 app.delete('/api/calendar/local', (req, res) => {
     try {
-        const p = path.join(__dirname, 'calendar.ics');
+        const p = path.join(__dirname, 'data', 'calendar.ics');
         if (fs.existsSync(p)) fs.unlinkSync(p);
         res.status(200).json({ success: true });
     } catch (e) {
@@ -451,9 +440,9 @@ app.delete('/api/calendar/local', (req, res) => {
 });
 
 // --- Daily Status Templates API (Markdown Files) ---
-const TEMPLATE_DIR = path.join(__dirname, 'saved_templates');
+const TEMPLATE_DIR = path.join(__dirname, 'data', 'templates');
 if (!fs.existsSync(TEMPLATE_DIR)) {
-    fs.mkdirSync(TEMPLATE_DIR);
+    fs.mkdirSync(TEMPLATE_DIR, { recursive: true });
 }
 
 const DEFAULT_TEMPLATES = [
@@ -551,7 +540,7 @@ app.get('/api/calendar/upcoming', async (req, res) => {
 
         let events;
         if (useLocal) {
-            const p = path.join(__dirname, 'calendar.ics');
+            const p = path.join(__dirname, 'data', 'calendar.ics');
             if (!fs.existsSync(p)) return res.status(404).json({ error: 'Local calendar not found' });
             const data = fs.readFileSync(p, 'utf-8');
             events = ical.parseICS(data);
@@ -607,7 +596,7 @@ app.get('/api/calendar/:year/:month', async (req, res) => {
 
         let events;
         if (useLocal) {
-            const p = path.join(__dirname, 'calendar.ics');
+            const p = path.join(__dirname, 'data', 'calendar.ics');
             if (!fs.existsSync(p)) return res.status(404).json({ error: 'Local calendar not found' });
             const data = fs.readFileSync(p, 'utf-8');
             events = ical.parseICS(data);
