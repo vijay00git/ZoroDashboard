@@ -25,9 +25,12 @@
           <a href="pages/water.html" class="nav-link"><span>💧</span> Hydration</a>
           <a href="pages/quicklaunch.html" class="nav-link"><span>🚀</span> Quick-Launch</a>
           <a href="pages/status.html" class="nav-link"><span>📝</span> Daily Status</a>
+          <a href="pages/goal.html" class="nav-link"><span>🎯</span> AI Goals</a>
+          <a href="pages/settings.html" class="nav-link"><span>⚙️</span> Settings</a>
         </div>
       </div>
       <div class="header-actions">
+        <div id="navClock" style="font-family: var(--mono); font-size: 0.85rem; font-weight: 600; color: var(--text); padding: 0 1rem; border-right: 1px solid var(--border); margin-right: 0.5rem; display: flex; align-items: center; justify-content: center; min-width: 100px;">--:--:--</div>
         <button id="btnThemeToggle" class="btn-theme-toggle" title="Toggle light/dark mode">🌙</button>
       </div>
     </div>
@@ -87,16 +90,17 @@
     </div>
 
     <!-- MAIN WIDGET GRID -->
-    <div class="widgets-grid">
+    <div class="widgets-grid" id="widgetsGrid">
 
       <!-- Sync Hub Widget -->
-      <a href="pages/synchub.html" class="widget-card wc-sync">
+      <a href="pages/synchub.html" class="widget-card wc-sync" data-id="sync" draggable="true">
         <div class="wc-header">
           <div class="wc-icon-wrap" style="background: rgba(99,102,241,0.12);"><span>📊</span></div>
-          <div>
+          <div style="flex: 1;">
             <h2 class="wc-title">Sync Hub</h2>
             <span class="wc-badge" id="syncSavedCount">0 states</span>
           </div>
+          <div class="wc-drag-handle" title="Drag to reorder">⋮⋮</div>
         </div>
         <div class="wc-body" id="syncHubTextData">
           <div class="wc-placeholder">Loading sync data...</div>
@@ -107,13 +111,14 @@
       </a>
 
       <!-- Productivity Widget -->
-      <a href="pages/productivity.html" class="widget-card wc-prod">
+      <a href="pages/productivity.html" class="widget-card wc-prod" data-id="prod" draggable="true">
         <div class="wc-header">
-          <div class="wc-icon-wrap" style="background: rgba(245,158,11,0.12);"><span>⚡</span></div>
-          <div>
+          <div class="wc-icon-wrap" style="background: rgba(251,191,36,0.12);"><span>⚡</span></div>
+          <div style="flex: 1;">
             <h2 class="wc-title">Productivity</h2>
-            <span class="wc-badge"><span id="prodActiveTasks">0</span> tasks · <span id="prodNotesCount">0</span> notes</span>
+            <span class="wc-badge"><span id="prodActiveTasks">0</span> tasks • <span id="prodNotesCount">0</span> notes</span>
           </div>
+          <div class="wc-drag-handle" title="Drag to reorder">⋮⋮</div>
         </div>
         <div class="wc-body">
           <div class="dash-task-container">
@@ -126,13 +131,14 @@
       </a>
 
       <!-- Timesheet Widget -->
-      <a href="pages/timesheet.html" class="widget-card wc-ts">
+      <a href="pages/timesheet.html" class="widget-card wc-ts" data-id="ts" draggable="true">
         <div class="wc-header">
-          <div class="wc-icon-wrap" style="background: rgba(34,197,94,0.12);"><span>📅</span></div>
-          <div>
+          <div class="wc-icon-wrap" style="background: rgba(74,222,128,0.12);"><span>📅</span></div>
+          <div style="flex: 1;">
             <h2 class="wc-title">Timesheet</h2>
-            <span class="wc-badge" id="tsRecordsCount">--</span>
+            <span class="wc-badge" id="tsRecordsCount">Loading...</span>
           </div>
+          <div class="wc-drag-handle" title="Drag to reorder">⋮⋮</div>
         </div>
 
         <!-- Today's In/Out + Next Holiday -->
@@ -156,13 +162,14 @@
       </a>
 
       <!-- Hydration Widget -->
-      <a href="pages/water.html" class="widget-card wc-water">
+      <a href="pages/water.html" class="widget-card wc-water" data-id="water" draggable="true">
         <div class="wc-header">
           <div class="wc-icon-wrap" style="background: rgba(14,165,233,0.12);"><span>💧</span></div>
-          <div>
+          <div style="flex: 1;">
             <h2 class="wc-title">Hydration</h2>
             <span class="wc-badge"><span id="waterIntakeVal">0</span> ml today</span>
           </div>
+          <div class="wc-drag-handle" title="Drag to reorder">⋮⋮</div>
         </div>
         <div class="wc-body" style="display: flex; align-items: center; justify-content: center;">
           <div class="water-widget-glass">
@@ -179,13 +186,14 @@
       </a>
 
       <!-- Quick-Launch Widget -->
-      <a href="pages/quicklaunch.html" class="widget-card wc-ql">
+      <a href="pages/quicklaunch.html" class="widget-card wc-ql" data-id="ql" draggable="true">
         <div class="wc-header">
           <div class="wc-icon-wrap" style="background: rgba(139,92,246,0.12);"><span>🚀</span></div>
-          <div>
+          <div style="flex: 1;">
             <h2 class="wc-title">Quick-Launch</h2>
             <span class="wc-badge"><span id="qlTotalLinks">0</span> links saved</span>
           </div>
+          <div class="wc-drag-handle" title="Drag to reorder">⋮⋮</div>
         </div>
         <div class="wc-body">
           <div id="qlWidgetLinks" style="display: flex; gap: 8px; flex-wrap: wrap;">
@@ -199,13 +207,14 @@
       </a>
 
       <!-- Focus Timer Widget -->
-      <div class="widget-card wc-pomo">
+      <div class="widget-card wc-pomo" data-id="pomo" draggable="true">
         <div class="wc-header">
           <div class="wc-icon-wrap" style="background: rgba(244,63,94,0.12);"><span>⏱️</span></div>
-          <div>
+          <div style="flex: 1;">
             <h2 class="wc-title">Focus Timer</h2>
             <span class="wc-badge" style="background: rgba(244,63,94,0.15); color: #f43f5e;"><span id="pomoSessionCount">0</span> sessions</span>
           </div>
+          <div class="wc-drag-handle" title="Drag to reorder">⋮⋮</div>
         </div>
         <div class="wc-body" style="display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 10px;">
           <div class="ph-pomodoro-display" style="font-size: 3rem; font-weight: 800; text-shadow: 0 2px 10px rgba(0,0,0,0.2); letter-spacing: -1px;">
@@ -224,18 +233,106 @@
       </div>
 
       <!-- Real-Time Activity Feed Widget -->
-      <div class="widget-card wc-activity">
+      <div class="widget-card wc-activity" data-id="activity" draggable="true">
         <div class="wc-header">
           <div class="wc-icon-wrap" style="background: rgba(244,114,182,0.12);"><span>⚡</span></div>
-          <div>
+          <div style="flex: 1;">
             <h2 class="wc-title">Real-Time Activity Feed</h2>
             <span class="wc-badge">Live system logs</span>
           </div>
+          <div class="wc-drag-handle" title="Drag to reorder">⋮⋮</div>
         </div>
         <div class="wc-body" style="max-height: 250px; overflow-y: auto;">
           <div id="activityFeedContent">
             <!-- Timeline populated via JS -->
             <div class="wc-placeholder">No recent activity logged.</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Active Learning Goal Widget -->
+      <a href="pages/goal.html" class="widget-card wc-goal" data-id="goal" draggable="true" style="overflow: hidden;">
+        <div class="wc-header">
+          <div class="wc-icon-wrap" style="background: rgba(236,72,153,0.12); color: #ec4899;"><span>🎯</span></div>
+          <div style="flex: 1;">
+            <h2 class="wc-title">Active Learning Goal</h2>
+            <span class="wc-badge" id="dashGoalTitle" style="color: #ec4899; background: rgba(236,72,153,0.1);">No active goal</span>
+          </div>
+          <div class="wc-drag-handle" title="Drag to reorder">⋮⋮</div>
+        </div>
+        <div class="wc-body" style="display: grid; grid-template-columns: 1fr 1.6fr; gap: 20px; padding-bottom: 5px; align-items: stretch;">
+          
+          <!-- Left: Circular Stats -->
+          <div style="display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; background: var(--bg3); padding: 15px; border-radius: var(--r-md); border: 1px solid var(--border);">
+            <div style="position: relative; width: 80px; height: 80px; margin-bottom: 12px;">
+              <svg viewBox="0 0 36 36" style="width: 100%; height: 100%; transform: rotate(-90deg); overflow: visible;">
+                <path style="fill: none; stroke: var(--bg); stroke-width: 3;" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+                <path id="dashGoalCircle" style="fill: none; stroke: url(#goalGrad); stroke-width: 3; stroke-dasharray: 0, 100; transition: stroke-dasharray 1s cubic-bezier(0.4, 0, 0.2, 1); stroke-linecap: round;" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+                <defs>
+                  <linearGradient id="goalGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+                    <stop offset="0%" stop-color="#ec4899" />
+                    <stop offset="100%" stop-color="#8b5cf6" />
+                  </linearGradient>
+                </defs>
+              </svg>
+              <div style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 1.3rem; color: var(--text-primary);" id="dashGoalPct">0%</div>
+            </div>
+            <span style="font-weight: 800; font-size: 1.1rem; color: var(--text-primary); margin-bottom: 4px;" id="dashGoalSkillName">Skill</span>
+            <span style="font-size: 0.75rem; color: var(--text-muted); font-weight: 600;" id="dashGoalNextUp">Next up: Welcome</span>
+          </div>
+          
+          <!-- Right: Flashcard Review -->
+          <div style="background: linear-gradient(145deg, rgba(139,92,246, 0.1), rgba(236,72,153, 0.05)); border: 1px solid rgba(139,92,246, 0.2); padding: 18px 20px; border-radius: var(--r-md); display: flex; flex-direction: column; justify-content: center; position: relative; box-shadow: 0 4px 15px rgba(0,0,0,0.05);">
+            <div style="position: absolute; top: 12px; right: 14px; font-size: 1.5rem; opacity: 0.2;">💡</div>
+            <div style="font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.8px; font-weight: 800; color: #8b5cf6; margin-bottom: 10px; display: flex; align-items: center; gap: 4px;"><span>🧠</span> Flashcard Review</div>
+            <div id="dashGoalFact" style="font-size: 0.95rem; color: var(--text); line-height: 1.6; font-style: italic; font-weight: 500;">
+              "Select or create a learning goal to see quick facts here."
+            </div>
+          </div>
+
+        </div>
+        <div class="wc-footer">
+          <span class="wc-link" style="color: #8b5cf6; font-weight: 600;">Resume Training <span>→</span></span>
+        </div>
+      </a>
+
+      <!-- Instant Scratchpad Widget -->
+      <div class="widget-card wc-scratchpad" data-id="scratchpad" draggable="true">
+        <div class="wc-header">
+          <div class="wc-icon-wrap" style="background: rgba(16,185,129,0.12); color: #10b981;"><span>📝</span></div>
+          <div style="flex: 1;">
+            <h2 class="wc-title">Instant Scratchpad</h2>
+            <span class="wc-badge" id="scratchpadStatus">Autosaves locally</span>
+          </div>
+          <div class="wc-drag-handle" title="Drag to reorder">⋮⋮</div>
+        </div>
+        <div class="wc-body" style="display: flex; flex-direction: column; flex: 1;">
+          <textarea id="dashScratchpad" placeholder="Jot down quick thoughts, JSON snippets, or ticket numbers here..." style="width: 100%; flex: 1; min-height: 150px; background: var(--bg3); border: 1px solid var(--border); border-radius: var(--r-md); padding: 12px; color: var(--text); font-family: var(--mono); font-size: 0.85rem; resize: none; outline: none; transition: border-color 0.2s;"></textarea>
+        </div>
+      </div>
+
+      <!-- Remote Team Clocks Widget -->
+      <div class="widget-card wc-clocks" data-id="clocks" draggable="true">
+        <div class="wc-header">
+          <div class="wc-icon-wrap" style="background: rgba(249,115,22,0.12); color: #f97316;"><span>🌍</span></div>
+          <div style="flex: 1;">
+            <h2 class="wc-title">World Clocks</h2>
+            <span class="wc-badge">Remote team sync</span>
+          </div>
+          <div class="wc-drag-handle" title="Drag to reorder">⋮⋮</div>
+        </div>
+        <div class="wc-body" style="display: flex; flex-direction: column; gap: 12px; justify-content: center; flex: 1;">
+          <div class="world-clock-item" style="display: flex; justify-content: space-between; align-items: center; padding: 10px; background: var(--bg); border: 1px solid var(--border); border-radius: var(--r-md);">
+            <div class="tz-label" style="font-weight: 600; font-size: 0.9rem; color: var(--text);">🇯🇵 Tokyo (JST)</div>
+            <div class="tz-time" id="tzTokyo" style="font-family: var(--mono); font-weight: 700; color: #f97316;">--:--</div>
+          </div>
+          <div class="world-clock-item" style="display: flex; justify-content: space-between; align-items: center; padding: 10px; background: var(--bg); border: 1px solid var(--border); border-radius: var(--r-md);">
+            <div class="tz-label" style="font-weight: 600; font-size: 0.9rem; color: var(--text);">🇬🇧 London (GMT)</div>
+            <div class="tz-time" id="tzLondon" style="font-family: var(--mono); font-weight: 700; color: #f97316;">--:--</div>
+          </div>
+          <div class="world-clock-item" style="display: flex; justify-content: space-between; align-items: center; padding: 10px; background: var(--bg); border: 1px solid var(--border); border-radius: var(--r-md);">
+            <div class="tz-label" style="font-weight: 600; font-size: 0.9rem; color: var(--text);">🇺🇸 New York (EST)</div>
+            <div class="tz-time" id="tzNY" style="font-family: var(--mono); font-weight: 700; color: #f97316;">--:--</div>
           </div>
         </div>
       </div>

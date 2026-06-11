@@ -7,6 +7,16 @@
 (function () {
   'use strict';
 
+  // ── Global Navbar Digital Clock ──────────────
+  function updateNavClock() {
+    const el = document.getElementById('navClock');
+    if (!el) return;
+    const now = new Date();
+    el.textContent = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  }
+  setInterval(updateNavClock, 1000);
+  window.addEventListener('DOMContentLoaded', updateNavClock);
+
   // ── Zoro Global Activity Logger & Interceptor ──
   window.ZoroActivity = {
     log: function(module, text, type = 'info') {

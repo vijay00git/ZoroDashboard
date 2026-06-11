@@ -407,6 +407,33 @@ input::placeholder { color: var(--muted); font-size: 0.8rem; }
   border-radius: var(--r-sm);
   overflow: hidden;
   background: var(--bg2);
+  transition: opacity 0.2s, transform 0.2s, border-color 0.2s;
+}
+.sp-group.dragging {
+  opacity: 0.5;
+  transform: scale(0.98);
+  border-color: var(--primary);
+}
+.sp-group.drag-over-top {
+  border-top: 2px solid var(--primary);
+}
+.sp-group.drag-over-bottom {
+  border-bottom: 2px solid var(--primary);
+}
+.drag-handle {
+  cursor: grab;
+  color: var(--muted);
+  font-size: 0.8rem;
+  padding: 0 4px;
+  user-select: none;
+  opacity: 0.5;
+  transition: opacity 0.2s;
+}
+.drag-handle:hover {
+  opacity: 1;
+}
+.drag-handle:active {
+  cursor: grabbing;
 }
 .sp-group-header {
   display: flex;
@@ -515,6 +542,7 @@ input::placeholder { color: var(--muted); font-size: 0.8rem; }
 }
 .sp-action-btn:hover { border-color: var(--primary); color: var(--primary); background: rgba(6,182,212,0.1); }
 .sp-action-btn.danger:hover { border-color: var(--error); color: var(--error); background: rgba(239,68,68,0.1); }
+.sp-action-btn.pinned { border-color: var(--warning); color: var(--warning); background: rgba(245,158,11,0.1); }
 
 /* Footer */
 .sp-footer {

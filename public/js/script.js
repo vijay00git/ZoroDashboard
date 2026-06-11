@@ -927,6 +927,32 @@ async function fetchSavedStates() {
         } catch(err) { log(`Error renaming: ${err.message}`, 'error'); renameBtn.textContent = '✏'; }
       });
 
+      const pinBtn = document.createElement('button');
+      const isPinned = localStorage.getItem('tr-sync-pinned') === m.id;
+      pinBtn.className = 'sp-action-btn' + (isPinned ? ' pinned' : '');
+      pinBtn.title = `Pin to Dashboard`;
+      pinBtn.textContent = isPinned ? '📌' : '📍';
+      pinBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const currentPinned = localStorage.getItem('tr-sync-pinned');
+        if (currentPinned === m.id) {
+          localStorage.removeItem('tr-sync-pinned');
+          pinBtn.classList.remove('pinned');
+          pinBtn.textContent = '📍';
+          log(`Unpinned "${m.name}" from Dashboard.`, 'info');
+        } else {
+          localStorage.setItem('tr-sync-pinned', m.id);
+          document.querySelectorAll('.sp-action-btn.pinned').forEach(b => {
+            b.classList.remove('pinned');
+            b.textContent = '📍';
+          });
+          pinBtn.classList.add('pinned');
+          pinBtn.textContent = '📌';
+          log(`Pinned "${m.name}" to Dashboard!`, 'success');
+        }
+        window.dispatchEvent(new Event('storage')); // trigger dashboard refresh if open
+      });
+
       const deleteBtn = document.createElement('button');
       deleteBtn.className = 'sp-action-btn danger';
       deleteBtn.title = `Delete "${m.name}"`;
@@ -949,6 +975,7 @@ async function fetchSavedStates() {
 
       actions.appendChild(syncBtn);
       actions.appendChild(renameBtn);
+      actions.appendChild(pinBtn);
       actions.appendChild(deleteBtn);
       item.appendChild(check);
       item.appendChild(name);
@@ -982,46 +1009,90 @@ async function fetchSavedStates() {
       const group = document.createElement('div');
       group.className = 'sp-group open';
 
+      group.setAttribute('draggable', 'true');
+      group.dataset.groupName = gName;
+
       const header = document.createElement('div');
       header.className = 'sp-group-header';
       header.innerHTML = `
-        <div class="sp-group-name"><span>📁</span>${gName}</div>
+        <div style="display:flex;align-items:center;gap:0.2rem;">
+          <div class="drag-handle" title="Drag to reorder">⋮⋮</div>
+          <div class="sp-group-name"><span>📁</span>${gName}</div>
+        </div>
         <div style="display:flex;align-items:center;gap:0.4rem;">
-          <div class="sp-group-reorder" style="display:flex; flex-direction:column; gap:1px; margin-right: 4px;">
-            <button class="sp-reorder-up" title="Move Up" style="background:none; border:none; color:var(--muted); font-size:0.6rem; cursor:pointer; padding:0; line-height:1;">▲</button>
-            <button class="sp-reorder-down" title="Move Down" style="background:none; border:none; color:var(--muted); font-size:0.6rem; cursor:pointer; padding:0; line-height:1;">▼</button>
-          </div>
           <span class="sp-group-count">${items.length}</span>
           <span class="sp-group-arrow">▶</span>
         </div>`;
       
       header.addEventListener('click', (e) => {
-        if (e.target.closest('.sp-reorder-up') || e.target.closest('.sp-reorder-down')) return;
+        if (e.target.closest('.drag-handle')) return;
         group.classList.toggle('open');
         group.classList.toggle('closed');
       });
 
-      const btnUp = header.querySelector('.sp-reorder-up');
-      const btnDown = header.querySelector('.sp-reorder-down');
+      // Drag and Drop implementation
+      group.addEventListener('dragstart', (e) => {
+        e.dataTransfer.setData('text/plain', gName);
+        e.dataTransfer.effectAllowed = 'move';
+        setTimeout(() => group.classList.add('dragging'), 0);
+      });
 
-      btnUp.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const idx = groupOrderArray.indexOf(gName);
-        if (idx > 0) {
-          [groupOrderArray[idx-1], groupOrderArray[idx]] = [groupOrderArray[idx], groupOrderArray[idx-1]];
-          localStorage.setItem('tr-group-order', JSON.stringify(groupOrderArray));
-          fetchSavedStates();
+      group.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        const rect = group.getBoundingClientRect();
+        const y = e.clientY - rect.top;
+        if (y < rect.height / 2) {
+          group.classList.add('drag-over-top');
+          group.classList.remove('drag-over-bottom');
+        } else {
+          group.classList.add('drag-over-bottom');
+          group.classList.remove('drag-over-top');
         }
       });
 
-      btnDown.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const idx = groupOrderArray.indexOf(gName);
-        if (idx < groupOrderArray.length - 1) {
-          [groupOrderArray[idx], groupOrderArray[idx+1]] = [groupOrderArray[idx+1], groupOrderArray[idx]];
-          localStorage.setItem('tr-group-order', JSON.stringify(groupOrderArray));
-          fetchSavedStates();
+      group.addEventListener('dragleave', () => {
+        group.classList.remove('drag-over-top', 'drag-over-bottom');
+      });
+
+      group.addEventListener('drop', (e) => {
+        e.preventDefault();
+        group.classList.remove('drag-over-top', 'drag-over-bottom');
+        const draggedGroupName = e.dataTransfer.getData('text/plain');
+        if (draggedGroupName && draggedGroupName !== gName) {
+          const draggedIdx = groupOrderArray.indexOf(draggedGroupName);
+          let targetIdx = groupOrderArray.indexOf(gName);
+          
+          if (draggedIdx > -1 && targetIdx > -1) {
+            // Determine if dropping above or below
+            const rect = group.getBoundingClientRect();
+            const y = e.clientY - rect.top;
+            
+            // Remove dragged item
+            groupOrderArray.splice(draggedIdx, 1);
+            
+            // Recalculate target index after removal
+            targetIdx = groupOrderArray.indexOf(gName);
+            
+            if (y < rect.height / 2) {
+              // Insert before
+              groupOrderArray.splice(targetIdx, 0, draggedGroupName);
+            } else {
+              // Insert after
+              groupOrderArray.splice(targetIdx + 1, 0, draggedGroupName);
+            }
+            
+            localStorage.setItem('tr-group-order', JSON.stringify(groupOrderArray));
+            fetchSavedStates();
+          }
         }
+      });
+
+      group.addEventListener('dragend', () => {
+        group.classList.remove('dragging');
+        document.querySelectorAll('.sp-group').forEach(g => {
+          g.classList.remove('drag-over-top', 'drag-over-bottom');
+        });
       });
 
       const itemsContainer = document.createElement('div');

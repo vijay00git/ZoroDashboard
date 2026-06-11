@@ -3,6 +3,10 @@ const cors = require('cors');
 const fs = require('fs');
 const path = require('path');
 const ical = require('node-ical');
+const multer = require('multer');
+const AdmZip = require('adm-zip');
+
+const upload = multer({ dest: path.join(__dirname, 'uploads') });
 
 const app = express();
 const PORT = 3000;
@@ -632,6 +636,52 @@ app.get('/api/calendar/:year/:month', async (req, res) => {
     } catch (e) {
         console.error("Calendar API error:", e);
         res.status(500).json({ error: e.message });
+    }
+});
+
+// ════════════════════════════════════════════
+// SETTINGS / BACKUP ENDPOINTS
+// ════════════════════════════════════════════
+
+app.get('/api/backup', (req, res) => {
+    try {
+        const zip = new AdmZip();
+        const dataPath = path.join(__dirname, 'data');
+        if (fs.existsSync(dataPath)) {
+            zip.addLocalFolder(dataPath, 'data');
+        }
+        
+        const zipBuffer = zip.toBuffer();
+        res.setHeader('Content-Type', 'application/zip');
+        res.setHeader('Content-Disposition', 'attachment; filename="zoro_dashboard_backup.zip"');
+        res.send(zipBuffer);
+    } catch (e) {
+        console.error("Backup generation failed:", e);
+        res.status(500).json({ error: 'Failed to generate backup' });
+    }
+});
+
+app.post('/api/restore', upload.single('backup'), (req, res) => {
+    if (!req.file) {
+        return res.status(400).json({ error: 'No backup file uploaded' });
+    }
+    
+    try {
+        const zip = new AdmZip(req.file.path);
+        const extractPath = __dirname;
+        
+        // Extract the zip to the root (since we backed up 'data' folder inside)
+        // Overwrite existing files
+        zip.extractAllTo(extractPath, true);
+        
+        // Cleanup uploaded file
+        fs.unlinkSync(req.file.path);
+        
+        res.status(200).json({ success: true, message: 'Backup restored successfully' });
+    } catch (e) {
+        console.error("Backup restoration failed:", e);
+        if (fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
+        res.status(500).json({ error: 'Failed to restore backup' });
     }
 });
 

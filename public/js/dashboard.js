@@ -11,6 +11,8 @@ document.addEventListener('DOMContentLoaded', () => {
     loadMetrics();
     renderActivityFeed();
   });
+
+  initExtraWidgets();
 });
 
 function setGreeting() {
@@ -127,7 +129,17 @@ async function loadSyncHubMetrics() {
       if (matrices.length === 0) return;
 
       matrices.sort((a, b) => (b.mtime || 0) - (a.mtime || 0));
-      const latest = matrices[0];
+      let latest = matrices[0];
+      let isPinned = false;
+
+      const pinnedStateId = localStorage.getItem('tr-sync-pinned');
+      if (pinnedStateId) {
+        const pinned = matrices.find(m => m.id === pinnedStateId);
+        if (pinned) {
+          latest = pinned;
+          isPinned = true;
+        }
+      }
 
       const counts = latest.statusCounts || { PASSED: 0, FAILED: 0, UNTESTED: 0 };
       
@@ -139,7 +151,7 @@ async function loadSyncHubMetrics() {
       const textContainer = document.getElementById('syncHubTextData');
       if (textContainer) {
         textContainer.innerHTML = `
-          <div style="font-size: 0.78rem; color: var(--text-muted); margin-bottom: 6px;">Latest: <strong style="color:var(--text-primary);">${latest.name}</strong></div>
+          <div style="font-size: 0.78rem; color: var(--text-muted); margin-bottom: 6px;">${isPinned ? '📌 Pinned:' : 'Latest:'} <strong style="color:var(--text-primary);">${latest.name}</strong></div>
           
           <div style="display: flex; gap: 8px; margin-bottom: 10px;">
             <div style="flex: 1; text-align: center; padding: 10px 6px; background: rgba(34,197,94,0.08); border-radius: 8px; border: 1px solid rgba(34,197,94,0.15);">
@@ -609,5 +621,217 @@ function renderActivityFeed() {
 
 function escapeHTML(str) {
   return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+// ══════════ EXTRA DASHBOARD WIDGETS ══════════
+function initExtraWidgets() {
+  // --- SCRATCHPAD LOGIC ---
+  const dashScratchpad = document.getElementById('dashScratchpad');
+  const scratchpadStatus = document.getElementById('scratchpadStatus');
+  if (dashScratchpad) {
+    const saved = localStorage.getItem('tr-dash-scratchpad');
+    if (saved) dashScratchpad.value = saved;
+    
+    dashScratchpad.addEventListener('input', () => {
+      localStorage.setItem('tr-dash-scratchpad', dashScratchpad.value);
+      if (scratchpadStatus) {
+        scratchpadStatus.textContent = 'Saved!';
+        scratchpadStatus.style.background = 'rgba(16,185,129,0.15)';
+        scratchpadStatus.style.color = '#10b981';
+        clearTimeout(dashScratchpad.saveTimeout);
+        dashScratchpad.saveTimeout = setTimeout(() => {
+          scratchpadStatus.textContent = 'Autosaves locally';
+          scratchpadStatus.style.background = '';
+          scratchpadStatus.style.color = '';
+        }, 2000);
+      }
+    });
+  }
+
+  // --- WORLD CLOCKS LOGIC ---
+  function updateWorldClocks() {
+    const tzTokyo = document.getElementById('tzTokyo');
+    const tzLondon = document.getElementById('tzLondon');
+    const tzNY = document.getElementById('tzNY');
+    
+    if (!tzTokyo || !tzLondon || !tzNY) return;
+    
+    const now = new Date();
+    tzTokyo.textContent = now.toLocaleTimeString('en-US', { timeZone: 'Asia/Tokyo', hour: '2-digit', minute: '2-digit' });
+    tzLondon.textContent = now.toLocaleTimeString('en-US', { timeZone: 'Europe/London', hour: '2-digit', minute: '2-digit' });
+    tzNY.textContent = now.toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour: '2-digit', minute: '2-digit' });
+  }
+  
+  updateWorldClocks();
+  setInterval(updateWorldClocks, 60000); // update every minute
+
+  // --- GOAL WIDGET LOGIC ---
+  function loadGoalWidget() {
+    const library = JSON.parse(localStorage.getItem('tr-goals-library')) || [];
+    const currentId = localStorage.getItem('tr-goals-current-id');
+    const goalTitle = document.getElementById('dashGoalTitle');
+    const goalSkillName = document.getElementById('dashGoalSkillName');
+    const goalPctDisplay = document.getElementById('dashGoalPct');
+    const goalFact = document.getElementById('dashGoalFact');
+    const circle = document.getElementById('dashGoalCircle');
+    const nextUp = document.getElementById('dashGoalNextUp');
+    
+    if (!library.length || !currentId) return;
+    
+    const activeGoal = library.find(g => g.id === currentId);
+    if (!activeGoal) return;
+    
+    // Count completed flat topics
+    let completed = 0;
+    let total = 0;
+    activeGoal.roadmap.forEach(m => {
+      const subs = m.subtopics || [];
+      total += subs.length;
+      completed += subs.filter(t => t.completed).length;
+    });
+    
+    const pct = total > 0 ? Math.round((completed / total) * 100) : 0;
+    
+    if (goalTitle) goalTitle.textContent = `${completed}/${total} Modules`;
+    if (goalSkillName) goalSkillName.textContent = activeGoal.skillName;
+    if (goalPctDisplay) goalPctDisplay.textContent = `${pct}%`;
+    
+    // Set circular progress (stroke-dasharray)
+    if (circle) circle.style.strokeDasharray = `${pct}, 100`;
+    
+    // Set Next Up
+    if (nextUp) {
+      let foundNext = false;
+      for (const m of activeGoal.roadmap) {
+        const nTopic = (m.subtopics || []).find(t => !t.completed);
+        if (nTopic) {
+          nextUp.textContent = `Next: ${nTopic.title.substring(0, 20)}${nTopic.title.length > 20 ? '...' : ''}`;
+          foundNext = true;
+          break;
+        }
+      }
+      if (!foundNext) nextUp.textContent = `Goal Mastered! 🏆`;
+    }
+    
+    if (goalFact) {
+      // Find all topics with content
+      let savedTopics = [];
+      activeGoal.roadmap.forEach(m => {
+        savedTopics = savedTopics.concat((m.subtopics || []).filter(t => t.lessonContent));
+      });
+      
+      if (savedTopics.length > 0) {
+        const randomTopic = savedTopics[Math.floor(Math.random() * savedTopics.length)];
+        
+        // Clean markdown and extract a single complete sentence
+        const cleanText = randomTopic.lessonContent.replace(/[*_`#\n]/g, ' ').replace(/\s+/g, ' ');
+        const sentences = cleanText.split(/[.!?]+/).map(s => s.trim()).filter(s => s.length > 40 && s.length < 150);
+        
+        const snippet = sentences.length > 0 
+          ? sentences[Math.floor(Math.random() * Math.min(sentences.length, 5))] + "."
+          : "Keep practicing what you've learned to build mastery.";
+          
+        goalFact.innerHTML = `<strong>${randomTopic.title}</strong>: <span style="opacity: 0.9;">"${snippet}"</span>`;
+      } else {
+        goalFact.innerHTML = `<span style="opacity: 0.9;">"Click 'Resume Training' to generate your first lesson and unlock AI flashcards!"</span>`;
+      }
+    }
+  }
+  loadGoalWidget();
+
+  // --- DRAG AND DROP WIDGET REORDERING ---
+  const grid = document.getElementById('widgetsGrid');
+  if (grid) {
+    const cards = Array.from(grid.querySelectorAll('.widget-card'));
+    
+    // 1. Load saved order
+    const savedOrder = JSON.parse(localStorage.getItem('tr-dash-widget-order') || 'null');
+    if (savedOrder && Array.isArray(savedOrder)) {
+      savedOrder.forEach(id => {
+        const card = cards.find(c => c.dataset.id === id);
+        if (card) grid.appendChild(card); // Append to end effectively sorts them correctly
+      });
+    }
+
+    // 2. Drag & Drop logic
+    let draggedEl = null;
+
+    // Only allow drag when using the handle
+    grid.addEventListener('mousedown', (e) => {
+      const handle = e.target.closest('.wc-drag-handle');
+      if (handle) {
+        const card = handle.closest('.widget-card');
+        if (card) card.setAttribute('draggable', 'true');
+      }
+    });
+    grid.addEventListener('mouseup', (e) => {
+      const handle = e.target.closest('.wc-drag-handle');
+      if (handle) {
+        const card = handle.closest('.widget-card');
+        if (card) card.removeAttribute('draggable');
+      }
+    });
+
+    grid.addEventListener('dragstart', (e) => {
+      const card = e.target.closest('.widget-card');
+      if (!card || !card.hasAttribute('draggable')) {
+        e.preventDefault();
+        return;
+      }
+      draggedEl = card;
+      setTimeout(() => card.classList.add('dragging'), 0);
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', card.dataset.id);
+    });
+
+    grid.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      const targetCard = e.target.closest('.widget-card');
+      if (targetCard && targetCard !== draggedEl) {
+        // Clear others
+        grid.querySelectorAll('.drag-over').forEach(c => c.classList.remove('drag-over'));
+        targetCard.classList.add('drag-over');
+      }
+    });
+
+    grid.addEventListener('dragleave', (e) => {
+      const targetCard = e.target.closest('.widget-card');
+      if (targetCard && !targetCard.contains(e.relatedTarget)) {
+        targetCard.classList.remove('drag-over');
+      }
+    });
+
+    grid.addEventListener('drop', (e) => {
+      e.preventDefault();
+      const targetCard = e.target.closest('.widget-card');
+      if (targetCard) targetCard.classList.remove('drag-over');
+      
+      if (targetCard && draggedEl && targetCard !== draggedEl) {
+        const allCards = Array.from(grid.querySelectorAll('.widget-card'));
+        const draggedIndex = allCards.indexOf(draggedEl);
+        const targetIndex = allCards.indexOf(targetCard);
+        
+        if (draggedIndex < targetIndex) {
+          grid.insertBefore(draggedEl, targetCard.nextSibling);
+        } else {
+          grid.insertBefore(draggedEl, targetCard);
+        }
+        
+        // Save new order
+        const newOrder = Array.from(grid.querySelectorAll('.widget-card')).map(c => c.dataset.id);
+        localStorage.setItem('tr-dash-widget-order', JSON.stringify(newOrder));
+      }
+    });
+
+    grid.addEventListener('dragend', (e) => {
+      if (draggedEl) {
+        draggedEl.classList.remove('dragging');
+        draggedEl.removeAttribute('draggable');
+      }
+      grid.querySelectorAll('.widget-card').forEach(c => c.classList.remove('drag-over'));
+      draggedEl = null;
+    });
+  }
 }
 
