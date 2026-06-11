@@ -7,6 +7,94 @@
 (function () {
   'use strict';
 
+  // ── Zoro Global Activity Logger & Interceptor ──
+  window.ZoroActivity = {
+    log: function(module, text, type = 'info') {
+      try {
+        const logs = JSON.parse(localStorage.getItem('zoro-activity-log') || '[]');
+        logs.push({
+          time: new Date().toISOString(),
+          module: module,
+          text: text,
+          type: type
+        });
+        localStorage.setItem('zoro-activity-log', JSON.stringify(logs.slice(-50)));
+        window.dispatchEvent(new CustomEvent('zoro-activity-updated'));
+      } catch(e) { console.error(e); }
+    },
+    get: function() {
+      try { return JSON.parse(localStorage.getItem('zoro-activity-log') || '[]'); } catch(e) { return []; }
+    }
+  };
+
+  // Intercept localStorage.setItem to auto-log changes
+  const originalSetItem = localStorage.setItem;
+  localStorage.setItem = function(key, value) {
+    originalSetItem.apply(this, arguments);
+    try {
+      if (key === 'tr-water-intake-ml') {
+        const goal = localStorage.getItem('tr-water-goal') || '2000';
+        window.ZoroActivity.log('water', `Logged water intake: ${value}ml / ${goal}ml`, 'success');
+      }
+      else if (key === 'tr-run-tasks') {
+        const tasks = JSON.parse(value || '[]');
+        const prevTasks = window._prevTasks || [];
+        if (tasks.length > prevTasks.length) {
+          const added = tasks.find(t => !prevTasks.find(pt => pt.id === t.id));
+          if (added) {
+            window.ZoroActivity.log('productivity', `Added Task: "${added.text}"`, 'info');
+          }
+        } else if (tasks.length === prevTasks.length) {
+          tasks.forEach(t => {
+            const prev = prevTasks.find(pt => pt.id === t.id);
+            if (prev && !prev.completed && t.completed) {
+              window.ZoroActivity.log('productivity', `Completed Task: "${t.text}" 🎉`, 'success');
+            }
+          });
+        }
+        window._prevTasks = tasks;
+      }
+      else if (key === 'tr-theme') {
+        window.ZoroActivity.log('productivity', `Switched theme: ${value}`, 'info');
+      }
+      else if (key.startsWith('ts-data-')) {
+        const data = JSON.parse(value || '{}');
+        const prevData = window._prevTsData ? window._prevTsData[key] : null;
+        if (data.rows && prevData && prevData.rows) {
+          const todayObj = new Date();
+          const todayStr = `${String(todayObj.getDate()).padStart(2, '0')}-${String(todayObj.getMonth() + 1).padStart(2, '0')}-${todayObj.getFullYear()}`;
+          const todayRow = data.rows.find(r => r.date === todayStr);
+          const prevRow = prevData.rows.find(r => r.date === todayStr);
+          if (todayRow && prevRow) {
+            if (todayRow.inTime !== prevRow.inTime && todayRow.inTime) {
+              window.ZoroActivity.log('timesheet', `Check-in logged today at ${todayRow.inTime}`, 'info');
+            }
+            if (todayRow.outTime !== prevRow.outTime && todayRow.outTime) {
+              window.ZoroActivity.log('timesheet', `Check-out logged today at ${todayRow.outTime}`, 'success');
+            }
+            if (todayRow.type !== prevRow.type) {
+              window.ZoroActivity.log('timesheet', `Status updated today to ${todayRow.type}`, 'info');
+            }
+          }
+        }
+        if (!window._prevTsData) window._prevTsData = {};
+        window._prevTsData[key] = data;
+      }
+    } catch(e) {}
+  };
+
+  // Cache initial values on load
+  try {
+    window._prevTasks = JSON.parse(localStorage.getItem('tr-run-tasks') || '[]');
+    window._prevTsData = {};
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && k.startsWith('ts-data-')) {
+        window._prevTsData[k] = JSON.parse(localStorage.getItem(k) || '{}');
+      }
+    }
+  } catch(e) {}
+
   // Top-level variable so all functions share the same reference
   let fab = null;
 
@@ -70,7 +158,7 @@
     const systemPrompt = `You are ZORO's AI Assistant embedded in a local productivity dashboard called "ZORO's Dashboard". 
 The user is currently on the ${pageCtx.name} page (${pageCtx.emoji}).
 ${extraContext ? 'Page context: ' + extraContext : ''}
-Be helpful, concise, and friendly. Use markdown for formatting when helpful. Keep responses short unless detail is requested.`;
+Be helpful, concise, and friendly. Use markdown for formatting when helpful. ${extraContext && extraContext.includes('Daily Status') ? 'Generate the complete standup report as requested without truncating or shortening.' : 'Keep responses short unless detail is requested.'}`;
 
     const res = await fetch('/api/ai/chat', {
       method: 'POST',
@@ -108,13 +196,144 @@ Be helpful, concise, and friendly. Use markdown for formatting when helpful. Kee
 
   // ── Simple markdown → HTML ────────────────────
   function mdToHtml(text) {
+    const esc = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+    const lines = esc.split('\n');
+    let html = [];
+    let inList = false;
+    let inTable = false;
+    let tableRows = [];
+    let inCode = false;
+    let inBlockquote = false;
+    let inParagraph = false;
+
+    function closeList() {
+      if (inList) { html.push('</ul>'); inList = false; }
+    }
+    function closeTable() {
+      if (inTable) {
+        html.push('<table><thead>', tableRows[0], '</thead><tbody>');
+        const bodyRows = tableRows.slice(1).map(r => `<tr>${r}</tr>`).join('');
+        html.push(bodyRows, '</tbody></table>');
+        inTable = false;
+        tableRows = [];
+      }
+    }
+    function closeBlockquote() {
+      if (inBlockquote) { html.push('</blockquote>'); inBlockquote = false; }
+    }
+    function closeParagraph() {
+      if (inParagraph) { html.push('</p>'); inParagraph = false; }
+    }
+
+    for (let i = 0; i < lines.length; i++) {
+      const raw = lines[i];
+      const line = raw.trimEnd();
+
+      if (inCode || line.startsWith('```')) {
+        if (!inCode) {
+          closeParagraph(); closeList(); closeTable(); closeBlockquote();
+          inCode = true;
+          const lang = line.replace(/^```(\w+)?/, '').trim();
+          html.push(`<pre><code class="language-${lang}" data-lang="${lang}">`);
+          continue;
+        } else if (line === '```') {
+          html.push('</code></pre>');
+          inCode = false;
+          continue;
+        } else {
+          html.push(line);
+          continue;
+        }
+      }
+
+      if (inTable !== /^\|?\s*[-:]+(?:\s*\|[-:|\s]+){1,}\s*\|?\s*$/.test(line) && /^\|.+\|$/.test(line)) {
+        if (!inTable) {
+          if (/^\|/.test(line)) {
+            closeParagraph(); closeList(); closeBlockquote();
+            inTable = true;
+            tableRows = [];
+            continue;
+          }
+        }
+      }
+
+      if (inTable) {
+        if (/^\|/.test(line)) {
+          const cells = line.split('|').filter((c, idx, arr) => idx !== 0 && idx !== arr.length - 1 || arr.length <= 2 ? idx !== 0 : false);
+          const cleaned = line.replace(/^\|/, '').replace(/\|$/, '').split('|').map(c => `<td>${c.trim()}</td>`).join('');
+          tableRows.push(cleaned);
+          continue;
+        } else {
+          closeTable();
+        }
+      }
+
+      const headingMatch = line.match(/^(#{1,6})\s+(.+)/);
+      if (headingMatch) {
+        closeParagraph(); closeList(); closeTable(); closeBlockquote();
+        const level = headingMatch[1].length;
+        const content = formatInline(headingMatch[2]);
+        html.push(`<h${level}>${content}</h${level}>`);
+        continue;
+      }
+
+      const blockquoteMatch = line.match(/^>\s?(.*)/);
+      if (blockquoteMatch) {
+        if (!inBlockquote) {
+          closeParagraph(); closeList(); closeTable();
+          html.push('<blockquote>');
+          inBlockquote = true;
+        }
+        html.push(`<p>${formatInline(blockquoteMatch[1])}</p>`);
+        continue;
+      } else if (inBlockquote) {
+        closeBlockquote();
+      }
+
+      if (/^\s*$/.test(line)) {
+        closeParagraph(); closeList(); closeTable(); closeBlockquote();
+        continue;
+      }
+
+      const ulMatch = line.match(/^[-*+]\s+(.+)/);
+      if (ulMatch) {
+        closeParagraph(); closeTable(); closeBlockquote();
+        if (!inList) { html.push('<ul>'); inList = true; }
+        html.push(`<li>${formatInline(ulMatch[1])}</li>`);
+        continue;
+      }
+
+      const olMatch = line.match(/^\d+\.\s+(.+)/);
+      if (olMatch) {
+        closeParagraph(); closeTable(); closeBlockquote();
+        if (!inList) { html.push('<ol>'); inList = true; }
+        html.push(`<li>${formatInline(olMatch[1])}</li>`);
+        continue;
+      }
+
+      if (inList) { html.push('</ul>'); inList = false; }
+
+      html.push(`<p>${formatInline(line)}</p>`);
+      inParagraph = true;
+    }
+
+    closeParagraph();
+    closeList();
+    closeTable();
+    closeBlockquote();
+    if (inCode) html.push('</code></pre>');
+
+    return html.join('\n');
+  }
+
+  function formatInline(text) {
     return text
-      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
       .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+      .replace(/\*(.+?)\*/g, '<em>$1</em>')
       .replace(/`([^`]+)`/g, '<code>$1</code>')
-      .replace(/\n\n/g, '</p><p>')
-      .replace(/\n/g, '<br>')
-      .replace(/^/, '<p>').replace(/$/, '</p>');
+      .replace(/!\[(.*?)\]\((.*?)\)/g, '<img alt="$1" src="$2" />')
+      .replace(/\[(.*?)\]\((.*?)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
   }
 
   // ── Build DOM ─────────────────────────────────
@@ -196,8 +415,56 @@ Be helpful, concise, and friendly. Use markdown for formatting when helpful. Kee
     `;
     document.body.appendChild(panel);
 
+    // Zoro Quick Action Menu + Toggle Button
+    const qaToggle = document.createElement('button');
+    qaToggle.id = 'zoro-qa-toggle';
+    qaToggle.title = 'Quick Actions & Themes';
+    qaToggle.innerHTML = '⚡';
+    document.body.appendChild(qaToggle);
+
+    const qaMenu = document.createElement('div');
+    qaMenu.id = 'zoro-quick-menu';
+    qaMenu.innerHTML = `
+      <button class="zoro-qa-btn" id="qa-btn-water" data-tooltip="💧 Log 250ml Water" style="background: rgba(14,165,233,0.12); color:#38bdf8;">💧</button>
+      <button class="zoro-qa-btn" id="qa-btn-punch" data-tooltip="🕒 Check-in / Out" style="background: rgba(34,197,94,0.12); color:#4ade80;">🕒</button>
+      <button class="zoro-qa-btn" id="qa-btn-task" data-tooltip="⚡ Quick Task" style="background: rgba(245,158,11,0.12); color:#fbbf24;">⚡</button>
+      <button class="zoro-qa-btn" id="qa-btn-theme" data-tooltip="🎨 Choose Theme" style="background: rgba(168,85,247,0.12); color:#c084fc;">🎨</button>
+    `;
+    document.body.appendChild(qaMenu);
+
+    // Theme selector popup menu
+    const themeMenu = document.createElement('div');
+    themeMenu.id = 'zoro-theme-menu';
+    themeMenu.innerHTML = `
+      <div class="zoro-theme-item" data-theme="dark">
+        <div class="zoro-theme-dot" style="background: #161b22; border: 1px solid rgba(255,255,255,0.2);"></div> Default Dark
+      </div>
+      <div class="zoro-theme-item" data-theme="light">
+        <div class="zoro-theme-dot" style="background: #ffffff; border: 1px solid rgba(0,0,0,0.2);"></div> Default Light
+      </div>
+      <div class="zoro-theme-item" data-theme="cyberpunk">
+        <div class="zoro-theme-dot" style="background: linear-gradient(135deg, #ec4899, #8b5cf6);"></div> Cyberpunk Neon
+      </div>
+      <div class="zoro-theme-item" data-theme="emerald">
+        <div class="zoro-theme-dot" style="background: linear-gradient(135deg, #10b981, #059669);"></div> Emerald Forest
+      </div>
+      <div class="zoro-theme-item" data-theme="sunset">
+        <div class="zoro-theme-dot" style="background: linear-gradient(135deg, #f97316, #ea580c);"></div> Sunset Flare
+      </div>
+      <div class="zoro-theme-item" data-theme="glass-violet">
+        <div class="zoro-theme-dot" style="background: linear-gradient(135deg, #c084fc, rgba(25,20,45,0.4)); font-weight: bold; border: 1px solid rgba(255,255,255,0.25);"></div> Glassmorphism
+      </div>
+    `;
+    document.body.appendChild(themeMenu);
+
+    // Toast Container
+    const toastContainer = document.createElement('div');
+    toastContainer.id = 'zoro-global-toast-container';
+    document.body.appendChild(toastContainer);
+
     wireEvents(panel);
     restoreHistory();
+    wireQuickActions();
   }
 
   function buildSetupHTML() {
@@ -483,11 +750,230 @@ Be helpful, concise, and friendly. Use markdown for formatting when helpful. Kee
     history.forEach(h => appendMsg(panel, h.role, h.text));
   }
 
+  // ── Quick Action helper functions ──
+  function showGlobalToast(msg, type = 'info') {
+    let container = document.getElementById('zoro-global-toast-container');
+    if (!container) {
+      container = document.createElement('div');
+      container.id = 'zoro-global-toast-container';
+      document.body.appendChild(container);
+    }
+    const toast = document.createElement('div');
+    toast.className = `zoro-toast ${type}`;
+    
+    const emojiMap = { success: '✅', error: '❌', warning: '⚠️', info: 'ℹ️' };
+    const emoji = emojiMap[type] || 'ℹ️';
+    
+    toast.innerHTML = `<span style="font-size: 15px;">${emoji}</span> <span>${msg}</span>`;
+    container.appendChild(toast);
+    
+    setTimeout(() => toast.classList.add('show'), 50);
+    
+    setTimeout(() => {
+      toast.classList.remove('show');
+      toast.addEventListener('transitionend', () => toast.remove());
+    }, 3500);
+  }
+
+  function quickAddWater() {
+    let currentIntake = parseInt(localStorage.getItem('tr-water-intake-ml')) || 0;
+    const goal = parseInt(localStorage.getItem('tr-water-goal')) || 2000;
+    const now = new Date();
+    const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    
+    const lastDate = localStorage.getItem('tr-water-date');
+    const today = now.toDateString();
+    let logHistory = [];
+    if (lastDate === today) {
+      try { logHistory = JSON.parse(localStorage.getItem('tr-water-log') || '[]'); } catch(e) {}
+    } else {
+      currentIntake = 0;
+    }
+    
+    currentIntake += 250;
+    logHistory.unshift({ time: timeStr, amount: 250 });
+    
+    localStorage.setItem('tr-water-intake-ml', currentIntake);
+    localStorage.setItem('tr-water-log', JSON.stringify(logHistory));
+    localStorage.setItem('tr-water-date', today);
+    
+    showGlobalToast(`💧 Added 250ml! Total: ${currentIntake}ml`, 'success');
+    window.dispatchEvent(new Event('storage'));
+    window.dispatchEvent(new CustomEvent('zoro-water-updated'));
+  }
+
+  function quickPunchInOut() {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const dayStr = `${String(now.getDate()).padStart(2, '0')}-${month}-${year}`;
+    const monthKey = `ts-data-${year}-${month}`;
+    
+    let data;
+    try {
+      data = JSON.parse(localStorage.getItem(monthKey)) || null;
+    } catch(e) {}
+    
+    if (!data) {
+      showGlobalToast("Please initialize your Timesheet for this month first!", "warning");
+      return;
+    }
+    
+    const rowIdx = data.rows.findIndex(r => r.date === dayStr);
+    if (rowIdx === -1) {
+      showGlobalToast("Day not found in Timesheet!", "error");
+      return;
+    }
+    
+    const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true });
+    const row = data.rows[rowIdx];
+    let punchType = '';
+    
+    if (!row.inTime) {
+      row.inTime = timeStr;
+      row.type = 'Office';
+      punchType = 'Check-in';
+    } else if (!row.outTime) {
+      row.outTime = timeStr;
+      punchType = 'Check-out';
+    } else {
+      showGlobalToast("Already clocked in and out today!", "warning");
+      return;
+    }
+    
+    localStorage.setItem(monthKey, JSON.stringify(data));
+    
+    const safeEmp = data.empName ? data.empName.replace(/ /g, '_') : 'Unknown_Emp';
+    const filename = `${safeEmp}_${year}-${month}_Timesheet.csv`;
+    
+    function getCSV(d) {
+      let csv = [];
+      csv.push(`Month/Year,${year}-${month},Employee ID,${d.empId},Employee Name,${d.empName},Organization,${d.org}`);
+      csv.push(''); 
+      csv.push('Day of the month,Day,WFH / Office/ Leave,Check-in time,Check-out time,Extra Working hours,Project Hrs (Elotouch),Meeting Hrs,Total hours');
+      d.rows.forEach(r => {
+        csv.push(`${r.date},${r.day},${r.type},${r.inTime},${r.outTime},${r.extra},${r.proj},${r.meet},${r.total}`);
+      });
+      return csv.join('\n');
+    }
+    
+    const csvData = getCSV(data);
+    fetch('http://localhost:3000/api/timesheet', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ filename, csvData })
+    }).catch(e => console.error("Error saving timesheet to server:", e));
+    
+    showGlobalToast(`🕒 Punch recorded: ${punchType} at ${timeStr}`, 'success');
+    window.dispatchEvent(new Event('storage'));
+    window.dispatchEvent(new CustomEvent('zoro-timesheet-updated'));
+  }
+
+  function quickAddTask() {
+    const taskText = prompt("Enter task title:");
+    if (taskText && taskText.trim()) {
+      const tasks = JSON.parse(localStorage.getItem('tr-run-tasks') || '[]');
+      tasks.push({
+        id: Date.now().toString(),
+        text: taskText.trim(),
+        completed: false,
+        deadline: null,
+        priority: 'none',
+        subtasks: []
+      });
+      localStorage.setItem('tr-run-tasks', JSON.stringify(tasks));
+      showGlobalToast(`⚡ Task added: "${taskText.trim()}"`, 'success');
+      window.dispatchEvent(new Event('storage'));
+      window.dispatchEvent(new CustomEvent('zoro-tasks-updated'));
+    }
+  }
+
+  function changeTheme(themeKey) {
+    document.documentElement.setAttribute('data-theme', themeKey);
+    localStorage.setItem('tr-theme', themeKey);
+    
+    const btn = document.getElementById('btnThemeToggle');
+    if (btn) {
+      if (themeKey === 'light') btn.textContent = '☀️';
+      else if (themeKey === 'dark') btn.textContent = '🌙';
+      else btn.textContent = '🎨';
+    }
+    
+    showGlobalToast(`🎨 Theme changed: ${themeKey}`, 'info');
+    window.dispatchEvent(new Event('storage'));
+  }
+
+  function wireQuickActions() {
+    const toggleBtn = document.getElementById('zoro-qa-toggle');
+    const quickMenu = document.getElementById('zoro-quick-menu');
+    const themeMenu = document.getElementById('zoro-theme-menu');
+
+    if (toggleBtn && quickMenu) {
+      toggleBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        quickMenu.classList.toggle('open');
+        if (themeMenu) themeMenu.classList.remove('open');
+      });
+      
+      document.addEventListener('click', () => {
+        quickMenu.classList.remove('open');
+        if (themeMenu) themeMenu.classList.remove('open');
+      });
+    }
+
+    const btnWater = document.getElementById('qa-btn-water');
+    const btnPunch = document.getElementById('qa-btn-punch');
+    const btnTask = document.getElementById('qa-btn-task');
+    const btnTheme = document.getElementById('qa-btn-theme');
+
+    if (btnWater) {
+      btnWater.addEventListener('click', (e) => {
+        e.stopPropagation();
+        quickAddWater();
+        quickMenu.classList.remove('open');
+      });
+    }
+
+    if (btnPunch) {
+      btnPunch.addEventListener('click', (e) => {
+        e.stopPropagation();
+        quickPunchInOut();
+        quickMenu.classList.remove('open');
+      });
+    }
+
+    if (btnTask) {
+      btnTask.addEventListener('click', (e) => {
+        e.stopPropagation();
+        quickAddTask();
+        quickMenu.classList.remove('open');
+      });
+    }
+
+    if (btnTheme) {
+      btnTheme.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (themeMenu) themeMenu.classList.toggle('open');
+      });
+    }
+
+    document.querySelectorAll('.zoro-theme-item').forEach(item => {
+      item.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const t = item.dataset.theme;
+        changeTheme(t);
+        if (themeMenu) themeMenu.classList.remove('open');
+        quickMenu.classList.remove('open');
+      });
+    });
+  }
+
   // ── Expose global helper for inline AI buttons ──
   window.ZoroAI = {
     call: callAI,
     hasKey,
     getPageContext,
+    mdToHtml,
     appendToChat: (role, text) => {
       const panel = document.getElementById('ai-panel');
       if (panel) appendMsg(panel, role, text);

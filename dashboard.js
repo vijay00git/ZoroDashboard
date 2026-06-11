@@ -3,6 +3,14 @@ document.addEventListener('DOMContentLoaded', () => {
   startClock();
   loadMetrics();
   loadQuickLaunchWidget();
+  renderActivityFeed();
+  
+  window.addEventListener('zoro-activity-updated', renderActivityFeed);
+  // Also reload metrics if anything changes
+  window.addEventListener('storage', () => {
+    loadMetrics();
+    renderActivityFeed();
+  });
 });
 
 function setGreeting() {
@@ -566,3 +574,40 @@ document.addEventListener('DOMContentLoaded', () => {
     updatePomoDisplay();
   });
 });
+
+function renderActivityFeed() {
+  const container = document.getElementById('activityFeedContent');
+  if (!container) return;
+  
+  const logs = window.ZoroActivity ? window.ZoroActivity.get() : [];
+  if (logs.length === 0) {
+    container.innerHTML = '<div class="wc-placeholder">No recent activity logged.</div>';
+    return;
+  }
+  
+  // Sort logs: newest first, slice to last 6 logs
+  const displayLogs = [...logs].reverse().slice(0, 6);
+  
+  container.innerHTML = `
+    <div class="activity-feed-timeline">
+      ${displayLogs.map(log => {
+        const d = new Date(log.time);
+        const timeStr = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        return `
+          <div class="activity-item ${log.module || ''}">
+            <div class="activity-dot"></div>
+            <div class="activity-meta">
+              <div class="activity-text">${escapeHTML(log.text)}</div>
+              <div class="activity-time">${timeStr}</div>
+            </div>
+          </div>
+        `;
+      }).join('')}
+    </div>
+  `;
+}
+
+function escapeHTML(str) {
+  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+

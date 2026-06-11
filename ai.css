@@ -747,3 +747,253 @@
   #ai-panel  { width: calc(100vw - 24px); right: 12px; height: 70vh; bottom: 84px; }
   #ai-fab    { right: 16px; bottom: 16px; }
 }
+
+/* ━━━ QUICK ACTIONS FAB MENU ━━━ */
+#zoro-quick-menu {
+  position: fixed;
+  right: 28px;
+  bottom: 92px; /* Sits right above the AI FAB */
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  z-index: 9999;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(20px) scale(0.8);
+  transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+#zoro-quick-menu.open {
+  pointer-events: auto;
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+
+.zoro-qa-btn {
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--bg2);
+  color: var(--text-primary);
+  font-size: 19px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+}
+
+.zoro-qa-btn:hover {
+  transform: scale(1.1);
+  border-color: var(--primary);
+  box-shadow: 0 6px 16px rgba(var(--primary-rgb, 99, 102, 241), 0.35);
+}
+
+/* Tooltip style */
+.zoro-qa-btn::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  right: 56px;
+  top: 50%;
+  transform: translateY(-50%) translateX(10px);
+  background: rgba(15, 23, 42, 0.95);
+  color: #fff;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 10px;
+  font-weight: 600;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition: all 0.2s;
+}
+
+.zoro-qa-btn:hover::after {
+  opacity: 1;
+  transform: translateY(-50%) translateX(0);
+}
+
+/* Toggle menu button */
+#zoro-qa-toggle {
+  position: fixed;
+  right: 92px;
+  bottom: 24px;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: var(--faint);
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+  font-size: 20px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+  box-shadow: 0 4px 10px rgba(0,0,0,0.15);
+  transition: all 0.25s;
+}
+
+#zoro-qa-toggle:hover {
+  border-color: var(--primary);
+  background: rgba(6, 182, 212, 0.1);
+  transform: rotate(45deg);
+}
+
+/* ━━━ FLOATING THEME SELECTOR POPUP ━━━ */
+#zoro-theme-menu {
+  position: fixed;
+  right: 88px;
+  bottom: 150px;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  z-index: 10000;
+  width: 170px;
+  box-shadow: 0 10px 25px rgba(0,0,0,0.3);
+  pointer-events: none;
+  opacity: 0;
+  transform: scale(0.9) translateY(10px);
+  transition: all 0.2s;
+}
+
+#zoro-theme-menu.open {
+  pointer-events: auto;
+  opacity: 1;
+  transform: scale(1) translateY(0);
+}
+
+.zoro-theme-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+  transition: background 0.15s;
+}
+
+.zoro-theme-item:hover {
+  background: var(--faint);
+}
+
+.zoro-theme-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+/* ━━━ GLOBAL TOAST NOTIFICATIONS ━━━ */
+#zoro-global-toast-container {
+  position: fixed;
+  top: 24px;
+  right: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  z-index: 11000;
+  pointer-events: none;
+}
+
+.zoro-toast {
+  padding: 12px 18px;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  box-shadow: 0 8px 20px rgba(0,0,0,0.25);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transform: translateX(120%);
+  opacity: 0;
+  transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  pointer-events: auto;
+}
+
+.zoro-toast.show {
+  transform: translateX(0);
+  opacity: 1;
+}
+
+.zoro-toast.success { border-left: 4px solid var(--success); }
+.zoro-toast.info { border-left: 4px solid var(--primary); }
+.zoro-toast.warning { border-left: 4px solid var(--warning); }
+.zoro-toast.error { border-left: 4px solid var(--error); }
+
+/* ━━━ ACTIVITY FEED TIMELINE STYLES ━━━ */
+.activity-feed-timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  position: relative;
+  padding-left: 14px;
+  margin-top: 10px;
+}
+
+.activity-feed-timeline::before {
+  content: '';
+  position: absolute;
+  left: 4px;
+  top: 8px;
+  bottom: 8px;
+  width: 2px;
+  background: var(--border);
+}
+
+.activity-item {
+  display: flex;
+  gap: 12px;
+  position: relative;
+  animation: ai-msg-in 0.35s ease-out;
+}
+
+.activity-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--muted);
+  position: absolute;
+  left: -14px;
+  top: 5px;
+  border: 2px solid var(--bg);
+  box-shadow: 0 0 0 2px var(--border);
+  transition: all 0.2s;
+}
+
+.activity-item.water .activity-dot { background: #38bdf8; box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.2); }
+.activity-item.timesheet .activity-dot { background: #4ade80; box-shadow: 0 0 0 2px rgba(74, 222, 128, 0.2); }
+.activity-item.productivity .activity-dot { background: #fbbf24; box-shadow: 0 0 0 2px rgba(251, 191, 36, 0.2); }
+
+.activity-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+}
+
+.activity-text {
+  font-size: 13px;
+  font-weight: 550;
+  color: var(--text-primary);
+}
+
+.activity-time {
+  font-size: 10px;
+  color: var(--text-muted);
+}
+

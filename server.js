@@ -230,29 +230,40 @@ app.post('/api/timesheet', (req, res) => {
 
 app.get('/api/timesheet/:month', (req, res) => {
     const month = req.params.month;
+    const empName = req.query.empName;
     if (!month.match(/^\d{4}-\d{2}$/)) return res.status(400).json({ error: 'Invalid month format' });
     
     try {
         const files = fs.readdirSync(TS_DIR);
-        // Find all files matching the month
         const matches = files.filter(f => f.includes(`_${month}_Timesheet.csv`));
         if (!matches.length) return res.status(404).json({ error: 'Not found' });
         
-        // Sort by modified time descending to get the most recent one
-        matches.sort((a, b) => {
-            return fs.statSync(path.join(TS_DIR, b)).mtimeMs - fs.statSync(path.join(TS_DIR, a)).mtimeMs;
-        });
+        let target = null;
+        if (empName) {
+            const safeEmp = empName.replace(/ /g, '_').replace(/[^a-z0-9_.-]/gi, '_');
+            const specificFile = matches.find(f => f.startsWith(safeEmp + '_'));
+            if (specificFile) {
+                target = specificFile;
+            }
+        }
         
-        const target = matches[0]; // the newest file
+        if (!target) {
+            const namedMatches = matches.filter(f => !f.startsWith('Unknown_Emp_'));
+            const listToUse = namedMatches.length > 0 ? namedMatches : matches;
+            listToUse.sort((a, b) => {
+                return fs.statSync(path.join(TS_DIR, b)).mtimeMs - fs.statSync(path.join(TS_DIR, a)).mtimeMs;
+            });
+            target = listToUse[0];
+        }
         
         const data = fs.readFileSync(path.join(TS_DIR, target), 'utf8');
         const lines = data.split('\n');
         
         // Parse metadata line
         const metaParts = lines[0].split(',');
-        const empId = metaParts[3] || '';
-        const empName = metaParts[5] || '';
-        const org = metaParts[7] || '';
+        const parsedEmpId = metaParts[3] || '';
+        const parsedEmpName = metaParts[5] || '';
+        const parsedOrg = metaParts[7] || '';
         
         const rows = [];
         for (let i = 3; i < lines.length; i++) {
@@ -271,7 +282,7 @@ app.get('/api/timesheet/:month', (req, res) => {
                 total: cols[8] || '0:00:00'
             });
         }
-        res.status(200).json({ empId, empName, org, rows });
+        res.status(200).json({ empId: parsedEmpId, empName: parsedEmpName, org: parsedOrg, rows });
     } catch (e) {
         res.status(500).json({ error: e.message });
     }
@@ -332,18 +343,27 @@ app.post('/api/ai/chat', async (req, res) => {
     const modelId = model || 'gemini-1.5-flash';
     const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent?key=${key}`;
 
-    const contents = [];
+    const body = {
+        contents: [
+            { role: 'user', parts: [{ text: prompt }] }
+        ],
+        generationConfig: {
+            temperature: 0.7,
+            maxOutputTokens: 2048
+        }
+    };
+
     if (system) {
-        contents.push({ role: 'user', parts: [{ text: system }] });
-        contents.push({ role: 'model', parts: [{ text: 'Understood. I will follow these instructions.' }] });
+        body.systemInstruction = {
+            parts: [{ text: system }]
+        };
     }
-    contents.push({ role: 'user', parts: [{ text: prompt }] });
 
     try {
         const response = await fetch(endpoint, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ contents, generationConfig: { temperature: 0.7, maxOutputTokens: 1024 } })
+            body: JSON.stringify(body)
         });
 
         const data = await response.json();
@@ -425,6 +445,98 @@ app.delete('/api/calendar/local', (req, res) => {
         const p = path.join(__dirname, 'calendar.ics');
         if (fs.existsSync(p)) fs.unlinkSync(p);
         res.status(200).json({ success: true });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// --- Daily Status Templates API (Markdown Files) ---
+const TEMPLATE_DIR = path.join(__dirname, 'saved_templates');
+if (!fs.existsSync(TEMPLATE_DIR)) {
+    fs.mkdirSync(TEMPLATE_DIR);
+}
+
+const DEFAULT_TEMPLATES = [
+  {
+    id: "std-standup",
+    name: "Standard Daily Standup",
+    content: `# Daily Status Report - {DATE}\n\n## ✅ Completed Today\n{TASKS_COMPLETED}\n\n## 🚧 In Progress / Next Steps\n{TASKS_IN_PROGRESS}\n\n## 🚫 Blockers / Concerns\n{TASKS_BLOCKED}\n\n---\n*Generated from today's work logs*`
+  },
+  {
+    id: "tech-sprint",
+    name: "Detailed Technical Status (with Table)",
+    content: `# Tech Sprint Progress - {DATE}\n\n## Task Breakdown\n| Task / Activity | Project / Module | Status | Details / Notes / Links |\n| --- | --- | --- | --- |\n| {TASKS_TABLE_ROW} |\n\n## Summary of Accomplishments\n1. All code committed and verified locally.\n2. Zoro Productivity Workstation sync successful.\n3. Key artifacts updated and reviewed.\n\n## Key Links & References\n- PR: https://bitbucket.org/elosystemsteam/ic-tokyo/pull-requests/1361/diff\n- Jenkins Offline: http://10.42.24.115:8080/job/Vj_offline_01/17/console\n- Jenkins Online: http://10.42.24.115:8080/job/Vj_online_01/lastBuild/console`
+  },
+  {
+    id: "exec-matrix",
+    name: "Executive Summary & Metrics",
+    content: `# Executive Status Summary - {DATE}\n\n## Deliverables Health\n| Stream | Key Progress Metrics | Status Health |\n| --- | --- | --- |\n| Engineering Deliverables | Completed: **{TASKS_COMPLETED_COUNT}** | ✅ On Track |\n| In Flight Workstreams | Active: **{TASKS_IN_PROGRESS_COUNT}** | 🔄 Active |\n| Impediments & Blockers | Blocked: **{TASKS_BLOCKED_COUNT}** | {HEALTH_STATUS} |\n\n## Strategic Highlights\n- Accomplished today's core deliverables. See detailed task list for notes.\n- Aligned with team on sprint priorities.\n- Maintained quality checks and test coverage.\n- Reviewed PRs and provided feedback.\n\n## Risk / Action Items\n| Risk / Item | Owner | ETA |\n| --- | --- | --- |\n| {BLOCKER_ITEM} | TBD | TBD |`
+  }
+];
+
+function seedTemplatesIfEmpty() {
+    try {
+        const files = fs.readdirSync(TEMPLATE_DIR);
+        const mdFiles = files.filter(f => f.endsWith('.md'));
+        if (mdFiles.length === 0) {
+            DEFAULT_TEMPLATES.forEach(t => {
+                const fileContent = `<!-- name: ${t.name} -->\n${t.content}`;
+                fs.writeFileSync(path.join(TEMPLATE_DIR, `${t.id}.md`), fileContent, 'utf-8');
+            });
+        }
+    } catch (err) {
+        console.error("Failed to seed templates:", err);
+    }
+}
+seedTemplatesIfEmpty();
+
+app.get('/api/status/templates', (req, res) => {
+    try {
+        const files = fs.readdirSync(TEMPLATE_DIR);
+        const mdFiles = files.filter(f => f.endsWith('.md'));
+        const templates = mdFiles.map(file => {
+            const filePath = path.join(TEMPLATE_DIR, file);
+            const content = fs.readFileSync(filePath, 'utf-8');
+            const id = file.replace(/\.md$/, '');
+            
+            let name = id.replace(/[-_]/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+            let cleanContent = content;
+            const nameMatch = content.match(/^<!-- name:\s*(.*?)\s*-->/);
+            if (nameMatch) {
+                name = nameMatch[1];
+                cleanContent = content.substring(nameMatch[0].length).trim();
+            }
+            
+            return { id, name, content: cleanContent };
+        });
+        res.json(templates);
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.post('/api/status/templates', (req, res) => {
+    try {
+        const { templates } = req.body;
+        if (!templates || !Array.isArray(templates)) {
+            return res.status(400).json({ error: 'Invalid or missing templates array' });
+        }
+        
+        const existingFiles = fs.readdirSync(TEMPLATE_DIR).filter(f => f.endsWith('.md'));
+        const newIds = templates.map(t => `${t.id}.md`);
+        
+        existingFiles.forEach(file => {
+            if (!newIds.includes(file)) {
+                fs.unlinkSync(path.join(TEMPLATE_DIR, file));
+            }
+        });
+        
+        templates.forEach(t => {
+            const fileContent = `<!-- name: ${t.name} -->\n${t.content}`;
+            fs.writeFileSync(path.join(TEMPLATE_DIR, `${t.id}.md`), fileContent, 'utf-8');
+        });
+        
+        res.json({ success: true });
     } catch (e) {
         res.status(500).json({ error: e.message });
     }

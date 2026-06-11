@@ -451,3 +451,15 @@
   .quick-stats-bar { grid-template-columns: repeat(2, 1fr); }
   .quick-tools-grid { grid-template-columns: repeat(2, 1fr); }
 }
+
+/* Activity Widget Card */
+.wc-activity {
+  grid-column: span 2;
+  border-top: 3px solid #f472b6; /* pink */
+}
+
+@media (max-width: 900px) {
+  .wc-activity {
+    grid-column: span 1;
+  }
+}

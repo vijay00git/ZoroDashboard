@@ -1115,3 +1115,104 @@ tr.row-dont-map:hover td { opacity: 0.75; filter: grayscale(30%); }
 .si-value { font-weight: 700; font-variant-numeric: tabular-nums; }
 .si-divider { height: 1px; background: var(--border-hi); margin: 0.35rem 0; }
 .muted-text { color: var(--muted); font-weight: 500; }
+
+/* ━━━ PREMIUM THEME BUILDER THEMES ━━━ */
+
+/* Cyberpunk Neon */
+[data-theme="cyberpunk"] {
+  --bg:        #0c051a;
+  --bg2:       #140b2e;
+  --bg3:       #1f1042;
+  --border:    rgba(236,72,153,0.2);
+  --border-hi: rgba(236,72,153,0.4);
+  --primary:   #ec4899;
+  --primary-d: #db2777;
+  --primary-g: rgba(236,72,153,0.3);
+  --success:   #10b981;
+  --error:     #f43f5e;
+  --warning:   #f59e0b;
+  --text:      #f5f3ff;
+  --text-primary: #ffffff;
+  --text-secondary: #d8b4fe;
+  --text-muted: #a78bfa;
+  --muted:     #8b5cf6;
+  --faint:     rgba(236,72,153,0.06);
+  --header-bg: rgba(12,5,26,0.92);
+}
+
+/* Emerald Forest */
+[data-theme="emerald"] {
+  --bg:        #02120d;
+  --bg2:       #06241c;
+  --bg3:       #0a362a;
+  --border:    rgba(16,185,129,0.2);
+  --border-hi: rgba(16,185,129,0.4);
+  --primary:   #10b981;
+  --primary-d: #059669;
+  --primary-g: rgba(16,185,129,0.3);
+  --success:   #34d399;
+  --error:     #f43f5e;
+  --warning:   #fbbf24;
+  --text:      #ecfdf5;
+  --text-primary: #ffffff;
+  --text-secondary: #a7f3d0;
+  --text-muted: #6ee7b7;
+  --muted:     #34d399;
+  --faint:     rgba(16,185,129,0.06);
+  --header-bg: rgba(2,18,13,0.92);
+}
+
+/* Sunset Flare */
+[data-theme="sunset"] {
+  --bg:        #120805;
+  --bg2:       #24120a;
+  --bg3:       #361c10;
+  --border:    rgba(249,115,22,0.2);
+  --border-hi: rgba(249,115,22,0.4);
+  --primary:   #f97316;
+  --primary-d: #ea580c;
+  --primary-g: rgba(249,115,22,0.3);
+  --success:   #10b981;
+  --error:     #ef4444;
+  --warning:   #f59e0b;
+  --text:      #fff7ed;
+  --text-primary: #ffffff;
+  --text-secondary: #ffedd5;
+  --text-muted: #fed7aa;
+  --muted:     #f97316;
+  --faint:     rgba(249,115,22,0.06);
+  --header-bg: rgba(18,8,5,0.92);
+}
+
+/* Glassmorphism Violet */
+[data-theme="glass-violet"] {
+  --bg:        #08070d;
+  --bg2:       rgba(25, 20, 45, 0.4);
+  --bg3:       rgba(39, 32, 70, 0.55);
+  --border:    rgba(168,85,247,0.25);
+  --border-hi: rgba(168,85,247,0.45);
+  --primary:   #c084fc;
+  --primary-d: #a855f7;
+  --primary-g: rgba(168,85,247,0.3);
+  --success:   #4ade80;
+  --error:     #fb7185;
+  --warning:   #fbbf24;
+  --text:      #f3e8ff;
+  --text-primary: #ffffff;
+  --text-secondary: #e9d5ff;
+  --text-muted: #d8b4fe;
+  --muted:     #c084fc;
+  --faint:     rgba(168,85,247,0.08);
+  --header-bg: rgba(8,7,13,0.85);
+  --glass-blur: blur(14px);
+}
+
+/* Base Glassmorphism styling if theme is active */
+[data-theme="glass-violet"] .card, 
+[data-theme="glass-violet"] .widget-card,
+[data-theme="glass-violet"] .header-nav,
+[data-theme="glass-violet"] .app-header {
+  backdrop-filter: var(--glass-blur, blur(12px)) !important;
+  -webkit-backdrop-filter: var(--glass-blur, blur(12px)) !important;
+}
+

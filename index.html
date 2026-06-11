@@ -24,6 +24,7 @@
           <a href="timesheet.html" class="nav-link"><span>📅</span> Timesheet</a>
           <a href="water.html" class="nav-link"><span>💧</span> Hydration</a>
           <a href="quicklaunch.html" class="nav-link"><span>🚀</span> Quick-Launch</a>
+          <a href="status.html" class="nav-link"><span>📝</span> Daily Status</a>
         </div>
       </div>
       <div class="header-actions">
@@ -218,6 +219,23 @@
           <div class="ph-pomodoro-mode" style="display: flex; gap: 4px; background: var(--bg3); padding: 4px; border-radius: 6px; width: 100%; border: 1px solid var(--border);">
             <button class="dash-pomo-mode-btn active" data-mode="work" style="flex: 1; border: none; background: var(--bg); color: var(--text); padding: 6px; border-radius: 4px; cursor: pointer; font-size: 0.8rem; font-weight: bold; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">Work</button>
             <button class="dash-pomo-mode-btn" data-mode="break" style="flex: 1; border: none; background: transparent; color: var(--muted); padding: 6px; border-radius: 4px; cursor: pointer; font-size: 0.8rem; font-weight: bold;">Break</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Real-Time Activity Feed Widget -->
+      <div class="widget-card wc-activity">
+        <div class="wc-header">
+          <div class="wc-icon-wrap" style="background: rgba(244,114,182,0.12);"><span>⚡</span></div>
+          <div>
+            <h2 class="wc-title">Real-Time Activity Feed</h2>
+            <span class="wc-badge">Live system logs</span>
+          </div>
+        </div>
+        <div class="wc-body" style="max-height: 250px; overflow-y: auto;">
+          <div id="activityFeedContent">
+            <!-- Timeline populated via JS -->
+            <div class="wc-placeholder">No recent activity logged.</div>
           </div>
         </div>
       </div>

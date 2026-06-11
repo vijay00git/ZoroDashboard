@@ -391,12 +391,29 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
+  function getEmployeeNameFromLocalStorage() {
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && key.startsWith(STORAGE_KEY_PREFIX)) {
+        try {
+          const val = JSON.parse(localStorage.getItem(key));
+          if (val && val.empName) {
+            return val.empName;
+          }
+        } catch(e) {}
+      }
+    }
+    return '';
+  }
+
   async function loadDataForMonth(monthVal) {
     const [y, m] = monthVal.split('-');
     
     let loadedFromServer = false;
     try {
-      const res = await fetch(`http://localhost:3000/api/timesheet/${monthVal}`);
+      const empName = (tsEmpName ? tsEmpName.value : '') || getEmployeeNameFromLocalStorage() || '';
+      const url = `http://localhost:3000/api/timesheet/${monthVal}?empName=${encodeURIComponent(empName)}`;
+      const res = await fetch(url);
       if (res.ok) {
         currentData = await res.json();
         localStorage.setItem(getSaveKey(), JSON.stringify(currentData));
