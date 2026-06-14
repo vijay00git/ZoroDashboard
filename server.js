@@ -680,13 +680,23 @@ app.get('/api/calendar/:year/:month', async (req, res) => {
 // SETTINGS / BACKUP ENDPOINTS
 // ════════════════════════════════════════════
 
-app.get('/api/backup', (req, res) => {
+app.post('/api/backup', (req, res) => {
     try {
-        const zip = new AdmZip();
         const dataPath = path.join(__dirname, 'data');
-        if (fs.existsSync(dataPath)) {
-            zip.addLocalFolder(dataPath, 'data');
+        if (!fs.existsSync(dataPath)) {
+            fs.mkdirSync(dataPath, { recursive: true });
         }
+        
+        // Save localStorage data sent from client
+        if (req.body && req.body.localStorageData) {
+            fs.writeFileSync(
+                path.join(dataPath, 'local_storage.json'), 
+                JSON.stringify(req.body.localStorageData, null, 2)
+            );
+        }
+
+        const zip = new AdmZip();
+        zip.addLocalFolder(dataPath, 'data');
 
         const zipBuffer = zip.toBuffer();
         res.setHeader('Content-Type', 'application/zip');
@@ -714,7 +724,24 @@ app.post('/api/restore', upload.single('backup'), (req, res) => {
         // Cleanup uploaded file
         fs.unlinkSync(req.file.path);
 
-        res.status(200).json({ success: true, message: 'Backup restored successfully' });
+        // Check if localStorage backup exists
+        let localStorageData = null;
+        const lsBackupPath = path.join(__dirname, 'data', 'local_storage.json');
+        if (fs.existsSync(lsBackupPath)) {
+            try {
+                localStorageData = JSON.parse(fs.readFileSync(lsBackupPath, 'utf8'));
+                // Optional: remove after reading so it doesn't clutter
+                fs.unlinkSync(lsBackupPath);
+            } catch (e) {
+                console.error("Failed to parse local_storage.json", e);
+            }
+        }
+
+        res.status(200).json({ 
+            success: true, 
+            message: 'Backup restored successfully',
+            localStorageData 
+        });
     } catch (e) {
         console.error("Backup restoration failed:", e);
         if (fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
@@ -722,7 +749,7 @@ app.post('/api/restore', upload.single('backup'), (req, res) => {
     }
 });
 
-app.get('*', (req, res) => {
+app.use((req, res) => {
     res.sendFile(path.join(__dirname, 'client/dist', 'index.html'));
 });
 

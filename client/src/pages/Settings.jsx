@@ -140,12 +140,39 @@ const Settings = () => {
     }
   };
 
-  const handleExportBackup = () => {
+  const handleExportBackup = async () => {
     setExportLoading(true);
-    window.location.href = 'http://localhost:3000/api/backup';
-    setTimeout(() => {
+    try {
+      const lsData = {};
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        lsData[key] = localStorage.getItem(key);
+      }
+
+      const res = await fetch('http://localhost:3000/api/backup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ localStorageData: lsData })
+      });
+      
+      if (!res.ok) throw new Error("Backup failed");
+      
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = "zoro_dashboard_backup.zip";
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+      
+    } catch (err) {
+      console.error(err);
+      showAlert("Error exporting backup: " + err.message);
+    } finally {
       setExportLoading(false);
-    }, 2000);
+    }
   };
 
   const handleFileChange = (e) => {
@@ -177,8 +204,15 @@ const Settings = () => {
       });
       const result = await response.json();
       if (response.ok) {
+        if (result.localStorageData) {
+          Object.keys(result.localStorageData).forEach(key => {
+            localStorage.setItem(key, result.localStorageData[key]);
+          });
+        }
         showAlert('Backup restored successfully! Returning to dashboard.');
-        window.location.href = '/';
+        setTimeout(() => {
+          window.location.href = '/';
+        }, 1500);
       } else {
         showAlert(`Restore failed: ${result.error}`);
       }
@@ -319,18 +353,24 @@ const Settings = () => {
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                 <label style={{ fontSize: '0.9rem', color: 'var(--text-primary)', fontWeight: '600' }}>Color Theme</label>
-                <div style={{ display: 'flex', gap: '16px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: '16px' }}>
                   <button 
                     onClick={() => { setTheme('dark'); document.documentElement.setAttribute('data-theme', 'dark'); localStorage.setItem('tr-theme', 'dark'); }}
-                    style={{ flex: 1, padding: '20px', borderRadius: '12px', background: 'var(--bg-tertiary)', border: theme === 'dark' ? '2px solid var(--accent-pink)' : '1px solid var(--border-color)', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px' }}>
+                    style={{ padding: '20px', borderRadius: '12px', background: 'var(--bg-tertiary)', border: theme === 'dark' ? '2px solid var(--accent-pink)' : '1px solid var(--border-color)', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px', transition: 'all 0.2s ease' }}>
                     <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: '#0f172a', border: '1px solid #334155' }} />
                     <span style={{ fontWeight: 'bold', color: 'var(--text-primary)' }}>Dark Mode</span>
                   </button>
                   <button 
                     onClick={() => { setTheme('light'); document.documentElement.setAttribute('data-theme', 'light'); localStorage.setItem('tr-theme', 'light'); }}
-                    style={{ flex: 1, padding: '20px', borderRadius: '12px', background: 'var(--bg-tertiary)', border: theme === 'light' ? '2px solid var(--accent-pink)' : '1px solid var(--border-color)', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px' }}>
+                    style={{ padding: '20px', borderRadius: '12px', background: 'var(--bg-tertiary)', border: theme === 'light' ? '2px solid var(--accent-pink)' : '1px solid var(--border-color)', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px', transition: 'all 0.2s ease' }}>
                     <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: '#f8fafc', border: '1px solid #e2e8f0' }} />
                     <span style={{ fontWeight: 'bold', color: 'var(--text-primary)' }}>Light Mode</span>
+                  </button>
+                  <button 
+                    onClick={() => { setTheme('lava'); document.documentElement.setAttribute('data-theme', 'lava'); localStorage.setItem('tr-theme', 'lava'); }}
+                    style={{ padding: '20px', borderRadius: '12px', background: 'var(--bg-tertiary)', border: theme === 'lava' ? '2px solid var(--accent-purple)' : '1px solid var(--border-color)', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px', transition: 'all 0.2s ease' }}>
+                    <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: 'linear-gradient(135deg, #120808, #ff4500)', border: '1px solid #ff4500' }} />
+                    <span style={{ fontWeight: 'bold', color: 'var(--text-primary)' }}>Lava Mode</span>
                   </button>
                 </div>
               </div>

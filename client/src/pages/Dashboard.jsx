@@ -10,6 +10,7 @@ const Dashboard = () => {
   const navigate = useNavigate();
   const { showToast } = useToast();
   const [scratchpadContent, setScratchpadContent] = useState('');
+  const [displayName, setDisplayName] = useState(localStorage.getItem('tr-display-name') || "Zoro");
 
   // Extra Widgets Data
   const [upcomingEvents, setUpcomingEvents] = useState([]);
@@ -34,14 +35,23 @@ const Dashboard = () => {
 
   const [widgetOrder, setWidgetOrder] = useState(() => {
     const saved = localStorage.getItem('tr-dash-widgets');
-    if (saved) return JSON.parse(saved);
+    if (saved) {
+      let parsed = JSON.parse(saved);
+      const miniGridIdx = parsed.findIndex(w => w.id === 'status_mini_grid');
+      if (miniGridIdx !== -1) {
+        parsed.splice(miniGridIdx, 1, { id: 'hydration', enabled: true }, { id: 'timesheet_widget', enabled: true });
+        localStorage.setItem('tr-dash-widgets', JSON.stringify(parsed));
+      }
+      return parsed;
+    }
     return [
       { id: 'learning', enabled: true },
       { id: 'events', enabled: true },
+      { id: 'hydration', enabled: true },
+      { id: 'timesheet_widget', enabled: true },
       { id: 'scratchpad', enabled: true },
       { id: 'tasks', enabled: true },
       { id: 'draft', enabled: true },
-      { id: 'status_mini_grid', enabled: true },
       { id: 'matrix', enabled: true },
       { id: 'links', enabled: true },
       { id: 'clocks', enabled: true }
@@ -504,33 +514,26 @@ const Dashboard = () => {
       </div>
     ),
     events: (
-      <div className="glass-panel" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <Calendar size={18} style={{ color: 'var(--accent-orange)' }} />
-          <h3 style={{ fontSize: '1rem', fontWeight: 'bold' }}>Upcoming Events</h3>
+      <div className="glass-panel" style={{ padding: '14px', display: 'flex', flexDirection: 'column', gap: '10px', aspectRatio: '1 / 1', overflow: 'hidden' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'center' }}>
+          <Calendar size={16} style={{ color: 'var(--accent-orange)' }} />
+          <h3 style={{ fontSize: '0.85rem', fontWeight: 'bold' }}>Upcoming (3)</h3>
         </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', flex: 1, overflowY: 'auto', paddingRight: '4px' }}>
           {upcomingEvents.length === 0 ? (
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px', padding: '24px 0', color: 'var(--text-muted)' }}>
-              <Calendar size={32} style={{ opacity: 0.4 }} />
-              <span style={{ fontSize: '0.85rem' }}>No upcoming events scheduled.</span>
-            </div>
+            <div style={{ margin: 'auto', fontSize: '0.75rem', color: 'var(--text-muted)' }}>No events</div>
           ) : (
-            upcomingEvents.map((evt, idx) => {
-              const dateStr = evt.start.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
-              const timeStr = evt.start.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-              return (
-                <div key={idx} style={{ display: 'flex', gap: '12px', background: 'var(--bg-tertiary)', padding: '12px', borderRadius: '10px', alignItems: 'center' }}>
-                  <div style={{ background: 'rgba(249, 115, 22, 0.15)', color: 'var(--accent-orange)', padding: '8px', borderRadius: '8px', fontWeight: 'bold', fontSize: '0.85rem', textAlign: 'center', minWidth: '45px' }}>
-                    {evt.start.getDate()}
-                  </div>
-                  <div style={{ flexGrow: 1, overflow: 'hidden' }}>
-                    <div style={{ fontSize: '0.9rem', fontWeight: '600', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{evt.summary}</div>
-                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{dateStr} • {timeStr}</div>
-                  </div>
+            upcomingEvents.slice(0, 3).map((evt, idx) => (
+              <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'var(--bg-tertiary)', padding: '8px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                <div style={{ background: 'rgba(249, 115, 22, 0.15)', color: 'var(--accent-orange)', padding: '4px 6px', borderRadius: '6px', fontSize: '0.7rem', fontWeight: 'bold', minWidth: '28px', textAlign: 'center' }}>
+                  {evt.start.getDate()}
                 </div>
-              );
-            })
+                <div style={{ flex: 1, overflow: 'hidden' }}>
+                  <div style={{ fontSize: '0.75rem', fontWeight: '600', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: 'var(--text-primary)' }}>{evt.summary}</div>
+                  <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>{evt.start.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
+                </div>
+              </div>
+            ))
           )}
         </div>
       </div>
@@ -655,28 +658,28 @@ const Dashboard = () => {
         />
       </div>
     ),
-    status_mini_grid: (
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-        <div className="glass-panel" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px', alignItems: 'center', textAlign: 'center' }}>
-          <Droplet size={24} style={{ color: 'var(--accent-cyan)' }} />
-          <div>
-            <h3 style={{ fontSize: '0.9rem', fontWeight: 'bold' }}>Hydration</h3>
-            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{stats.water} ml</span>
-          </div>
-          <button onClick={handleAddWaterQuick} className="glow-btn" style={{ width: '100%', justifyContent: 'center', background: 'rgba(6, 182, 212, 0.15)', color: 'var(--accent-cyan)', border: '1px solid rgba(6, 182, 212, 0.3)', boxShadow: 'none', padding: '8px' }}>
-            <Plus size={14} /> Add
-          </button>
+    hydration: (
+      <div className="glass-panel" style={{ padding: '12px', display: 'flex', flexDirection: 'column', gap: '6px', alignItems: 'center', textAlign: 'center', overflow: 'hidden' }}>
+        <Droplet size={20} style={{ color: 'var(--accent-cyan)' }} />
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+          <h3 style={{ fontSize: '0.85rem', fontWeight: 'bold' }}>Hydration</h3>
+          <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>{stats.water} ml</span>
         </div>
-        <div className="glass-panel" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px', alignItems: 'center', textAlign: 'center' }}>
-          <Clock size={24} style={{ color: isClockedIn ? 'var(--accent-green)' : 'var(--text-muted)' }} />
-          <div>
-            <h3 style={{ fontSize: '0.9rem', fontWeight: 'bold' }}>Timesheet</h3>
-            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{isClockedIn ? clockInTime : 'Out'}</span>
-          </div>
-          <button onClick={handleTogglePunch} className="glow-btn" style={{ width: '100%', justifyContent: 'center', background: isClockedIn ? 'rgba(239, 68, 68, 0.15)' : 'rgba(16, 185, 129, 0.15)', color: isClockedIn ? 'var(--accent-red)' : 'var(--accent-green)', border: `1px solid ${isClockedIn ? 'rgba(239, 68, 68, 0.3)' : 'rgba(16, 185, 129, 0.3)'}`, boxShadow: 'none', padding: '8px' }}>
-            {isClockedIn ? 'Out' : 'In'}
-          </button>
+        <button onClick={handleAddWaterQuick} className="glow-btn" style={{ width: '100%', justifyContent: 'center', background: 'rgba(6, 182, 212, 0.15)', color: 'var(--accent-cyan)', border: '1px solid rgba(6, 182, 212, 0.3)', boxShadow: 'none', padding: '6px', fontSize: '0.75rem' }}>
+          <Plus size={12} /> Add
+        </button>
+      </div>
+    ),
+    timesheet_widget: (
+      <div className="glass-panel" style={{ padding: '12px', display: 'flex', flexDirection: 'column', gap: '6px', alignItems: 'center', textAlign: 'center', overflow: 'hidden' }}>
+        <Clock size={20} style={{ color: isClockedIn ? 'var(--accent-green)' : 'var(--text-muted)' }} />
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+          <h3 style={{ fontSize: '0.85rem', fontWeight: 'bold' }}>Timesheet</h3>
+          <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>{isClockedIn ? clockInTime : 'Out'}</span>
         </div>
+        <button onClick={handleTogglePunch} className="glow-btn" style={{ width: '100%', justifyContent: 'center', background: isClockedIn ? 'rgba(239, 68, 68, 0.15)' : 'rgba(16, 185, 129, 0.15)', color: isClockedIn ? 'var(--accent-red)' : 'var(--accent-green)', border: `1px solid ${isClockedIn ? 'rgba(239, 68, 68, 0.3)' : 'rgba(16, 185, 129, 0.3)'}`, boxShadow: 'none', padding: '6px', fontSize: '0.75rem' }}>
+          {isClockedIn ? 'Out' : 'In'}
+        </button>
       </div>
     ),
     matrix: (
@@ -747,19 +750,19 @@ const Dashboard = () => {
       </div>
     ),
     clocks: (
-      <div className="glass-panel" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <Globe size={18} style={{ color: '#6366f1' }} />
-          <h3 style={{ fontSize: '1rem', fontWeight: 'bold' }}>World Clocks</h3>
+      <div className="glass-panel" style={{ padding: '14px', display: 'flex', flexDirection: 'column', gap: '8px', aspectRatio: '1 / 1', overflow: 'hidden' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
+          <Globe size={16} style={{ color: 'var(--accent-purple)' }} />
+          <h3 style={{ fontSize: '0.85rem', fontWeight: 'bold' }}>Global Sync</h3>
         </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '6px', flex: 1 }}>
           {[
-            { label: '🇯🇵 Tokyo', tz: 'Asia/Tokyo' },
-            { label: '🇬🇧 London', tz: 'Europe/London' },
-            { label: '🇺🇸 New York', tz: 'America/New_York' },
-            { label: '🇺🇸 Los Angeles', tz: 'America/Los_Angeles' }
+            { label: 'Tokyo', flag: '🇯🇵', tz: 'Asia/Tokyo', color: 'var(--accent-pink)' },
+            { label: 'London', flag: '🇬🇧', tz: 'Europe/London', color: 'var(--accent-cyan)' },
+            { label: 'NY', flag: '🇺🇸', tz: 'America/New_York', color: 'var(--accent-purple)' },
+            { label: 'LA', flag: '🇺🇸', tz: 'America/Los_Angeles', color: 'var(--accent-orange)' }
           ].map((clock, idx) => (
-            <WorldClockItem key={idx} label={clock.label} tz={clock.tz} />
+            <WorldClockItem key={idx} {...clock} />
           ))}
         </div>
       </div>
@@ -785,7 +788,7 @@ const Dashboard = () => {
                 <span style={{ fontSize: '0.75rem', color: 'var(--accent-cyan)', textTransform: 'uppercase', letterSpacing: '1px', fontWeight: '800' }}>Command Center</span>
               </div>
               <h1 style={{ fontSize: '2rem', fontWeight: '900', letterSpacing: '-1px', lineHeight: '1', margin: 0 }}>
-                {greeting}, <span style={{ background: 'linear-gradient(135deg, var(--accent-cyan), var(--accent-purple))', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>Zoro</span>
+                {greeting}, <span style={{ background: 'linear-gradient(135deg, var(--accent-cyan), var(--accent-purple))', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>{displayName}</span>
               </h1>
             </div>
 
@@ -869,57 +872,92 @@ const Dashboard = () => {
 
       {/* Main Grid: Masonry Layout */}
       <div style={{ display: 'flex', gap: '24px', alignItems: 'flex-start' }}>
-        {Array.from({ length: columnsCount }).map((_, colIndex) => (
-          <div key={colIndex} style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '24px' }}>
-            {widgetOrder
-              .map((w, index) => ({ ...w, originalIndex: index }))
-              .filter(w => w.enabled !== false)
-              .filter((_, idx) => idx % columnsCount === colIndex)
-              .map(w => (
-                <div
-                  key={w.id}
-                  draggable
-                  onDragStart={(e) => handleDragStart(e, w.originalIndex)}
-                  onDrop={(e) => handleDrop(e, w.originalIndex)}
-                  onDragOver={handleDragOver}
-                  style={{ cursor: 'grab', display: 'flex', flexDirection: 'column' }}
-                >
-                  {widgetsMap[w.id]}
-                </div>
-              ))}
-          </div>
-        ))}
+        {(() => {
+          const isSmallWidget = (id) => ['events', 'clocks', 'hydration', 'timesheet_widget'].includes(id);
+          const groupedSlots = [];
+          const activeWidgets = widgetOrder.filter(w => w.enabled !== false).map((w, index) => ({ ...w, originalIndex: index }));
+          
+          for (let i = 0; i < activeWidgets.length; i++) {
+            const w1 = activeWidgets[i];
+            if (isSmallWidget(w1.id)) {
+              if (i + 1 < activeWidgets.length && isSmallWidget(activeWidgets[i+1].id)) {
+                groupedSlots.push([w1, activeWidgets[i+1]]);
+                i++;
+              } else {
+                groupedSlots.push([w1]);
+              }
+            } else {
+              groupedSlots.push([w1]);
+            }
+          }
+
+          return Array.from({ length: columnsCount }).map((_, colIndex) => (
+            <div key={colIndex} style={{ flex: 1, minWidth: 0, display: 'flex', flexWrap: 'wrap', gap: '24px', alignContent: 'flex-start' }}>
+              {groupedSlots
+                .filter((_, idx) => idx % columnsCount === colIndex)
+                .flatMap(slot => slot)
+                .map(w => {
+                  const isSmall = isSmallWidget(w.id);
+                  return (
+                    <div
+                      key={w.id}
+                      draggable
+                      onDragStart={(e) => handleDragStart(e, w.originalIndex)}
+                      onDrop={(e) => handleDrop(e, w.originalIndex)}
+                      onDragOver={handleDragOver}
+                      style={{ 
+                        cursor: 'grab', 
+                        display: 'flex', 
+                        flexDirection: 'column',
+                        width: isSmall ? 'calc(50% - 12px)' : '100%'
+                      }}
+                    >
+                      {widgetsMap[w.id]}
+                    </div>
+                  );
+                })}
+            </div>
+          ));
+        })()}
       </div>
     </div>
   );
 };
 
 // World Clock Item component
-const WorldClockItem = ({ label, tz }) => {
+const WorldClockItem = ({ label, flag, tz, color }) => {
   const [time, setTime] = useState('--:--');
+  const [dateStr, setDateStr] = useState('');
 
   useEffect(() => {
     const update = () => {
       const now = new Date();
-      setTime(now.toLocaleTimeString('en-US', { timeZone: tz, hour: '2-digit', minute: '2-digit' }));
+      setTime(now.toLocaleTimeString('en-US', { timeZone: tz, hour: '2-digit', minute: '2-digit', hour12: true }));
+      setDateStr(now.toLocaleDateString('en-US', { timeZone: tz, weekday: 'short', month: 'short', day: 'numeric' }));
     };
     update();
-    const interval = setInterval(update, 60000);
+    const interval = setInterval(update, 10000);
     return () => clearInterval(interval);
   }, [tz]);
 
   return (
     <div style={{
       display: 'flex',
-      justifyContent: 'space-between',
+      flexDirection: 'column',
+      justifyContent: 'center',
       alignItems: 'center',
-      padding: '10px 14px',
+      padding: '6px 4px',
       background: 'var(--bg-tertiary)',
       border: '1px solid var(--border-color)',
-      borderRadius: '8px'
-    }}>
-      <span style={{ fontWeight: '600', fontSize: '0.85rem', color: 'var(--text-primary)' }}>{label}</span>
-      <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 'bold', color: 'var(--text-primary)' }}>{time}</span>
+      borderRadius: '8px',
+      position: 'relative',
+      overflow: 'hidden',
+      transition: 'all 0.3s ease'
+    }} className="nav-item-hover">
+      <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '2px', background: color || 'var(--accent-cyan)', opacity: 0.8 }} />
+      <div style={{ fontSize: '1rem', marginBottom: '2px' }}>{flag}</div>
+      <div style={{ fontWeight: '800', fontSize: '1.5rem', color: 'var(--text-primary)', fontFamily: 'var(--font-mono)', letterSpacing: '-0.5px', lineHeight: '1.2' }}>{time.split(' ')[0]}</div>
+      <div style={{ fontWeight: '600', fontSize: '1rem', color: 'var(--text-secondary)', marginTop: '2px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>{label}</div>
     </div>
   );
 };

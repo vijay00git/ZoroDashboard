@@ -341,7 +341,7 @@ const SyncHub = () => {
       });
       fetchSavedStates();
       addLog(`Renamed state to "${newName}".`, 'success');
-    } catch(e) { console.error(e); }
+    } catch (e) { console.error(e); }
   };
 
   const handleUpdateState = async (state, e) => {
@@ -359,7 +359,7 @@ const SyncHub = () => {
       });
       fetchSavedStates();
       addLog(`Updated matrix "${state.name}" with current test cases.`, 'success');
-    } catch(e) { console.error(e); }
+    } catch (e) { console.error(e); }
   };
 
   const handleDeleteState = async (id, e) => {
@@ -406,7 +406,7 @@ const SyncHub = () => {
         else if (s === 'UNTESTED') status_id = 3;
         else if (s === 'RETEST') status_id = 4;
         else if (s === 'FAILED') status_id = 5;
-        
+
         return {
           case_id: parseInt(tc.id.replace(/\D/g, '')),
           status_id,
@@ -621,6 +621,7 @@ const SyncHub = () => {
 
         <button
           onClick={handleStartSync}
+          data-cy="start-sync-btn"
           disabled={isSyncing || testCases.length === 0}
           className="glow-btn"
           style={{
@@ -662,6 +663,7 @@ const SyncHub = () => {
                   <label style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: '600' }}>Run ID</label>
                   <input
                     type="text"
+                    data-cy="run-id-input"
                     value={runId}
                     onChange={(e) => setRunId(e.target.value)}
                     placeholder="e.g. 8181"
@@ -681,6 +683,7 @@ const SyncHub = () => {
                   <label style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: '600' }}>Username</label>
                   <input
                     type="email"
+                    data-cy="username-input"
                     value={username}
                     onChange={(e) => setUsername(e.target.value)}
                     placeholder="zoro@dev.com"
@@ -701,6 +704,7 @@ const SyncHub = () => {
                 <label style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: '600' }}>API Key / Secret</label>
                 <input
                   type="password"
+                  data-cy="password-input"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••"
@@ -718,6 +722,7 @@ const SyncHub = () => {
 
               <button
                 onClick={handleSaveCredentials}
+                data-cy="save-credentials-btn"
                 style={{
                   background: 'var(--bg-tertiary)',
                   border: '1px solid var(--border-color)',
@@ -761,6 +766,7 @@ const SyncHub = () => {
             >
               <input
                 type="file"
+                data-cy="file-upload-input"
                 accept=".csv"
                 onChange={(e) => handleFileUpload(e.target.files)}
                 style={{ position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, opacity: 0, cursor: 'pointer' }}
@@ -772,7 +778,7 @@ const SyncHub = () => {
               </div>
             </div>
 
-            <button onClick={() => setTestCases([])} style={{ width: '100%', background: 'transparent', border: '1px solid var(--border-color)', borderRadius: '6px', padding: '4px', fontSize: '0.75rem', color: 'var(--text-primary)', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '6px', cursor: 'pointer', transition: 'all 0.2s ease' }} onMouseOver={(e) => e.target.style.background = 'rgba(255,255,255,0.05)'} onMouseOut={(e) => e.target.style.background = 'transparent'}>
+            <button onClick={() => setTestCases([])} data-cy="start-empty-state-btn" style={{ width: '100%', background: 'transparent', border: '1px solid var(--border-color)', borderRadius: '6px', padding: '4px', fontSize: '0.75rem', color: 'var(--text-primary)', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '6px', cursor: 'pointer', transition: 'all 0.2s ease' }} onMouseOver={(e) => e.target.style.background = 'rgba(255,255,255,0.05)'} onMouseOut={(e) => e.target.style.background = 'transparent'}>
               📝 Start Empty State
             </button>
             {fileName && (
@@ -795,12 +801,13 @@ const SyncHub = () => {
 
             {/* Action Bar (Save & New Folder) */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', background: 'rgba(0,0,0,0.2)', padding: '16px', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.05)' }}>
-              
+
               {/* Save State */}
               <div style={{ display: 'flex', gap: '8px' }}>
                 <div style={{ position: 'relative', flexGrow: 1 }}>
                   <input
                     type="text"
+                    data-cy="save-state-name-input"
                     placeholder="Save current state as..."
                     value={saveName}
                     onChange={(e) => setSaveName(e.target.value)}
@@ -816,6 +823,7 @@ const SyncHub = () => {
                   <Folder style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} size={14} />
                   <input
                     type="text"
+                    data-cy="save-state-folder-input"
                     placeholder="Folder..."
                     value={saveFolder}
                     onChange={(e) => setSaveFolder(e.target.value)}
@@ -829,6 +837,7 @@ const SyncHub = () => {
                 </div>
                 <button
                   onClick={handleSaveState}
+                  data-cy="save-state-btn"
                   className="glow-btn"
                   style={{
                     background: 'linear-gradient(135deg, var(--accent-purple), var(--accent-pink))',
@@ -846,6 +855,7 @@ const SyncHub = () => {
                   <FolderPlus style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} size={14} />
                   <input
                     type="text"
+                    data-cy="add-folder-input"
                     placeholder="Create new folder..."
                     value={newFolderName}
                     onChange={(e) => setNewFolderName(e.target.value)}
@@ -862,6 +872,7 @@ const SyncHub = () => {
                     if (newFolderName && !customFolders.includes(newFolderName)) setCustomFolders([...customFolders, newFolderName]);
                     setNewFolderName('');
                   }}
+                  data-cy="add-folder-btn"
                   style={{
                     background: 'transparent', border: '1px solid var(--border-color)', color: 'var(--text-primary)',
                     borderRadius: '8px', padding: '0 12px', cursor: 'pointer', fontSize: '0.8rem', fontWeight: '600',
@@ -939,7 +950,7 @@ const SyncHub = () => {
                         e.stopPropagation();
                         e.currentTarget.style.background = 'transparent';
                         e.currentTarget.style.borderLeft = '3px solid transparent';
-                        
+
                         if (draggedStateId) {
                           handleDropToFolder(folderName, draggedStateId);
                           setDraggedStateId('');
@@ -953,7 +964,7 @@ const SyncHub = () => {
                             if (idxA === idxB) return a.localeCompare(b);
                             return idxA - idxB;
                           });
-                          
+
                           const fromIdx = newOrder.indexOf(draggedFolder);
                           const toIdx = newOrder.indexOf(folderName);
                           if (fromIdx !== -1 && toIdx !== -1) {
@@ -1057,9 +1068,10 @@ const SyncHub = () => {
                 );
               })}
             </div>
-            
+
             {/* Embedded CSS for hover effects */}
-            <style dangerouslySetInnerHTML={{__html: `
+            <style dangerouslySetInnerHTML={{
+              __html: `
               .nav-item-hover .hover-actions {
                 opacity: 0;
                 transform: translateX(10px);
@@ -1200,6 +1212,7 @@ const SyncHub = () => {
 
                     <button
                       onClick={() => setManualModalOpen(true)}
+                      data-cy="add-row-btn"
                       style={{
                         background: 'var(--bg-tertiary)',
                         border: '1px solid var(--border-color)',
@@ -1222,6 +1235,7 @@ const SyncHub = () => {
                       type="file"
                       accept=".csv"
                       id="compare-csv-uploader"
+                      data-cy="compare-csv-input"
                       onChange={handleCompareFile}
                       style={{ display: 'none' }}
                     />
@@ -1280,6 +1294,7 @@ const SyncHub = () => {
                         </div>
                         <button
                           onClick={handleDeleteSelected}
+                          data-cy="delete-selected-btn"
                           style={{
                             background: 'rgba(244, 63, 94, 0.1)',
                             border: '1px solid var(--accent-red)',
@@ -1307,6 +1322,7 @@ const SyncHub = () => {
                       <span style={{ fontSize: '0.8rem', fontWeight: 'bold', color: 'var(--text-secondary)' }}>Tags:</span>
                       <select
                         value={tagLogic}
+                        data-cy="tag-logic-select"
                         onChange={(e) => setTagLogic(e.target.value)}
                         style={{
                           background: 'var(--bg-tertiary)',
@@ -1381,6 +1397,7 @@ const SyncHub = () => {
                           <td style={{ padding: '10px', textAlign: 'center' }}>
                             <input
                               type="checkbox"
+                              data-cy={`row-checkbox-${tc.id}`}
                               checked={selectedCaseUids.includes(tc._uid)}
                               onChange={(e) => {
                                 if (e.target.checked) setSelectedCaseUids([...selectedCaseUids, tc._uid]);
@@ -1402,6 +1419,7 @@ const SyncHub = () => {
                           <td style={{ padding: '10px' }}>
                             <select
                               value={tc.status}
+                              data-cy={`row-status-select-${tc.id}`}
                               onChange={(e) => {
                                 const updated = testCases.map(t => t._uid === tc._uid ? { ...t, status: e.target.value } : t);
                                 setTestCases(updated);
@@ -1429,6 +1447,7 @@ const SyncHub = () => {
                           <td style={{ padding: '10px' }}>
                             <select
                               value={tc.mapAction}
+                              data-cy={`row-map-select-${tc.id}`}
                               onChange={(e) => {
                                 const updated = testCases.map(t => t._uid === tc._uid ? { ...t, mapAction: e.target.value } : t);
                                 setTestCases(updated);
