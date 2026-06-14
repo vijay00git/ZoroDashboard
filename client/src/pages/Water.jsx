@@ -9,6 +9,7 @@ import {
   Settings,
   Trash2
 } from 'lucide-react';
+import { showConfirm } from '../utils/Alerts';
 
 const Water = () => {
   const [goal, setGoal] = useState(2000);
@@ -86,8 +87,8 @@ const Water = () => {
     localStorage.setItem('tr-water-date', new Date().toDateString());
   };
 
-  const handleReset = () => {
-    if (window.confirm("Are you sure you want to clear today's hydration logs?")) {
+  const handleReset = async () => {
+    if (await showConfirm("Are you sure you want to clear today's hydration logs?")) {
       setIntake(0);
       setLogs([]);
       localStorage.setItem('tr-water-intake-ml', '0');

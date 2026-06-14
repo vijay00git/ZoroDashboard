@@ -9,8 +9,17 @@ import {
   Clock,
   DatabaseBackup,
   ChevronDown,
-  CalendarDays
+  CalendarDays,
+  BadgeInfo,
+  X,
+  Copy,
+  Check
 } from 'lucide-react';
+import Flatpickr from 'react-flatpickr';
+import 'flatpickr/dist/themes/dark.css';
+import { showAlert } from '../utils/Alerts';
+import monthSelectPlugin from 'flatpickr/dist/plugins/monthSelect/index.js';
+import 'flatpickr/dist/plugins/monthSelect/style.css';
 
 const DonutChart = ({ data }) => {
   let total = data.reduce((acc, d) => acc + d.count, 0);
@@ -58,7 +67,7 @@ const Timesheet = () => {
   const [empId, setEmpId] = useState(localStorage.getItem('ts-empId') || '1200');
   const [empName, setEmpName] = useState(localStorage.getItem('ts-empName') || 'Vijay S');
   const [org, setOrg] = useState(localStorage.getItem('ts-org') || 'SAT');
-  const [activeTimePicker, setActiveTimePicker] = useState(null);
+  const [isCopied, setIsCopied] = useState(false);
 
   const [events, setEvents] = useState(() => {
     try {
@@ -197,6 +206,7 @@ const Timesheet = () => {
     updated[index] = { ...updated[index], [field]: value };
     setRows(updated);
     localStorage.setItem(`ts-data-${currentMonth}`, JSON.stringify({ empId, empName, org, rows: updated }));
+    window.dispatchEvent(new Event('timesheet-updated'));
     saveToBackend(updated, empName, empId, org, currentMonth);
   };
 
@@ -352,12 +362,12 @@ const Timesheet = () => {
           }
           setRows(newRows);
           localStorage.setItem(`ts-data-${mMonth}`, JSON.stringify({ empId: headerRow[3], empName: headerRow[5], org: headerRow[7], rows: newRows }));
-          alert('Data Restored Successfully!');
+          showAlert('Data Restored Successfully!');
         } else {
-          alert('Invalid CSV format. Please upload a valid Timesheet CSV.');
+          showAlert('Invalid CSV format. Please upload a valid Timesheet CSV.');
         }
       } catch (err) {
-        alert('Failed to parse CSV.');
+        showAlert('Failed to parse CSV.');
       }
     };
     reader.readAsText(file);
@@ -500,6 +510,38 @@ const Timesheet = () => {
     .sort((a, b) => a.start - b.start)
     .slice(0, 4);
 
+  const handleCopySummary = async () => {
+    const htmlStr = `
+      <table style="border-collapse: collapse; width: 100%; max-width: 300px; font-family: sans-serif;">
+        <tbody>
+          <tr><td style="border: 1px solid #ddd; padding: 8px;">Month</td><td style="border: 1px solid #ddd; padding: 8px; font-weight: bold;">${currentMonth}</td></tr>
+          <tr><td style="border: 1px solid #ddd; padding: 8px;">Working Days</td><td style="border: 1px solid #ddd; padding: 8px; font-weight: bold;">${totalWorkingDaysAll}</td></tr>
+          <tr><td style="border: 1px solid #ddd; padding: 8px;">Total Hours</td><td style="border: 1px solid #ddd; padding: 8px; font-weight: bold;">${formatToTimeStr(totalMins)}</td></tr>
+          <tr><td style="border: 1px solid #ddd; padding: 8px;">WFH Days</td><td style="border: 1px solid #ddd; padding: 8px; font-weight: bold;">${totalWFH}</td></tr>
+          <tr><td style="border: 1px solid #ddd; padding: 8px;">Leave Days</td><td style="border: 1px solid #ddd; padding: 8px; font-weight: bold;">${totalLeave}</td></tr>
+          <tr><td style="border: 1px solid #ddd; padding: 8px;">Comp Off</td><td style="border: 1px solid #ddd; padding: 8px; font-weight: bold;">${totalCompOff}</td></tr>
+        </tbody>
+      </table>
+    `;
+    const textStr = `Month: ${currentMonth}\nWorking Days: ${totalWorkingDaysAll}\nTotal Hours: ${formatToTimeStr(totalMins)}\nWFH Days: ${totalWFH}\nLeave Days: ${totalLeave}\nComp Off: ${totalCompOff}`;
+
+    try {
+      const clipboardItem = new ClipboardItem({
+        'text/html': new Blob([htmlStr], { type: 'text/html' }),
+        'text/plain': new Blob([textStr], { type: 'text/plain' })
+      });
+      await navigator.clipboard.write([clipboardItem]);
+      setIsCopied(true);
+      setTimeout(() => setIsCopied(false), 2000);
+    } catch (err) {
+      console.error('Failed to copy', err);
+      // Fallback for older browsers
+      navigator.clipboard.writeText(textStr);
+      setIsCopied(true);
+      setTimeout(() => setIsCopied(false), 2000);
+    }
+  };
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', minHeight: '100vh', paddingBottom: '40px' }}>
 
@@ -537,22 +579,104 @@ const Timesheet = () => {
       </div>
 
       {/* Filters Row */}
+      <style>{`
+        .premium-input {
+          width: 100%;
+          appearance: none;
+          background: var(--bg-tertiary) !important;
+          border: 1px solid var(--border-color) !important;
+          color: var(--text-primary) !important;
+          padding: 10px 14px 10px 38px !important;
+          border-radius: 10px !important;
+          outline: none;
+          font-size: 0.85rem;
+          transition: all 0.2s ease;
+          font-weight: 500;
+        }
+        .premium-input:hover {
+          background: rgba(255,255,255,0.05) !important;
+          border-color: rgba(255,255,255,0.1) !important;
+        }
+        .premium-input:focus {
+          border-color: var(--accent-purple) !important;
+          box-shadow: 0 0 0 2px rgba(168, 85, 247, 0.2) !important;
+        }
+        .premium-icon-left {
+          position: absolute;
+          left: 12px;
+          top: 50%;
+          transform: translateY(-50%);
+          color: var(--text-muted);
+          pointer-events: none;
+          display: flex;
+          align-items: center;
+          z-index: 10;
+        }
+        .time-cell-wrapper {
+          position: relative;
+          display: inline-block;
+        }
+        .clear-time-btn {
+          position: absolute;
+          right: 4px;
+          top: 50%;
+          transform: translateY(-50%);
+          cursor: pointer;
+          opacity: 0;
+          transition: opacity 0.2s ease;
+        }
+        .time-cell-wrapper:hover .clear-time-btn {
+          opacity: 0.7;
+        }
+        .time-cell-wrapper:hover .clear-time-btn:hover {
+          opacity: 1;
+        }
+      `}</style>
       <div className="glass-panel" style={{ padding: '20px', display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '6px' }}>
-          <label style={{ fontSize: '0.75rem', fontWeight: '700', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '1px' }}>Month/Year</label>
-          <input type="month" value={currentMonth} onChange={(e) => setCurrentMonth(e.target.value)} style={{ background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', padding: '10px 14px', borderRadius: '8px', outline: 'none', fontWeight: 'bold' }} />
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          <label style={{ fontSize: '0.75rem', fontWeight: '700', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '1px', marginLeft: '4px' }}>Month/Year</label>
+          <div style={{ position: 'relative', width: '100%' }}>
+            <div className="premium-icon-left"><CalendarIcon size={16} /></div>
+            <Flatpickr
+              value={currentMonth}
+              onChange={([date]) => {
+                if (date) {
+                  setCurrentMonth(`${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`);
+                }
+              }}
+              options={{
+                plugins: [
+                  new monthSelectPlugin({ shorthand: true, dateFormat: "Y-m", altFormat: "F Y", theme: "dark" })
+                ]
+              }}
+              className="premium-input"
+              placeholder="Select Month..."
+            />
+          </div>
         </div>
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '6px' }}>
-          <label style={{ fontSize: '0.75rem', fontWeight: '700', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '1px' }}>Employee ID</label>
-          <input type="text" value={empId} onChange={(e) => setEmpId(e.target.value)} style={{ background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', padding: '10px 14px', borderRadius: '8px', outline: 'none', fontWeight: 'bold' }} />
+        
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          <label style={{ fontSize: '0.75rem', fontWeight: '700', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '1px', marginLeft: '4px' }}>Employee ID</label>
+          <div style={{ position: 'relative', width: '100%' }}>
+            <div className="premium-icon-left"><BadgeInfo size={16} /></div>
+            <input type="text" className="premium-input" value={empId} onChange={(e) => setEmpId(e.target.value)} placeholder="e.g. 1200" />
+          </div>
         </div>
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '6px' }}>
-          <label style={{ fontSize: '0.75rem', fontWeight: '700', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '1px' }}>Employee Name</label>
-          <input type="text" value={empName} onChange={(e) => setEmpName(e.target.value)} style={{ background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', padding: '10px 14px', borderRadius: '8px', outline: 'none', fontWeight: 'bold' }} />
+        
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          <label style={{ fontSize: '0.75rem', fontWeight: '700', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '1px', marginLeft: '4px' }}>Employee Name</label>
+          <div style={{ position: 'relative', width: '100%' }}>
+            <div className="premium-icon-left"><User size={16} /></div>
+            <input type="text" className="premium-input" value={empName} onChange={(e) => setEmpName(e.target.value)} placeholder="e.g. John Doe" />
+          </div>
         </div>
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '6px' }}>
-          <label style={{ fontSize: '0.75rem', fontWeight: '700', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '1px' }}>Organization</label>
-          <input type="text" value={org} onChange={(e) => setOrg(e.target.value)} style={{ background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', padding: '10px 14px', borderRadius: '8px', outline: 'none', fontWeight: 'bold' }} />
+        
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          <label style={{ fontSize: '0.75rem', fontWeight: '700', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '1px', marginLeft: '4px' }}>Organization</label>
+          <div style={{ position: 'relative', width: '100%' }}>
+            <div className="premium-icon-left"><Building size={16} /></div>
+            <input type="text" className="premium-input" value={org} onChange={(e) => setOrg(e.target.value)} placeholder="e.g. Acme Corp" />
+          </div>
         </div>
       </div>
 
@@ -590,7 +714,30 @@ const Timesheet = () => {
           </div>
 
           {/* Totals Summary */}
-          <div className="glass-panel" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+          <div className="glass-panel" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '14px', position: 'relative' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+              <span style={{ fontSize: '0.9rem', color: 'var(--text-muted)', fontWeight: 'bold' }}>Totals Summary</span>
+              <button 
+                onClick={handleCopySummary}
+                style={{ 
+                  background: isCopied ? 'rgba(16,185,129,0.15)' : 'rgba(255,255,255,0.05)', 
+                  border: '1px solid ' + (isCopied ? 'rgba(16,185,129,0.3)' : 'rgba(255,255,255,0.1)'), 
+                  color: isCopied ? '#10b981' : 'var(--text-muted)', 
+                  cursor: 'pointer', 
+                  padding: '4px 8px', 
+                  borderRadius: '6px', 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  gap: '4px',
+                  transition: 'all 0.2s',
+                  fontSize: '0.7rem',
+                  fontWeight: 'bold'
+                }}
+              >
+                {isCopied ? <Check size={14} /> : <Copy size={14} />}
+                {isCopied ? 'Copied!' : 'Copy'}
+              </button>
+            </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>Month:</span>
               <span style={{ fontWeight: 'bold' }}>{currentMonth}</span>
@@ -670,26 +817,74 @@ const Timesheet = () => {
                       </div>
                     </td>
                     <td style={{ padding: '10px' }}>
-                      <div style={{ position: 'relative', width: '100%' }}>
-                        <input type="text" placeholder="HH:MM AM" value={row.inTime} onChange={(e) => handleRowChange(index, 'inTime', e.target.value)} onFocus={() => setActiveTimePicker(`${index}-inTime`)} onBlur={() => setTimeout(() => setActiveTimePicker(null), 200)} disabled={st.bg !== 'transparent'} style={{ background: 'transparent', border: 'none', color: '#ef4444', fontWeight: 'bold', fontSize: '0.85rem', width: '100%', textAlign: 'center', outline: 'none' }} />
-                        {activeTimePicker === `${index}-inTime` && (
-                          <div style={{ position: 'absolute', top: '100%', left: '50%', transform: 'translateX(-50%)', width: '100px', maxHeight: '180px', overflowY: 'auto', background: '#1e293b', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', zIndex: 50, boxShadow: '0 10px 25px rgba(0,0,0,0.5)', padding: '4px' }}>
-                            {TIME_OPTIONS.map(t => (
-                              <div key={t} onMouseDown={(e) => { e.preventDefault(); handleRowChange(index, 'inTime', t); setActiveTimePicker(null); }} onMouseOver={(e) => e.target.style.background = 'rgba(255,255,255,0.1)'} onMouseOut={(e) => e.target.style.background = 'transparent'} style={{ padding: '6px', cursor: 'pointer', color: '#fff', fontSize: '0.75rem', borderRadius: '4px', textAlign: 'center', transition: 'background 0.2s' }}>{t}</div>
-                            ))}
-                          </div>
+                      <div className="time-cell-wrapper">
+                        <Flatpickr
+                          options={{
+                            enableTime: true,
+                            noCalendar: true,
+                            dateFormat: "h:i K",
+                            time_24hr: false
+                          }}
+                          value={row.inTime}
+                          onClose={(_, dateStr) => handleRowChange(index, 'inTime', dateStr)}
+                          disabled={st.bg !== 'transparent'}
+                          placeholder="HH:MM AM"
+                          style={{ 
+                            background: 'transparent', 
+                            border: 'none', 
+                            color: '#ef4444', 
+                            fontWeight: 'bold', 
+                            fontSize: '0.85rem', 
+                            width: '80px', 
+                            textAlign: 'center', 
+                            outline: 'none',
+                            cursor: st.bg === 'transparent' ? 'pointer' : 'default',
+                            paddingRight: row.inTime && st.bg === 'transparent' ? '20px' : '0'
+                          }}
+                        />
+                        {row.inTime && st.bg === 'transparent' && (
+                          <X 
+                            size={12} 
+                            color="#ef4444" 
+                            className="clear-time-btn"
+                            onClick={(e) => { e.stopPropagation(); handleRowChange(index, 'inTime', ''); }}
+                          />
                         )}
                       </div>
                     </td>
                     <td style={{ padding: '10px' }}>
-                      <div style={{ position: 'relative', width: '100%' }}>
-                        <input type="text" placeholder="HH:MM PM" value={row.outTime} onChange={(e) => handleRowChange(index, 'outTime', e.target.value)} onFocus={() => setActiveTimePicker(`${index}-outTime`)} onBlur={() => setTimeout(() => setActiveTimePicker(null), 200)} disabled={st.bg !== 'transparent'} style={{ background: 'transparent', border: 'none', color: '#3b82f6', fontWeight: 'bold', fontSize: '0.85rem', width: '100%', textAlign: 'center', outline: 'none' }} />
-                        {activeTimePicker === `${index}-outTime` && (
-                          <div style={{ position: 'absolute', top: '100%', left: '50%', transform: 'translateX(-50%)', width: '100px', maxHeight: '180px', overflowY: 'auto', background: '#1e293b', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', zIndex: 50, boxShadow: '0 10px 25px rgba(0,0,0,0.5)', padding: '4px' }}>
-                            {TIME_OPTIONS.map(t => (
-                              <div key={t} onMouseDown={(e) => { e.preventDefault(); handleRowChange(index, 'outTime', t); setActiveTimePicker(null); }} onMouseOver={(e) => e.target.style.background = 'rgba(255,255,255,0.1)'} onMouseOut={(e) => e.target.style.background = 'transparent'} style={{ padding: '6px', cursor: 'pointer', color: '#fff', fontSize: '0.75rem', borderRadius: '4px', textAlign: 'center', transition: 'background 0.2s' }}>{t}</div>
-                            ))}
-                          </div>
+                      <div className="time-cell-wrapper">
+                        <Flatpickr
+                          options={{
+                            enableTime: true,
+                            noCalendar: true,
+                            dateFormat: "h:i K",
+                            time_24hr: false
+                          }}
+                          value={row.outTime}
+                          onClose={(_, dateStr) => handleRowChange(index, 'outTime', dateStr)}
+                          disabled={st.bg !== 'transparent'}
+                          placeholder="HH:MM PM"
+                          style={{ 
+                            background: 'transparent', 
+                            border: 'none', 
+                            color: '#3b82f6', 
+                            fontWeight: 'bold', 
+                            fontSize: '0.85rem', 
+                            width: '80px', 
+                            textAlign: 'center', 
+                            outline: 'none',
+                            cursor: st.bg === 'transparent' ? 'pointer' : 'default',
+                            paddingRight: row.outTime && st.bg === 'transparent' ? '20px' : '0'
+                          }}
+                        />
+                        {row.outTime && st.bg === 'transparent' && (
+                          <X 
+                            size={12} 
+                            color="#3b82f6" 
+                            className="clear-time-btn"
+                            onClick={(e) => { e.stopPropagation(); handleRowChange(index, 'outTime', ''); }}
+                          />
                         )}
                       </div>
                     </td>

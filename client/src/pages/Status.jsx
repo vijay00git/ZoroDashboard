@@ -1,25 +1,18 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { marked } from 'marked';
 import {
-  FileText,
-  Sparkles,
-  Copy,
-  Download,
-  Trash2,
-  Plus,
-  RefreshCw,
-  Award,
-  Calendar,
-  CheckCircle,
-  Eye,
-  Edit3
+  FileText, Sparkles, Copy, Download, Trash2, Plus, RefreshCw, 
+  Eye, Edit3, Settings, CheckCircle2, Clock, Check, ListTodo, Droplets, Mail, DatabaseBackup, X
 } from 'lucide-react';
+import { showAlert, showConfirm } from '../utils/Alerts';
 
 const Status = () => {
   // Templates
   const [templates, setTemplates] = useState([]);
   const [selectedTemplateId, setSelectedTemplateId] = useState('');
   const [templateContent, setTemplateContent] = useState('');
+  const [templatePreviewOpen, setTemplatePreviewOpen] = useState(false);
 
   // Input notes
   const [rawNotes, setRawNotes] = useState('');
@@ -28,7 +21,16 @@ const Status = () => {
   const [loading, setLoading] = useState(false);
   const [loadingImport, setLoadingImport] = useState(false);
 
-  // New Template Modal state
+  // Features config
+  const [importConfig, setImportConfig] = useState({
+    tasks: true,
+    timesheet: true,
+    health: false
+  });
+  const [isCopied, setIsCopied] = useState(false);
+  const [isHtmlCopied, setIsHtmlCopied] = useState(false);
+
+  // Modal
   const [modalOpen, setModalOpen] = useState(false);
   const [newTemplateName, setNewTemplateName] = useState('');
   const [newTemplateBody, setNewTemplateBody] = useState('');
@@ -70,14 +72,12 @@ const Status = () => {
     }
   ];
 
-  // --- Initialize ---
   useEffect(() => {
     const fetchTemplates = async () => {
       try {
         const response = await fetch('http://localhost:3000/api/status/templates');
         if (response.ok) {
           const data = await response.json();
-          // The response might be wrapping templates inside { templates: [...] } or just an array
           const list = Array.isArray(data) ? data : (data.templates || []);
           if (list.length > 0) {
             setTemplates(list);
@@ -90,21 +90,26 @@ const Status = () => {
         console.warn("Could not fetch templates from API, loading fallback", e);
       }
 
-      // Local storage fallback
-      const saved = localStorage.getItem('zoro-status-templates');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        setTemplates(parsed);
-        setSelectedTemplateId(parsed[0]?.id || '');
-        setTemplateContent(parsed[0]?.content || '');
-      } else {
-        setTemplates(DEFAULT_TEMPLATES);
-        setSelectedTemplateId(DEFAULT_TEMPLATES[0].id);
-        setTemplateContent(DEFAULT_TEMPLATES[0].content);
-        localStorage.setItem('zoro-status-templates', JSON.stringify(DEFAULT_TEMPLATES));
+      try {
+        const saved = localStorage.getItem('zoro-status-templates');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setTemplates(parsed);
+            setSelectedTemplateId(parsed[0]?.id || '');
+            setTemplateContent(parsed[0]?.content || '');
+            return;
+          }
+        }
+      } catch (e) {
+        console.error("Failed to parse local templates", e);
       }
+      
+      setTemplates(DEFAULT_TEMPLATES);
+      setSelectedTemplateId(DEFAULT_TEMPLATES[0].id);
+      setTemplateContent(DEFAULT_TEMPLATES[0].content);
+      localStorage.setItem('zoro-status-templates', JSON.stringify(DEFAULT_TEMPLATES));
     };
-
     fetchTemplates();
   }, []);
 
@@ -116,40 +121,53 @@ const Status = () => {
 
   const handleImportActivities = () => {
     setLoadingImport(true);
-    // Fetch data from local storage
-    const tasksSaved = localStorage.getItem('tr-run-tasks');
-    const waterIntake = localStorage.getItem('tr-water-intake-ml') || '0';
+    let finalNotes = `--- TODAY SUMMARY (${new Date().toLocaleDateString()}) ---\n\n`;
 
-    let completedText = '';
-    let inProgressText = '';
-    let tableRows = '';
-
-    if (tasksSaved) {
-      const parsedTasks = JSON.parse(tasksSaved);
-      if (Array.isArray(parsedTasks)) {
-        const comp = parsedTasks.filter(t => t.completed);
-        const active = parsedTasks.filter(t => !t.completed);
-
-        completedText = comp.map(t => t.title).join('\n- ');
-        inProgressText = active.map(t => t.title).join('\n- ');
-
-        tableRows = parsedTasks.map(t => `| ${t.title} | ${t.completed ? '✅ Completed' : '🔄 In Progress'} | Priority: ${t.priority} |`).join('\n');
+    if (importConfig.tasks) {
+      const tasksSaved = localStorage.getItem('tr-run-tasks');
+      let completedText = 'No tasks checked off today.';
+      let inProgressText = 'No pending tasks.';
+      if (tasksSaved) {
+        const parsed = JSON.parse(tasksSaved);
+        if (Array.isArray(parsed)) {
+          const comp = parsed.filter(t => t.completed).map(t => t.title);
+          const active = parsed.filter(t => !t.completed).map(t => t.title);
+          if (comp.length) completedText = comp.join('\n- ');
+          if (active.length) inProgressText = active.join('\n- ');
+        }
       }
+      finalNotes += `### Tasks\n**Completed:**\n- ${completedText}\n\n**In Progress:**\n- ${inProgressText}\n\n`;
     }
 
-    if (!completedText) completedText = 'No tasks checked off today.';
-    if (!inProgressText) inProgressText = 'No pending status tasks.';
-    if (!tableRows) tableRows = '| No tasks logged | - | - |';
+    if (importConfig.timesheet) {
+      const now = new Date();
+      const monthStr = String(now.getMonth() + 1).padStart(2, '0');
+      const dayStr = String(now.getDate()).padStart(2, '0');
+      const key = `ts-data-${now.getFullYear()}-${monthStr}`;
+      
+      let tsInfo = 'No timesheet data logged.';
+      try {
+        const saved = localStorage.getItem(key);
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          const todayDate = `${dayStr}-${monthStr}-${now.getFullYear()}`;
+          const todayDate2 = `${now.getFullYear()}-${monthStr}-${dayStr}`;
+          const row = parsed.rows?.find(r => r.date === todayDate || r.date === todayDate2);
+          if (row) {
+            tsInfo = `Type: ${row.type} | In: ${row.inTime || 'N/A'} | Out: ${row.outTime || 'N/A'}`;
+          }
+        }
+      } catch(e) {}
+      finalNotes += `### Work Hours\n${tsInfo}\n\n`;
+    }
 
-    const dateStr = new Date().toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' });
-
-    let finalNotes = `--- TODAY SUMMARY (${dateStr}) ---\n`;
-    finalNotes += `Completed Today:\n- ${completedText}\n\n`;
-    finalNotes += `In Progress:\n- ${inProgressText}\n\n`;
-    finalNotes += `Hydration Today: ${waterIntake} ml\n`;
+    if (importConfig.health) {
+      const waterIntake = localStorage.getItem('tr-water-intake-ml') || '0';
+      finalNotes += `### Health & Focus\nHydration: ${waterIntake} ml\n\n`;
+    }
 
     setRawNotes(finalNotes);
-    setLoadingImport(false);
+    setTimeout(() => setLoadingImport(false), 600);
   };
 
   const handleGenerateReport = async () => {
@@ -158,11 +176,8 @@ const Status = () => {
       const key = localStorage.getItem('zoro-ai-key');
       const model = localStorage.getItem('zoro-ai-model') || 'gemini-1.5-flash-8b';
 
-      if (!key) {
-        throw new Error("Please connect your Gemini API key in Settings first!");
-      }
+      if (!key) throw new Error("Please connect your Gemini API key in Settings first!");
 
-      // Compile data
       const dateStr = new Date().toLocaleDateString();
       const tasksSaved = localStorage.getItem('tr-run-tasks') || '[]';
       const parsedTasks = JSON.parse(tasksSaved);
@@ -177,7 +192,6 @@ const Status = () => {
         .replace(/{TASKS_TABLE_ROW}/g, tableRows || '| None | - | - |');
 
       const prompt = `Here is my raw developer standup summary notes:\n"${rawNotes}"\n\nHere is the target status template structure I want to use:\n"${compiledTemplate}"\n\nPlease refine my raw notes into a professional daily standup status report matching the template. Improve spelling, format tables neatly, and sound like a Senior Software Engineer. Return ONLY the refined status markdown. No other comments.`;
-
       const system = "You are a professional software engineer technical writer. Return raw markdown text.";
 
       const res = await fetch('http://localhost:3000/api/ai/chat', {
@@ -194,7 +208,7 @@ const Status = () => {
       const data = await res.json();
       setReport(data.text);
     } catch (err) {
-      alert("AI Generation failed: " + err.message);
+      showAlert("AI Generation failed: " + err.message);
     } finally {
       setLoading(false);
     }
@@ -203,7 +217,25 @@ const Status = () => {
   const handleCopyReport = () => {
     if (!report) return;
     navigator.clipboard.writeText(report);
-    alert('Report copied to clipboard!');
+    setIsCopied(true);
+    setTimeout(() => setIsCopied(false), 2000);
+  };
+
+  const handleCopyHtml = async () => {
+    if (!report) return;
+    try {
+      const htmlContent = marked(report);
+      const clipboardItem = new ClipboardItem({
+        'text/html': new Blob([htmlContent], { type: 'text/html' }),
+        'text/plain': new Blob([report], { type: 'text/plain' })
+      });
+      await navigator.clipboard.write([clipboardItem]);
+      setIsHtmlCopied(true);
+      setTimeout(() => setIsHtmlCopied(false), 2000);
+    } catch (e) {
+      console.error(e);
+      handleCopyReport(); // Fallback
+    }
   };
 
   const handleExportMarkdown = () => {
@@ -221,19 +253,13 @@ const Status = () => {
     e.preventDefault();
     if (!newTemplateName.trim() || !newTemplateBody.trim()) return;
 
-    const newT = {
-      id: 'template_' + Date.now(),
-      name: newTemplateName,
-      content: newTemplateBody
-    };
-
+    const newT = { id: 'template_' + Date.now(), name: newTemplateName, content: newTemplateBody };
     const updated = [...templates, newT];
     setTemplates(updated);
     setSelectedTemplateId(newT.id);
     setTemplateContent(newT.content);
     localStorage.setItem('zoro-status-templates', JSON.stringify(updated));
 
-    // Save to API
     fetch('http://localhost:3000/api/status/templates', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -245,9 +271,9 @@ const Status = () => {
     setNewTemplateBody('');
   };
 
-  const handleDeleteTemplate = () => {
-    if (templates.length <= 1) return alert("You must keep at least one template.");
-    if (window.confirm("Permanently delete this status template?")) {
+  const handleDeleteTemplate = async () => {
+    if (templates.length <= 1) return showAlert("You must keep at least one template.");
+    if (await showConfirm("Permanently delete this status template?")) {
       const updated = templates.filter(t => t.id !== selectedTemplateId);
       setTemplates(updated);
       setSelectedTemplateId(updated[0].id);
@@ -263,86 +289,63 @@ const Status = () => {
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '24px', minHeight: '100vh', paddingBottom: '40px' }}>
+      
       {/* Header */}
       <div>
-        <h1 style={{ fontSize: '2rem', fontWeight: '800', marginBottom: '4px' }}>
+        <h1 style={{ fontSize: '2rem', fontWeight: '900', marginBottom: '8px', letterSpacing: '-0.5px' }}>
           Daily <span className="gradient-text">Status Workstation</span>
         </h1>
-        <p style={{ color: 'var(--text-secondary)' }}>Import today's status achievements and compile professional daily standups.</p>
+        <p style={{ color: 'var(--text-secondary)', fontSize: '0.95rem' }}>Auto-compile your tasks, hours, and health data into a professional standup report.</p>
       </div>
 
-      <div style={{
-        display: 'grid',
-        gridTemplateColumns: '1.2fr 2fr',
-        gap: '24px',
-        alignItems: 'start'
-      }}>
-
-        {/* Left Column: Inputs & Templates */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1.8fr', gap: '24px', alignItems: 'start' }}>
+        
+        {/* Left Column: Config & Inputs */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-
-          {/* Template Select */}
-          <div className="glass-panel" style={{ padding: '20px' }}>
-            <h3 style={{ fontSize: '1rem', fontWeight: 'bold', marginBottom: '12px' }}>Choose Format</h3>
-
-            <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
-              <select
-                value={selectedTemplateId}
-                onChange={(e) => handleTemplateChange(e.target.value)}
-                style={{
-                  flexGrow: 1,
-                  background: 'var(--bg-tertiary)',
-                  border: '1px solid var(--border-color)',
-                  color: 'var(--text-primary)',
-                  padding: '10px 14px',
-                  borderRadius: '10px',
-                  outline: 'none',
-                  fontWeight: '500'
-                }}
-              >
-                {templates.map(t => (
-                  <option key={t.id} value={t.id}>{t.name}</option>
-                ))}
-              </select>
-
-              <button
-                onClick={() => setModalOpen(true)}
-                style={{
-                  background: 'var(--bg-tertiary)',
-                  border: '1px solid var(--border-color)',
-                  color: 'var(--text-primary)',
-                  borderRadius: '10px',
-                  padding: '10px',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center'
-                }}
-                title="Create custom template"
-              >
-                <Plus size={18} />
-              </button>
-
-              <button
-                onClick={handleDeleteTemplate}
-                style={{
-                  background: 'rgba(239, 68, 68, 0.1)',
-                  color: 'var(--accent-red)',
-                  border: '1px solid rgba(239, 68, 68, 0.2)',
-                  borderRadius: '10px',
-                  padding: '10px',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center'
-                }}
-                title="Delete template"
-              >
-                <Trash2 size={18} />
-              </button>
+          
+          {/* Template Configuration */}
+          <div className="glass-panel" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h3 style={{ fontSize: '1.05rem', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <FileText size={18} color="var(--accent-purple)" />
+                Report Template
+              </h3>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button onClick={() => setTemplatePreviewOpen(true)} className="nav-item-hover" style={{ background: 'rgba(59,130,246,0.1)', color: '#3b82f6', border: '1px solid rgba(59,130,246,0.2)', borderRadius: '8px', padding: '6px', cursor: 'pointer' }} title="Preview Template">
+                  <Eye size={16} />
+                </button>
+                <button onClick={() => setModalOpen(true)} className="nav-item-hover" style={{ background: 'transparent', border: '1px solid var(--border-color)', color: 'var(--text-primary)', borderRadius: '8px', padding: '6px', cursor: 'pointer' }} title="Create new">
+                  <Plus size={16} />
+                </button>
+                <button onClick={handleDeleteTemplate} className="nav-item-hover" style={{ background: 'rgba(239, 68, 68, 0.1)', color: 'var(--accent-red)', border: '1px solid rgba(239, 68, 68, 0.2)', borderRadius: '8px', padding: '6px', cursor: 'pointer' }} title="Delete">
+                  <Trash2 size={16} />
+                </button>
+              </div>
             </div>
+
+            <select
+              value={selectedTemplateId}
+              onChange={(e) => handleTemplateChange(e.target.value)}
+              style={{
+                width: '100%',
+                background: 'var(--bg-tertiary)',
+                border: '1px solid var(--border-color)',
+                color: 'var(--text-primary)',
+                padding: '12px 14px',
+                borderRadius: '10px',
+                outline: 'none',
+                fontWeight: '600',
+                fontSize: '0.9rem',
+                appearance: 'none',
+                backgroundImage: `url("data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%3D%22292.4%22%3E%3Cpath%20fill%3D%22%239CA3AF%22%20d%3D%22M287%2069.4a17.6%2017.6%200%200%200-13-5.4H18.4c-5%200-9.3%201.8-12.9%205.4A17.6%2017.6%200%200%200%200%2082.2c0%205%201.8%209.3%205.4%2012.9l128%20127.9c3.6%203.6%207.8%205.4%2012.8%205.4s9.2-1.8%2012.8-5.4L287%2095c3.5-3.5%205.4-7.8%205.4-12.8%200-5-1.9-9.2-5.5-12.8z%22%2F%3E%3C%2Fsvg%3E")`,
+                backgroundRepeat: 'no-repeat',
+                backgroundPosition: 'right 14px top 50%',
+                backgroundSize: '10px auto'
+              }}
+            >
+              {templates?.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+            </select>
 
             <textarea
               value={templateContent}
@@ -351,124 +354,149 @@ const Status = () => {
               style={{
                 width: '100%',
                 height: '140px',
-                background: 'var(--bg-tertiary)',
+                background: 'rgba(0,0,0,0.2)',
                 border: '1px solid var(--border-color)',
-                color: 'var(--text-primary)',
+                color: 'var(--text-secondary)',
                 borderRadius: '10px',
-                padding: '12px',
+                padding: '14px',
                 outline: 'none',
                 fontFamily: 'var(--font-mono)',
                 fontSize: '0.8rem',
-                resize: 'vertical'
+                resize: 'vertical',
+                lineHeight: '1.5'
               }}
             />
           </div>
 
-          {/* Raw Notes Input */}
-          <div className="glass-panel" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          {/* Data Importer */}
+          <div className="glass-panel" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <h3 style={{ fontSize: '1rem', fontWeight: 'bold' }}>Status Activities</h3>
-
-              <button
-                onClick={handleImportActivities}
-                disabled={loadingImport}
-                style={{
-                  background: 'var(--bg-tertiary)',
-                  border: '1px solid var(--border-color)',
-                  color: 'var(--text-primary)',
-                  borderRadius: '8px',
-                  padding: '6px 12px',
-                  cursor: 'pointer',
-                  fontSize: '0.8rem',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '4px'
-                }}
-              >
-                <RefreshCw size={12} className={loadingImport ? 'spinner' : ''} />
-                Auto-Import
-              </button>
+              <h3 style={{ fontSize: '1.05rem', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <DatabaseBackup size={18} color="#3b82f6" />
+                Data Aggregator
+              </h3>
             </div>
 
-            <textarea
-              value={rawNotes}
-              onChange={(e) => setRawNotes(e.target.value)}
-              placeholder="Paste raw notes or click auto-import to gather timesheets, task progress, and goals..."
+            {/* Smart Toggles */}
+            <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+              <div 
+                onClick={() => setImportConfig(p => ({ ...p, tasks: !p.tasks }))}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer',
+                  padding: '6px 12px', borderRadius: '20px', fontSize: '0.8rem', fontWeight: '600',
+                  background: importConfig.tasks ? 'rgba(16,185,129,0.15)' : 'var(--bg-tertiary)',
+                  color: importConfig.tasks ? '#10b981' : 'var(--text-muted)',
+                  border: `1px solid ${importConfig.tasks ? 'rgba(16,185,129,0.3)' : 'var(--border-color)'}`,
+                  transition: 'all 0.2s'
+                }}>
+                <ListTodo size={14} /> Tasks
+              </div>
+              <div 
+                onClick={() => setImportConfig(p => ({ ...p, timesheet: !p.timesheet }))}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer',
+                  padding: '6px 12px', borderRadius: '20px', fontSize: '0.8rem', fontWeight: '600',
+                  background: importConfig.timesheet ? 'rgba(59,130,246,0.15)' : 'var(--bg-tertiary)',
+                  color: importConfig.timesheet ? '#3b82f6' : 'var(--text-muted)',
+                  border: `1px solid ${importConfig.timesheet ? 'rgba(59,130,246,0.3)' : 'var(--border-color)'}`,
+                  transition: 'all 0.2s'
+                }}>
+                <Clock size={14} /> Timesheet
+              </div>
+              <div 
+                onClick={() => setImportConfig(p => ({ ...p, health: !p.health }))}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer',
+                  padding: '6px 12px', borderRadius: '20px', fontSize: '0.8rem', fontWeight: '600',
+                  background: importConfig.health ? 'rgba(6,182,212,0.15)' : 'var(--bg-tertiary)',
+                  color: importConfig.health ? '#06b6d4' : 'var(--text-muted)',
+                  border: `1px solid ${importConfig.health ? 'rgba(6,182,212,0.3)' : 'var(--border-color)'}`,
+                  transition: 'all 0.2s'
+                }}>
+                <Droplets size={14} /> Health
+              </div>
+            </div>
+
+            <button
+              onClick={handleImportActivities}
+              disabled={loadingImport}
               style={{
                 width: '100%',
-                height: '180px',
                 background: 'var(--bg-tertiary)',
                 border: '1px solid var(--border-color)',
                 color: 'var(--text-primary)',
                 borderRadius: '10px',
                 padding: '12px',
+                cursor: 'pointer',
+                fontWeight: 'bold',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '8px',
+                transition: 'all 0.2s'
+              }}
+              className="nav-item-hover"
+            >
+              <RefreshCw size={16} className={loadingImport ? 'spinner' : ''} />
+              {loadingImport ? 'Aggregating...' : 'Pull Today\'s Activity'}
+            </button>
+
+            <textarea
+              value={rawNotes}
+              onChange={(e) => setRawNotes(e.target.value)}
+              placeholder="Raw data goes here..."
+              style={{
+                width: '100%',
+                height: '140px',
+                background: 'rgba(0,0,0,0.2)',
+                border: '1px solid var(--border-color)',
+                color: 'var(--text-primary)',
+                borderRadius: '10px',
+                padding: '14px',
                 outline: 'none',
                 fontSize: '0.85rem',
                 lineHeight: '1.5',
                 resize: 'vertical'
               }}
             />
-
-            <button
-              onClick={handleGenerateReport}
-              disabled={loading || !rawNotes.trim()}
-              className="glow-btn"
-              style={{ justifyContent: 'center' }}
-            >
-              {loading ? (
-                <>
-                  <div className="spinner" style={{ width: '14px', height: '14px', marginRight: '6px' }}></div>
-                  AI Refinement active...
-                </>
-              ) : (
-                <>
-                  <Sparkles size={16} />
-                  Compile Status with AI
-                </>
-              )}
-            </button>
           </div>
+
+          <button
+            onClick={handleGenerateReport}
+            disabled={loading || !rawNotes.trim()}
+            className="glow-btn"
+            style={{ 
+              justifyContent: 'center', 
+              padding: '16px', 
+              fontSize: '1rem', 
+              fontWeight: 'bold',
+              background: loading ? 'rgba(168, 85, 247, 0.4)' : undefined
+            }}
+          >
+            {loading ? (
+              <><div className="spinner" style={{ width: '18px', height: '18px', marginRight: '8px' }} /> AI Processing...</>
+            ) : (
+              <><Sparkles size={18} /> Generate Perfect Standup</>
+            )}
+          </button>
         </div>
 
-        {/* Right Column: Preview Panel */}
-        <div className="glass-panel" style={{ padding: '24px', display: 'flex', flexDirection: 'column', minHeight: '520px' }}>
-
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-            <h3 style={{ fontSize: '1.1rem', fontWeight: 'bold' }}>Generated Report</h3>
+        {/* Right Column: Output / Preview */}
+        <div className="glass-panel" style={{ padding: '24px', display: 'flex', flexDirection: 'column', height: '100%', minHeight: '600px', position: 'relative' }}>
+          
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+            <h3 style={{ fontSize: '1.2rem', fontWeight: '800', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <CheckCircle2 size={20} color="#10b981" />
+              Final Report
+            </h3>
 
             {report && (
-              <div style={{ display: 'flex', gap: '6px', background: 'var(--bg-tertiary)', padding: '2px', borderRadius: '8px' }}>
-                <button
-                  onClick={() => setViewMode('preview')}
-                  style={{
-                    background: viewMode === 'preview' ? 'var(--bg-primary)' : 'transparent',
-                    border: 'none',
-                    color: viewMode === 'preview' ? 'var(--accent-purple)' : 'var(--text-secondary)',
-                    padding: '6px 12px',
-                    borderRadius: '6px',
-                    cursor: 'pointer',
-                    fontSize: '0.8rem',
-                    fontWeight: '600'
-                  }}
-                >
-                  <Eye size={12} style={{ marginRight: '4px', display: 'inline' }} />
-                  Preview
+              <div style={{ display: 'flex', background: 'var(--bg-tertiary)', padding: '4px', borderRadius: '10px', border: '1px solid var(--border-color)' }}>
+                <button onClick={() => setViewMode('preview')} style={{ background: viewMode === 'preview' ? 'var(--bg-primary)' : 'transparent', border: 'none', color: viewMode === 'preview' ? 'var(--accent-purple)' : 'var(--text-secondary)', padding: '6px 14px', borderRadius: '6px', cursor: 'pointer', fontSize: '0.85rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '6px', transition: 'all 0.2s', boxShadow: viewMode === 'preview' ? '0 2px 8px rgba(0,0,0,0.2)' : 'none' }}>
+                  <Eye size={14} /> Preview
                 </button>
-                <button
-                  onClick={() => setViewMode('source')}
-                  style={{
-                    background: viewMode === 'source' ? 'var(--bg-primary)' : 'transparent',
-                    border: 'none',
-                    color: viewMode === 'source' ? 'var(--accent-purple)' : 'var(--text-secondary)',
-                    padding: '6px 12px',
-                    borderRadius: '6px',
-                    cursor: 'pointer',
-                    fontSize: '0.8rem',
-                    fontWeight: '600'
-                  }}
-                >
-                  <Edit3 size={12} style={{ marginRight: '4px', display: 'inline' }} />
-                  Markdown
+                <button onClick={() => setViewMode('source')} style={{ background: viewMode === 'source' ? 'var(--bg-primary)' : 'transparent', border: 'none', color: viewMode === 'source' ? 'var(--accent-purple)' : 'var(--text-secondary)', padding: '6px 14px', borderRadius: '6px', cursor: 'pointer', fontSize: '0.85rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '6px', transition: 'all 0.2s', boxShadow: viewMode === 'source' ? '0 2px 8px rgba(0,0,0,0.2)' : 'none' }}>
+                  <Edit3 size={14} /> Markdown
                 </button>
               </div>
             )}
@@ -476,83 +504,48 @@ const Status = () => {
 
           <div style={{
             flexGrow: 1,
-            background: 'var(--bg-tertiary)',
-            padding: '24px',
-            borderRadius: '16px',
+            background: report ? (viewMode === 'preview' ? 'var(--bg-primary)' : 'rgba(0,0,0,0.3)') : 'rgba(0,0,0,0.1)',
+            border: '1px solid var(--border-color)',
+            padding: report ? '24px' : '0',
+            borderRadius: '12px',
             overflowY: 'auto',
-            marginBottom: '16px'
+            marginBottom: '20px',
+            display: 'flex',
+            flexDirection: 'column'
           }}>
             {!report ? (
-              <div style={{
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                justifyContent: 'center',
-                height: '100%',
-                color: 'var(--text-muted)',
-                textAlign: 'center',
-                minHeight: '260px'
-              }}>
-                <FileText size={48} style={{ opacity: 0.5, marginBottom: '12px' }} />
-                <h4>No Report Generated</h4>
-                <p style={{ fontSize: '0.8rem', maxWidth: '300px', marginTop: '6px' }}>
-                  Write status logs and click "Compile Status" to preview the refined developer standup.
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--text-muted)', textAlign: 'center', padding: '40px' }}>
+                <div style={{ width: '80px', height: '80px', borderRadius: '50%', background: 'var(--bg-tertiary)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '20px' }}>
+                  <FileText size={32} style={{ opacity: 0.5 }} />
+                </div>
+                <h4 style={{ fontSize: '1.1rem', color: 'var(--text-primary)', marginBottom: '8px' }}>Waiting for Data</h4>
+                <p style={{ fontSize: '0.9rem', maxWidth: '320px', lineHeight: '1.5' }}>
+                  Aggregrate your daily data and click Generate to see your AI-perfected standup report here.
                 </p>
               </div>
             ) : viewMode === 'preview' ? (
-              <div
-                className="markdown-body"
-                dangerouslySetInnerHTML={{ __html: marked(report) }}
-              />
+              <div className="markdown-body" dangerouslySetInnerHTML={{ __html: marked(report) }} />
             ) : (
               <textarea
                 value={report}
                 onChange={(e) => setReport(e.target.value)}
-                style={{
-                  width: '100%',
-                  height: '100%',
-                  minHeight: '260px',
-                  background: 'transparent',
-                  border: 'none',
-                  color: 'var(--text-primary)',
-                  fontFamily: 'var(--font-mono)',
-                  fontSize: '0.85rem',
-                  outline: 'none',
-                  resize: 'none',
-                  lineHeight: '1.5'
-                }}
+                style={{ width: '100%', height: '100%', flexGrow: 1, background: 'transparent', border: 'none', color: 'var(--text-primary)', fontFamily: 'var(--font-mono)', fontSize: '0.85rem', outline: 'none', resize: 'none', lineHeight: '1.6' }}
               />
             )}
           </div>
 
           {report && (
-            <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
-              <button
-                onClick={handleCopyReport}
-                style={{
-                  background: 'var(--bg-tertiary)',
-                  border: '1px solid var(--border-color)',
-                  color: 'var(--text-primary)',
-                  padding: '10px 16px',
-                  borderRadius: '10px',
-                  cursor: 'pointer',
-                  fontWeight: '600',
-                  fontSize: '0.9rem',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px'
-                }}
-              >
-                <Copy size={16} />
-                Copy Output
+            <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+              <button onClick={handleCopyHtml} style={{ flex: 1, background: isHtmlCopied ? 'rgba(59,130,246,0.15)' : 'var(--bg-tertiary)', border: `1px solid ${isHtmlCopied ? 'rgba(59,130,246,0.4)' : 'var(--border-color)'}`, color: isHtmlCopied ? '#3b82f6' : 'var(--text-primary)', padding: '12px', borderRadius: '10px', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.9rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', transition: 'all 0.2s' }} className="nav-item-hover">
+                {isHtmlCopied ? <Check size={18} /> : <Mail size={18} />} {isHtmlCopied ? 'Copied HTML!' : 'Copy for Email/Teams'}
+              </button>
+              
+              <button onClick={handleCopyReport} style={{ flex: 1, background: isCopied ? 'rgba(16,185,129,0.15)' : 'var(--bg-tertiary)', border: `1px solid ${isCopied ? 'rgba(16,185,129,0.4)' : 'var(--border-color)'}`, color: isCopied ? '#10b981' : 'var(--text-primary)', padding: '12px', borderRadius: '10px', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.9rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', transition: 'all 0.2s' }} className="nav-item-hover">
+                {isCopied ? <Check size={18} /> : <Copy size={18} />} {isCopied ? 'Copied!' : 'Copy Markdown'}
               </button>
 
-              <button
-                onClick={handleExportMarkdown}
-                className="glow-btn"
-              >
-                <Download size={16} />
-                Export Markdown
+              <button onClick={handleExportMarkdown} style={{ background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', padding: '12px', borderRadius: '10px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }} className="nav-item-hover" title="Download .md file">
+                <Download size={18} />
               </button>
             </div>
           )}
@@ -560,91 +553,71 @@ const Status = () => {
       </div>
 
       {/* New Template Modal */}
-      {modalOpen && (
-        <div style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          background: 'rgba(0,0,0,0.5)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          zIndex: 100
-        }}>
-          <div className="glass-panel" style={{ padding: '24px', width: '450px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-            <h3 style={{ fontSize: '1.1rem', fontWeight: 'bold' }}>Create Custom Template</h3>
-
-            <form onSubmit={handleSaveTemplate} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                <label style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: '600' }}>Template Name</label>
-                <input
-                  type="text"
-                  value={newTemplateName}
-                  onChange={(e) => setNewTemplateName(e.target.value)}
-                  style={{
-                    background: 'var(--bg-tertiary)',
-                    border: '1px solid var(--border-color)',
-                    color: 'var(--text-primary)',
-                    padding: '8px 12px',
-                    borderRadius: '8px',
-                    outline: 'none'
-                  }}
-                  placeholder="e.g. Weekly Executive Board Report"
-                  required
-                />
+      {modalOpen && createPortal(
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
+          <div className="glass-panel" style={{ padding: '30px', width: '500px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+            <h3 style={{ fontSize: '1.2rem', fontWeight: '800' }}>Create Custom Template</h3>
+            <form onSubmit={handleSaveTemplate} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <label style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', fontWeight: 'bold' }}>Template Name</label>
+                <input type="text" value={newTemplateName} onChange={(e) => setNewTemplateName(e.target.value)} style={{ background: 'var(--bg-primary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', padding: '12px 14px', borderRadius: '10px', outline: 'none', fontSize: '0.9rem' }} placeholder="e.g. Weekly Executive Report" required />
               </div>
-
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                <label style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: '600' }}>Template Structure</label>
-                <textarea
-                  value={newTemplateBody}
-                  onChange={(e) => setNewTemplateBody(e.target.value)}
-                  style={{
-                    height: '180px',
-                    background: 'var(--bg-tertiary)',
-                    border: '1px solid var(--border-color)',
-                    color: 'var(--text-primary)',
-                    padding: '8px 12px',
-                    borderRadius: '8px',
-                    outline: 'none',
-                    fontFamily: 'var(--font-mono)',
-                    fontSize: '0.8rem'
-                  }}
-                  placeholder="Use tags like {DATE}, {TASKS_COMPLETED}, {TASKS_IN_PROGRESS} in your template..."
-                  required
-                />
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <label style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', fontWeight: 'bold' }}>Template Structure</label>
+                <textarea value={newTemplateBody} onChange={(e) => setNewTemplateBody(e.target.value)} style={{ height: '220px', background: 'var(--bg-primary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', padding: '14px', borderRadius: '10px', outline: 'none', fontFamily: 'var(--font-mono)', fontSize: '0.85rem', lineHeight: '1.5' }} placeholder="Use tags like {DATE}, {TASKS_COMPLETED}, {TASKS_IN_PROGRESS} in your template..." required />
               </div>
-
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
-                <button
-                  type="button"
-                  onClick={() => setModalOpen(false)}
-                  style={{
-                    background: 'transparent',
-                    border: '1px solid var(--border-color)',
-                    color: 'var(--text-primary)',
-                    padding: '8px 16px',
-                    borderRadius: '8px',
-                    cursor: 'pointer'
-                  }}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="glow-btn"
-                  style={{ padding: '8px 16px' }}
-                >
-                  Save Template
-                </button>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '8px' }}>
+                <button type="button" onClick={() => setModalOpen(false)} style={{ background: 'transparent', border: '1px solid var(--border-color)', color: 'var(--text-primary)', padding: '10px 20px', borderRadius: '10px', cursor: 'pointer', fontWeight: 'bold' }}>Cancel</button>
+                <button type="submit" className="glow-btn" style={{ padding: '10px 20px', borderRadius: '10px' }}>Save Template</button>
               </div>
             </form>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
+      {/* Template Preview Modal */}
+      {templatePreviewOpen && createPortal(
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
+          <div className="glass-panel" style={{ padding: '30px', width: '800px', height: '80vh', display: 'flex', flexDirection: 'column', gap: '20px', position: 'relative' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-color)', paddingBottom: '16px' }}>
+              <h3 style={{ fontSize: '1.2rem', fontWeight: '800', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Eye size={20} color="#3b82f6" />
+                Template Preview
+              </h3>
+              <button onClick={() => setTemplatePreviewOpen(false)} className="nav-item-hover" style={{ background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)', color: 'var(--text-secondary)', padding: '6px', borderRadius: '8px', cursor: 'pointer' }}>
+                <X size={18} />
+              </button>
+            </div>
+            
+            <div
+              className="markdown-body"
+              style={{
+                flexGrow: 1,
+                background: 'var(--bg-primary)',
+                border: '1px solid var(--border-color)',
+                borderRadius: '10px',
+                padding: '24px',
+                overflowY: 'auto',
+                fontSize: '0.9rem'
+              }}
+              dangerouslySetInnerHTML={{ 
+                __html: marked(templateContent
+                  .replace(/{DATE}/g, new Date().toLocaleDateString())
+                  .replace(/{TASKS_COMPLETED}/g, 'Task 1\n- Task 2')
+                  .replace(/{TASKS_IN_PROGRESS}/g, 'Task 3\n- Task 4')
+                  .replace(/{TASKS_TABLE_ROW}/g, '| Example Task | ✅ Completed | Details |\n| Pending Task | 🔄 In Progress | Fix requested |')
+                ) 
+              }}
+            />
+            
+            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <button onClick={() => setTemplatePreviewOpen(false)} style={{ background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', padding: '10px 24px', borderRadius: '10px', cursor: 'pointer', fontWeight: 'bold' }}>Close Preview</button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
     </div>
   );
 };

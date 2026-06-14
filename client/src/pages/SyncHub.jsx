@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Database,
   Upload,
@@ -18,8 +19,13 @@ import {
   Folder,
   FolderPlus,
   Save,
-  Edit2
+  Edit2,
+  ChevronDown,
+  ChevronRight,
+  FolderOpen,
+  GripVertical
 } from 'lucide-react';
+import { showAlert, showConfirm, showPrompt } from '../utils/Alerts';
 
 const SyncHub = () => {
   // TestRail credentials
@@ -65,6 +71,9 @@ const SyncHub = () => {
   });
   const [tagLogic, setTagLogic] = useState(() => sessionStorage.getItem('tr-sync-tagLogic') || 'OR');
   const [searchTerm, setSearchTerm] = useState(() => sessionStorage.getItem('tr-sync-searchTerm') || '');
+  const [expandedFolders, setExpandedFolders] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('tr-sync-expandedFolders') || '[]'); } catch { return []; }
+  });
 
   useEffect(() => { sessionStorage.setItem('tr-sync-selectedStateIds', JSON.stringify([...selectedStateIds])); }, [selectedStateIds]);
   useEffect(() => { sessionStorage.setItem('tr-sync-testcases', JSON.stringify(testCases)); }, [testCases]);
@@ -74,6 +83,14 @@ const SyncHub = () => {
   useEffect(() => { sessionStorage.setItem('tr-sync-selectedTags', JSON.stringify(selectedTags)); }, [selectedTags]);
   useEffect(() => { sessionStorage.setItem('tr-sync-tagLogic', tagLogic); }, [tagLogic]);
   useEffect(() => { sessionStorage.setItem('tr-sync-searchTerm', searchTerm); }, [searchTerm]);
+  useEffect(() => { localStorage.setItem('tr-sync-expandedFolders', JSON.stringify(expandedFolders)); }, [expandedFolders]);
+
+  const handleToggleFolder = (e, folderName) => {
+    e.stopPropagation();
+    setExpandedFolders(prev =>
+      prev.includes(folderName) ? prev.filter(f => f !== folderName) : [...prev, folderName]
+    );
+  };
 
   // Manual Test Case Modal
   const [manualModalOpen, setManualModalOpen] = useState(false);
@@ -241,8 +258,8 @@ const SyncHub = () => {
 
   // State controls
   const handleSaveState = async () => {
-    if (!saveName.trim()) return alert("Please enter a matrix state name.");
-    if (testCases.length === 0) return alert("No test cases loaded to save.");
+    if (!saveName.trim()) return showAlert("Please enter a matrix state name.");
+    if (testCases.length === 0) return showAlert("No test cases loaded to save.");
 
     try {
       const response = await fetch('http://localhost:3000/api/save', {
@@ -314,7 +331,7 @@ const SyncHub = () => {
 
   const handleRenameState = async (state, e) => {
     e.stopPropagation();
-    const newName = window.prompt("Enter new name for the matrix:", state.name);
+    const newName = await showPrompt("Enter new name for the matrix:", state.name);
     if (!newName || newName.trim() === '' || newName === state.name) return;
     try {
       await fetch(`http://localhost:3000/api/matrix/${state.id}`, {
@@ -330,10 +347,10 @@ const SyncHub = () => {
   const handleUpdateState = async (state, e) => {
     e.stopPropagation();
     if (testCases.length === 0) {
-      alert("No test cases currently loaded to update with.");
+      showAlert("No test cases currently loaded to update with.");
       return;
     }
-    if (!window.confirm(`Update matrix "${state.name}" with the ${testCases.length} currently loaded test cases?`)) return;
+    if (!(await showConfirm(`Update matrix "${state.name}" with the ${testCases.length} currently loaded test cases?`))) return;
     try {
       await fetch(`http://localhost:3000/api/matrix/${state.id}`, {
         method: 'PUT',
@@ -347,7 +364,7 @@ const SyncHub = () => {
 
   const handleDeleteState = async (id, e) => {
     e.stopPropagation();
-    if (!window.confirm("Permanently delete this saved state?")) return;
+    if (!(await showConfirm("Permanently delete this saved state?"))) return;
     try {
       const response = await fetch(`http://localhost:3000/api/matrix/${id}`, {
         method: 'DELETE'
@@ -398,7 +415,7 @@ const SyncHub = () => {
       });
 
     if (payload.length === 0) {
-      alert("No test cases marked as 'Map' with valid IDs.");
+      showAlert("No test cases marked as 'Map' with valid IDs.");
       return;
     }
 
@@ -478,9 +495,9 @@ const SyncHub = () => {
     addLog(`Added tags to ${selectedCaseUids.length} selected cases.`, 'info');
   };
 
-  const handleDeleteSelected = () => {
+  const handleDeleteSelected = async () => {
     if (selectedCaseUids.length === 0) return;
-    if (!window.confirm(`Delete ${selectedCaseUids.length} selected cases?`)) return;
+    if (!(await showConfirm(`Delete ${selectedCaseUids.length} selected cases?`))) return;
     const filtered = testCases.filter(tc => !selectedCaseUids.includes(tc._uid));
     setTestCases(filtered);
     setSelectedCaseUids([]);
@@ -504,7 +521,7 @@ const SyncHub = () => {
     const statusIdx = headerCols.findIndex(h => h.includes('status'));
 
     if (idIdx === -1 || statusIdx === -1) {
-      alert("Compare CSV is missing Case ID or Status headers.");
+      showAlert("Compare CSV is missing Case ID or Status headers.");
       return;
     }
 
@@ -891,185 +908,172 @@ const SyncHub = () => {
                 const folderStates = states.filter(s => (s.folder || 'Uncategorized') === folderName);
                 if (folderStates.length === 0 && !customFolders.includes(folderName)) return null;
 
+                const isExpanded = expandedFolders.includes(folderName);
+
                 return (
-                  <div
-                    key={folderName}
-                    draggable
-                    onDragStart={(e) => {
-                      if (draggedStateId) return;
-                      e.stopPropagation();
-                      e.dataTransfer.setData('text/plain', folderName);
-                      setDraggedFolder(folderName);
-                    }}
-                    onDragEnd={() => setDraggedFolder('')}
-                    style={{
-                      display: 'flex', flexDirection: 'column', gap: '8px',
-                      background: 'rgba(0,0,0,0.15)', borderRadius: '10px', padding: '12px', border: '1px solid rgba(255,255,255,0.02)',
-                      transition: 'border-color 0.2s ease',
-                      cursor: 'grab'
-                    }}
-                    onDragOver={(e) => { e.preventDefault(); e.currentTarget.style.borderColor = 'var(--accent-purple)'; }}
-                    onDragLeave={(e) => { e.currentTarget.style.borderColor = 'rgba(255,255,255,0.02)'; }}
-                    onDrop={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      e.currentTarget.style.borderColor = 'rgba(255,255,255,0.02)';
-                      
-                      if (draggedStateId) {
-                        handleDropToFolder(folderName, draggedStateId);
-                        setDraggedStateId('');
-                      } else if (draggedFolder && draggedFolder !== folderName) {
-                        const allF = Array.from(new Set([...customFolders, ...states.map(s => s.folder || 'Uncategorized')]));
-                        const newOrder = [...allF].sort((a, b) => {
-                          let idxA = folderOrder.indexOf(a);
-                          let idxB = folderOrder.indexOf(b);
-                          if (idxA === -1) idxA = Infinity;
-                          if (idxB === -1) idxB = Infinity;
-                          if (idxA === idxB) return a.localeCompare(b);
-                          return idxA - idxB;
-                        });
+                  <div key={folderName} style={{ display: 'flex', flexDirection: 'column' }}>
+                    <div
+                      draggable
+                      onDragStart={(e) => {
+                        if (draggedStateId) return;
+                        e.stopPropagation();
+                        e.dataTransfer.setData('text/plain', folderName);
+                        setDraggedFolder(folderName);
+                      }}
+                      onDragEnd={() => setDraggedFolder('')}
+                      onClick={(e) => handleToggleFolder(e, folderName)}
+                      style={{
+                        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                        padding: '8px 12px',
+                        background: 'transparent',
+                        borderRadius: '8px', cursor: 'pointer',
+                        color: 'var(--text-secondary)', fontWeight: '700',
+                        marginBottom: '2px', transition: 'all 0.1s ease',
+                        borderLeft: '3px solid transparent'
+                      }}
+                      className="nav-item-hover folder-drop-zone"
+                      onDragOver={(e) => { e.preventDefault(); e.currentTarget.style.background = 'rgba(59,130,246,0.2)'; e.currentTarget.style.borderLeft = '3px solid #3b82f6'; }}
+                      onDragLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.borderLeft = '3px solid transparent'; }}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        e.currentTarget.style.background = 'transparent';
+                        e.currentTarget.style.borderLeft = '3px solid transparent';
                         
-                        const fromIdx = newOrder.indexOf(draggedFolder);
-                        const toIdx = newOrder.indexOf(folderName);
-                        if (fromIdx !== -1 && toIdx !== -1) {
-                          newOrder.splice(fromIdx, 1);
-                          newOrder.splice(toIdx, 0, draggedFolder);
-                          setFolderOrder(newOrder);
-                          localStorage.setItem('tr-folder-order', JSON.stringify(newOrder));
+                        if (draggedStateId) {
+                          handleDropToFolder(folderName, draggedStateId);
+                          setDraggedStateId('');
+                        } else if (draggedFolder && draggedFolder !== folderName) {
+                          const allF = Array.from(new Set([...customFolders, ...states.map(s => s.folder || 'Uncategorized')]));
+                          const newOrder = [...allF].sort((a, b) => {
+                            let idxA = folderOrder.indexOf(a);
+                            let idxB = folderOrder.indexOf(b);
+                            if (idxA === -1) idxA = Infinity;
+                            if (idxB === -1) idxB = Infinity;
+                            if (idxA === idxB) return a.localeCompare(b);
+                            return idxA - idxB;
+                          });
+                          
+                          const fromIdx = newOrder.indexOf(draggedFolder);
+                          const toIdx = newOrder.indexOf(folderName);
+                          if (fromIdx !== -1 && toIdx !== -1) {
+                            newOrder.splice(fromIdx, 1);
+                            newOrder.splice(toIdx, 0, draggedFolder);
+                            setFolderOrder(newOrder);
+                            localStorage.setItem('tr-folder-order', JSON.stringify(newOrder));
+                          }
+                          setDraggedFolder('');
                         }
-                        setDraggedFolder('');
-                      }
-                    }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', paddingBottom: '4px', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-                      <Folder size={14} style={{ color: 'var(--text-muted)' }} />
-                      <span style={{ fontSize: '0.8rem', fontWeight: '700', color: 'var(--text-secondary)', letterSpacing: '0.5px' }}>
-                        {folderName.toUpperCase()}
-                      </span>
-                      <span style={{ marginLeft: 'auto', fontSize: '0.7rem', color: 'var(--text-muted)', background: 'rgba(255,255,255,0.05)', padding: '2px 8px', borderRadius: '12px' }}>
-                        {folderStates.length} items
-                      </span>
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexGrow: 1, overflow: 'hidden' }}>
+                        <GripVertical size={12} style={{ cursor: 'grab', opacity: 0.3 }} />
+                        <div style={{ display: 'flex', alignItems: 'center' }}>
+                          {isExpanded ? <ChevronDown size={14} style={{ color: 'var(--accent-purple)' }} /> : <ChevronRight size={14} />}
+                          {isExpanded ? <FolderOpen size={14} style={{ color: 'var(--accent-purple)', marginLeft: '4px' }} /> : <Folder size={14} style={{ marginLeft: '4px' }} />}
+                        </div>
+                        <span style={{ fontSize: '0.85rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', userSelect: 'none' }}>
+                          {folderName.toUpperCase()}
+                        </span>
+                        <span style={{ marginLeft: 'auto', fontSize: '0.65rem', color: 'var(--text-muted)' }}>
+                          {folderStates.length}
+                        </span>
+                      </div>
                     </div>
 
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '4px', minHeight: '10px' }}>
-                      {folderStates.length === 0 && (
-                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textAlign: 'center', padding: '12px 0', border: '1px dashed rgba(255,255,255,0.1)', borderRadius: '6px' }}>
-                          Drag items here
-                        </div>
-                      )}
-                      {folderStates.map(state => {
-                        const isPinned = pinnedStateId === state.id;
-                        const isSelected = selectedStateIds.has(state.id);
-                        return (
-                          <div
-                            key={state.id}
-                            draggable
-                            onDragStart={(e) => {
-                              e.stopPropagation();
-                              e.dataTransfer.setData('text/plain', state.id);
-                              setDraggedStateId(state.id);
-                            }}
-                            onDragEnd={(e) => {
-                              e.stopPropagation();
-                              setDraggedStateId('');
-                            }}
-                            onClick={() => handleLoadState(state.id)}
-                            style={{
-                              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                              background: isSelected ? 'rgba(168,85,247,0.15)' : 'var(--bg-tertiary)',
-                              padding: '10px 12px', borderRadius: '8px', cursor: 'pointer',
-                              border: isSelected ? '1px solid var(--accent-purple)' : '1px solid transparent',
-                              boxShadow: isSelected ? '0 0 0 1px rgba(168,85,247,0.5)' : 'none',
-                              position: 'relative', overflow: 'hidden', transition: 'all 0.2s ease'
-                            }}
-                            className="matrix-item"
-                          >
-                            {/* Pinned indicator line */}
-                            {isPinned && <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: '4px', background: 'var(--accent-pink)' }} />}
-
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginLeft: isPinned ? '6px' : '0' }}>
-                              <input
-                                type="checkbox"
-                                checked={isSelected}
-                                onClick={(e) => e.stopPropagation()}
-                                onChange={(e) => {
+                    {/* Children Items */}
+                    {isExpanded && (
+                      <div style={{ display: 'flex', flexDirection: 'column' }}>
+                        {folderStates.length === 0 && (
+                          <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textAlign: 'center', padding: '8px 0', paddingLeft: '32px' }}>
+                            Empty Folder
+                          </div>
+                        )}
+                        {folderStates.map(state => {
+                          const isPinned = pinnedStateId === state.id;
+                          const isSelected = selectedStateIds.has(state.id);
+                          return (
+                            <div
+                              key={state.id}
+                              draggable
+                              onDragStart={(e) => {
+                                e.stopPropagation();
+                                e.dataTransfer.setData('text/plain', state.id);
+                                setDraggedStateId(state.id);
+                              }}
+                              onDragEnd={(e) => {
+                                e.stopPropagation();
+                                setDraggedStateId('');
+                              }}
+                              onClick={(e) => {
+                                // if ctrl or shift are pressed, handle multi select. otherwise load
+                                if (e.ctrlKey || e.metaKey) {
                                   const newSet = new Set(selectedStateIds);
-                                  if (e.target.checked) newSet.add(state.id);
-                                  else newSet.delete(state.id);
+                                  if (newSet.has(state.id)) newSet.delete(state.id);
+                                  else newSet.add(state.id);
                                   setSelectedStateIds(newSet);
-                                }}
-                                style={{ accentColor: 'var(--accent-purple)', cursor: 'pointer', width: '16px', height: '16px' }}
-                              />
-                              <div style={{ display: 'flex', flexDirection: 'column' }}>
-                                <span style={{ fontSize: '0.85rem', fontWeight: isSelected ? '700' : '500', color: isSelected ? '#fff' : 'var(--text-primary)' }}>
-                                  {state.name}
-                                </span>
-                                {state.testCaseCount > 0 && (
-                                  <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>{state.testCaseCount} Test Cases</span>
-                                )}
+                                } else {
+                                  handleLoadState(state.id);
+                                }
+                              }}
+                              style={{
+                                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                                padding: '8px 12px', paddingLeft: '32px',
+                                background: isSelected ? 'linear-gradient(90deg, rgba(168,85,247,0.15), rgba(236,72,153,0.05))' : 'transparent',
+                                borderRadius: '8px', cursor: 'pointer',
+                                borderLeft: isSelected ? '3px solid var(--accent-purple)' : (isPinned ? '3px solid var(--accent-pink)' : '3px solid transparent'),
+                                color: isSelected ? '#fff' : 'var(--text-secondary)',
+                                fontWeight: isSelected ? '700' : '500',
+                                marginBottom: '2px', transition: 'all 0.1s ease',
+                                opacity: draggedStateId === state.id ? 0.4 : 1
+                              }}
+                              className="nav-item-hover"
+                            >
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexGrow: 1, overflow: 'hidden' }}>
+                                <GripVertical size={12} style={{ cursor: 'grab', opacity: 0.3 }} />
+                                <Database size={14} style={{ color: isSelected ? 'var(--accent-purple)' : (isPinned ? 'var(--accent-pink)' : 'var(--text-muted)') }} />
+                                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                  <span style={{ fontSize: '0.85rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', userSelect: 'none' }}>
+                                    {state.name}
+                                  </span>
+                                  {state.testCaseCount > 0 && (
+                                    <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', lineHeight: '1' }}>{state.testCaseCount} cases</span>
+                                  )}
+                                </div>
+                              </div>
+
+                              <div className="hover-actions" style={{ display: 'flex', gap: '4px' }}>
+                                <button title="Update" onClick={(e) => { e.stopPropagation(); handleUpdateState(state, e); }} style={{ background: 'transparent', border: 'none', color: 'var(--accent-purple)', padding: '4px', cursor: 'pointer' }}><RefreshCw size={12} /></button>
+                                <button title="Rename" onClick={(e) => { e.stopPropagation(); handleRenameState(state, e); }} style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', padding: '4px', cursor: 'pointer' }}><Edit2 size={12} /></button>
+                                <button title={isPinned ? "Unpin" : "Pin to top"} onClick={(e) => { e.stopPropagation(); handlePinState(state.id, e); }} style={{ background: 'transparent', border: 'none', color: isPinned ? 'var(--accent-pink)' : 'var(--text-muted)', padding: '4px', cursor: 'pointer' }}><Pin size={12} fill={isPinned ? "currentColor" : "none"} /></button>
+                                <button title="Delete" onClick={(e) => { e.stopPropagation(); handleDeleteState(state.id, e); }} style={{ background: 'transparent', border: 'none', color: 'var(--accent-red)', padding: '4px', cursor: 'pointer' }}><Trash2 size={12} /></button>
                               </div>
                             </div>
-
-                            <div className="matrix-item-actions" style={{ display: 'flex', gap: '4px' }}>
-                              <button
-                                onClick={(e) => handleUpdateState(state, e)}
-                                style={{ background: 'rgba(255,255,255,0.05)', border: 'none', cursor: 'pointer', color: 'var(--accent-purple)', padding: '6px', borderRadius: '6px', transition: 'all 0.2s ease' }}
-                                title="Update with current loaded cases"
-                                onMouseOver={(e) => { e.currentTarget.style.background = 'rgba(168,85,247,0.15)'; }}
-                                onMouseOut={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.05)'; }}
-                              >
-                                <RefreshCw size={14} />
-                              </button>
-                              <button
-                                onClick={(e) => handleRenameState(state, e)}
-                                style={{ background: 'rgba(255,255,255,0.05)', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', padding: '6px', borderRadius: '6px', transition: 'all 0.2s ease' }}
-                                title="Rename"
-                                onMouseOver={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.1)'; e.currentTarget.style.color = '#fff'; }}
-                                onMouseOut={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.05)'; e.currentTarget.style.color = 'var(--text-secondary)'; }}
-                              >
-                                <Edit2 size={14} />
-                              </button>
-                              <button
-                                onClick={(e) => handlePinState(state.id, e)}
-                                style={{ background: isPinned ? 'rgba(236,72,153,0.1)' : 'rgba(255,255,255,0.05)', border: 'none', cursor: 'pointer', color: isPinned ? 'var(--accent-pink)' : 'var(--text-secondary)', padding: '6px', borderRadius: '6px', transition: 'all 0.2s ease' }}
-                                title={isPinned ? "Unpin" : "Pin to top"}
-                                onMouseOver={(e) => { e.currentTarget.style.background = isPinned ? 'rgba(236,72,153,0.2)' : 'rgba(255,255,255,0.1)'; }}
-                                onMouseOut={(e) => { e.currentTarget.style.background = isPinned ? 'rgba(236,72,153,0.1)' : 'rgba(255,255,255,0.05)'; }}
-                              >
-                                <Pin size={14} fill={isPinned ? "currentColor" : "none"} />
-                              </button>
-                              <button
-                                onClick={(e) => handleDeleteState(state.id, e)}
-                                style={{ background: 'rgba(244,63,94,0.05)', border: 'none', cursor: 'pointer', color: 'var(--accent-red)', padding: '6px', borderRadius: '6px', transition: 'all 0.2s ease' }}
-                                title="Delete"
-                                onMouseOver={(e) => { e.currentTarget.style.background = 'rgba(244,63,94,0.15)'; }}
-                                onMouseOut={(e) => { e.currentTarget.style.background = 'rgba(244,63,94,0.05)'; }}
-                              >
-                                <Trash2 size={14} />
-                              </button>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
                 );
               })}
             </div>
             
-            {/* Embedded CSS for matrix-item hover effects */}
+            {/* Embedded CSS for hover effects */}
             <style dangerouslySetInnerHTML={{__html: `
-              .matrix-item .matrix-item-actions {
-                opacity: 0.5;
+              .nav-item-hover .hover-actions {
+                opacity: 0;
                 transform: translateX(10px);
                 transition: all 0.2s ease;
               }
-              .matrix-item:hover .matrix-item-actions {
+              .nav-item-hover:hover .hover-actions {
                 opacity: 1;
                 transform: translateX(0);
               }
-              .matrix-item:hover {
+              .nav-item-hover:hover {
                 background: rgba(255,255,255,0.05) !important;
+              }
+              .folder-drop-zone:hover {
+                background: rgba(59,130,246,0.1) !important;
               }
               .custom-scrollbar::-webkit-scrollbar {
                 width: 6px;
@@ -1547,7 +1551,7 @@ const SyncHub = () => {
       </div>
 
       {/* Manual Test Case Modal */}
-      {manualModalOpen && (
+      {manualModalOpen && createPortal(
         <div style={{
           position: 'fixed',
           top: 0, left: 0, right: 0, bottom: 0,
@@ -1628,11 +1632,12 @@ const SyncHub = () => {
               </div>
             </form>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* Comparison Matrix Modal */}
-      {compareModalOpen && compareData && (
+      {compareModalOpen && compareData && createPortal(
         <div style={{
           position: 'fixed',
           top: 0, left: 0, right: 0, bottom: 0,
@@ -1751,7 +1756,8 @@ const SyncHub = () => {
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* Global Tags Datalist */}

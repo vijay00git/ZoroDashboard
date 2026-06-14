@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { 
   FolderPlus, 
   Link, 
@@ -9,6 +10,7 @@ import {
   X,
   Copy
 } from 'lucide-react';
+import { showConfirm } from '../utils/Alerts';
 
 const QuickLaunch = () => {
   // --- State ---
@@ -159,8 +161,8 @@ const QuickLaunch = () => {
     setFolderModalOpen(false);
   };
 
-  const handleDeleteFolder = (id) => {
-    if (window.confirm("Delete this folder and all its links?")) {
+  const handleDeleteFolder = async (id) => {
+    if (await showConfirm("Delete this folder and all its links?")) {
       const updated = folders.filter(f => f.id !== id);
       saveData(updated);
     }
@@ -221,8 +223,8 @@ const QuickLaunch = () => {
     setLinkModalOpen(false);
   };
 
-  const handleDeleteLink = (folderId, linkId) => {
-    if (window.confirm("Delete this link?")) {
+  const handleDeleteLink = async (folderId, linkId) => {
+    if (await showConfirm("Delete this link?")) {
       const updated = folders.map(f => {
         if (f.id === folderId) {
           return { ...f, links: f.links.filter(l => l.id !== linkId) };
@@ -513,7 +515,7 @@ const QuickLaunch = () => {
       </div>
 
       {/* Folder Modal */}
-      {folderModalOpen && (
+      {folderModalOpen && createPortal(
         <div style={{
           position: 'fixed',
           top: 0,
@@ -598,11 +600,12 @@ const QuickLaunch = () => {
               </div>
             </form>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* Link Modal */}
-      {linkModalOpen && (
+      {linkModalOpen && createPortal(
         <div style={{
           position: 'fixed',
           top: 0,
@@ -702,7 +705,8 @@ const QuickLaunch = () => {
               </div>
             </form>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
     </div>

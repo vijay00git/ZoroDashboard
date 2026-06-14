@@ -16,6 +16,7 @@ import {
   ChevronDown,
   ChevronRight
 } from 'lucide-react';
+import { showAlert, showConfirm } from '../utils/Alerts';
 
 const LearnSkills = () => {
   // --- State ---
@@ -194,14 +195,14 @@ const LearnSkills = () => {
       saveLibrary(updatedLib, newGoal.id);
       setNewGoalName('');
     } catch (err) {
-      alert("Failed to generate learning roadmap: " + err.message);
+      showAlert("Failed to generate learning roadmap: " + err.message);
     } finally {
       setGeneratingRoadmap(false);
     }
   };
 
-  const handleDeleteGoal = () => {
-    if (window.confirm("Permanently delete this learning goal and all its progress?")) {
+  const handleDeleteGoal = async () => {
+    if (await showConfirm("Permanently delete this learning goal and all its progress?")) {
       const updatedLib = library.filter(g => g.id !== currentGoalId);
       const nextActiveId = updatedLib.length > 0 ? updatedLib[0].id : 'new';
       saveLibrary(updatedLib, nextActiveId);
@@ -404,21 +405,44 @@ const LearnSkills = () => {
         </div>
 
         {activeGoal && (
-          <div className="glass-panel" style={{
+          <div style={{
             display: 'flex',
             alignItems: 'center',
             gap: '16px',
             padding: '12px 20px',
-            minWidth: '280px'
+            minWidth: '300px',
+            background: 'linear-gradient(135deg, rgba(20,20,20,0.6), rgba(30,30,40,0.8))',
+            borderRadius: '16px',
+            border: '1px solid rgba(168, 85, 247, 0.3)',
+            boxShadow: '0 8px 32px rgba(0,0,0,0.2), inset 0 1px 2px rgba(255,255,255,0.1)',
+            backdropFilter: 'blur(10px)',
+            position: 'relative',
+            overflow: 'hidden'
           }}>
-            <div style={{ fontSize: '2rem' }}>{levelInfo.icon}</div>
-            <div style={{ flexGrow: 1 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', marginBottom: '4px' }}>
-                <span style={{ fontWeight: 'bold' }}>Level: {levelInfo.title}</span>
-                <span style={{ color: 'var(--text-secondary)' }}>{activeXP} XP</span>
+            {/* Glossy overlay */}
+            <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '40%', background: 'linear-gradient(180deg, rgba(255,255,255,0.05), transparent)', pointerEvents: 'none' }} />
+            
+            <div style={{ 
+              fontSize: '2.5rem', 
+              filter: 'drop-shadow(0 4px 8px rgba(0,0,0,0.4))',
+              transform: 'scale(1.1)'
+            }}>{levelInfo.icon}</div>
+            
+            <div style={{ flexGrow: 1, zIndex: 1 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '6px' }}>
+                <span style={{ fontWeight: '900', fontSize: '1rem', textTransform: 'uppercase', letterSpacing: '1px', background: 'linear-gradient(90deg, #fff, var(--text-secondary))', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
+                  {levelInfo.title}
+                </span>
+                <span style={{ color: 'var(--accent-pink)', fontWeight: 'bold', fontSize: '0.85rem' }}>{activeXP} XP</span>
               </div>
-              <div style={{ width: '100%', height: '6px', background: 'var(--bg-tertiary)', borderRadius: '3px', overflow: 'hidden' }}>
-                <div style={{ width: `${levelInfo.pct}%`, height: '100%', background: 'linear-gradient(90deg, var(--accent-purple), var(--accent-pink))', transition: 'width 0.3s ease' }}></div>
+              <div style={{ width: '100%', height: '8px', background: 'rgba(0,0,0,0.4)', borderRadius: '4px', overflow: 'hidden', border: '1px solid rgba(255,255,255,0.05)' }}>
+                <div style={{ 
+                  width: `${levelInfo.pct}%`, 
+                  height: '100%', 
+                  background: 'linear-gradient(90deg, var(--accent-purple), var(--accent-cyan))', 
+                  boxShadow: '0 0 10px var(--accent-cyan)',
+                  transition: 'width 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275)' 
+                }}></div>
               </div>
             </div>
           </div>
@@ -539,16 +563,14 @@ const LearnSkills = () => {
 
                   return (
                     <div key={mod.id || mIdx} style={{
-                      background: isExpanded ? 'rgba(168, 85, 247, 0.05)' : 'var(--bg-tertiary)',
-                      border: isExpanded ? '1px solid var(--accent-purple)' : '1px solid var(--border-color)',
-                      borderRadius: '12px',
-                      overflow: 'hidden',
-                      transition: 'all 0.3s ease'
+                      marginBottom: '8px',
+                      borderBottom: '1px solid var(--border-color)',
+                      paddingBottom: isExpanded ? '8px' : '0'
                     }}>
                       <div 
                         onClick={() => toggleModuleExpand(mod.id || mIdx)}
                         style={{
-                          padding: '14px',
+                          padding: '12px 0',
                           display: 'flex',
                           alignItems: 'center',
                           gap: '12px',
@@ -557,31 +579,27 @@ const LearnSkills = () => {
                         }}
                       >
                         <div style={{
-                          width: '28px',
-                          height: '28px',
-                          borderRadius: '8px',
-                          background: isExpanded ? 'var(--accent-purple)' : 'var(--bg-glass)',
-                          color: isExpanded ? '#fff' : 'var(--text-secondary)',
+                          color: isExpanded ? 'var(--accent-purple)' : 'var(--text-secondary)',
                           display: 'flex',
                           alignItems: 'center',
                           justifyContent: 'center',
-                          transition: 'all 0.3s ease'
+                          transition: 'transform 0.2s ease'
                         }}>
-                          {isExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                          {isExpanded ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
                         </div>
-                        <div style={{ flexGrow: 1, display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                          <span style={{ fontWeight: '600', fontSize: '0.95rem', color: isExpanded ? 'var(--accent-purple)' : 'var(--text-primary)' }}>
+                        <div style={{ flexGrow: 1, display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                          <span style={{ fontWeight: isExpanded ? '700' : '500', fontSize: '0.95rem', color: isExpanded ? 'var(--text-primary)' : 'var(--text-secondary)' }}>
                             {mod.module}
                           </span>
-                          <div style={{ width: '100%', height: '4px', background: 'var(--bg-glass)', borderRadius: '2px', overflow: 'hidden' }}>
-                            <div style={{ width: `${progressPct}%`, height: '100%', background: 'var(--accent-green)', transition: 'width 0.3s ease' }}></div>
+                          <div style={{ width: '100%', height: '2px', background: 'var(--bg-tertiary)', overflow: 'hidden' }}>
+                            <div style={{ width: `${progressPct}%`, height: '100%', background: 'var(--accent-purple)', transition: 'width 0.3s ease' }}></div>
                           </div>
                         </div>
                         <span style={{ fontSize: '0.75rem', fontWeight: 'bold', color: 'var(--text-muted)' }}>{completed}/{total}</span>
                       </div>
 
                       {isExpanded && (
-                        <div style={{ padding: '0 14px 14px 14px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                        <div className="quest-node-container" style={{ padding: '4px 0 8px 10px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
                           {mod.subtopics.map(t => {
                             const isTopicActive = activeTopicId === t.id;
                             return (
@@ -589,15 +607,17 @@ const LearnSkills = () => {
                                 key={t.id}
                                 onClick={() => handleLoadLesson(t.id, mod.module)}
                                 style={{
+                                  position: 'relative',
+                                  zIndex: 1,
                                   display: 'flex',
                                   alignItems: 'center',
-                                  gap: '10px',
-                                  padding: '10px 12px',
-                                  borderRadius: '8px',
+                                  gap: '12px',
+                                  padding: '8px 12px',
+                                  marginLeft: '14px',
+                                  borderRadius: '6px',
                                   cursor: 'pointer',
-                                  background: isTopicActive ? 'var(--bg-tertiary)' : 'transparent',
-                                  border: isTopicActive ? '1px solid var(--accent-purple)' : '1px solid transparent',
-                                  boxShadow: isTopicActive ? '0 4px 12px rgba(0,0,0,0.1)' : 'none',
+                                  background: isTopicActive ? 'rgba(168, 85, 247, 0.08)' : 'transparent',
+                                  color: isTopicActive ? 'var(--accent-purple)' : 'var(--text-secondary)',
                                   transition: 'all 0.2s ease'
                                 }}
                                 className="nav-item-hover"
@@ -605,12 +625,11 @@ const LearnSkills = () => {
                                 {t.completed ? (
                                   <CheckCircle size={16} style={{ color: 'var(--accent-green)' }} />
                                 ) : (
-                                  <Circle size={16} style={{ color: 'var(--text-muted)' }} />
+                                  <Circle size={16} style={{ color: 'currentColor', opacity: 0.5 }} />
                                 )}
                                 <span style={{
                                   fontSize: '0.85rem',
-                                  color: isTopicActive ? 'var(--accent-purple)' : 'var(--text-primary)',
-                                  fontWeight: isTopicActive ? 'bold' : '500',
+                                  fontWeight: isTopicActive ? '600' : '400',
                                   whiteSpace: 'nowrap',
                                   overflow: 'hidden',
                                   textOverflow: 'ellipsis'
@@ -741,11 +760,13 @@ const LearnSkills = () => {
 
               {/* Lesson scroll text */}
               <div style={{
-                background: 'var(--bg-tertiary)',
-                padding: '24px',
+                background: 'rgba(0,0,0,0.2)',
+                border: '1px solid var(--border-color)',
+                boxShadow: 'inset 0 4px 20px rgba(0,0,0,0.2)',
+                padding: '32px 40px',
                 borderRadius: '16px',
-                minHeight: '260px',
-                lineHeight: '1.6',
+                minHeight: '400px',
+                lineHeight: '1.7',
                 overflowY: 'auto'
               }}>
                 {lessonLoading ? (
@@ -780,24 +801,20 @@ const LearnSkills = () => {
                   {qaHistory.length > 0 && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '8px' }}>
                       {qaHistory.map((msg, idx) => (
-                        <div key={idx} style={{
-                          background: msg.role === 'user' ? 'var(--bg-tertiary)' : 'var(--bg-glass)',
-                          borderLeft: msg.role === 'user' ? '3px solid var(--accent-pink)' : '3px solid var(--accent-cyan)',
-                          padding: '12px 16px',
-                          borderRadius: '8px'
-                        }}>
+                        <div key={idx} className={`chat-bubble ${msg.role === 'user' ? 'chat-user' : 'chat-ai'}`}>
                           <div style={{
-                            fontSize: '0.75rem',
+                            fontSize: '0.7rem',
                             fontWeight: 'bold',
                             textTransform: 'uppercase',
-                            color: msg.role === 'user' ? 'var(--accent-pink)' : 'var(--accent-cyan)',
-                            marginBottom: '4px'
+                            color: msg.role === 'user' ? 'rgba(255,255,255,0.7)' : 'var(--accent-cyan)',
+                            marginBottom: '6px'
                           }}>
                             {msg.role === 'user' ? 'You' : 'AI Tutor'}
                           </div>
                           <div 
+                            className="markdown-body"
                             dangerouslySetInnerHTML={{ __html: marked(msg.text) }} 
-                            style={{ fontSize: '0.9rem' }}
+                            style={{ fontSize: '0.9rem', color: msg.role === 'user' ? '#fff' : 'inherit' }}
                           />
                         </div>
                       ))}
@@ -853,7 +870,98 @@ const LearnSkills = () => {
         </div>
 
       </div>
-
+      <style dangerouslySetInnerHTML={{__html: `
+      .markdown-body {
+          color: var(--text-primary);
+          font-family: inherit;
+        }
+        .markdown-body h1, .markdown-body h2, .markdown-body h3 {
+          color: var(--text-primary);
+          border-bottom: 1px solid var(--border-color);
+          padding-bottom: 0.3em;
+          margin-top: 1.5em;
+          margin-bottom: 1em;
+        }
+        .markdown-body h1 { font-size: 1.8rem; background: linear-gradient(90deg, var(--accent-purple), var(--accent-pink)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; border-bottom: none; }
+        .markdown-body h2 { font-size: 1.4rem; color: var(--accent-purple); border-bottom: 1px solid rgba(168, 85, 247, 0.2); }
+        .markdown-body h3 { font-size: 1.2rem; color: var(--text-secondary); border: none; }
+        .markdown-body p { margin-top: 0; margin-bottom: 16px; line-height: 1.7; }
+        .markdown-body a { color: var(--accent-cyan); text-decoration: none; }
+        .markdown-body a:hover { text-decoration: underline; }
+        .markdown-body blockquote {
+          margin: 0 0 16px 0;
+          padding: 0 1em;
+          color: var(--text-muted);
+          border-left: 0.25em solid var(--accent-purple);
+          background: rgba(168, 85, 247, 0.05);
+          border-radius: 0 8px 8px 0;
+          padding-top: 8px;
+          padding-bottom: 8px;
+        }
+        .markdown-body ul, .markdown-body ol { margin-top: 0; margin-bottom: 16px; padding-left: 2em; line-height: 1.7; }
+        .markdown-body li { margin-top: 0.25em; }
+        .markdown-body code {
+          padding: 0.2em 0.4em;
+          margin: 0;
+          font-size: 85%;
+          background-color: rgba(255, 255, 255, 0.1);
+          border-radius: 6px;
+          font-family: var(--font-mono);
+          color: var(--accent-pink);
+        }
+        .markdown-body pre {
+          padding: 16px;
+          overflow: auto;
+          font-size: 85%;
+          line-height: 1.45;
+          background-color: #1e1e1e;
+          border-radius: 12px;
+          border: 1px solid rgba(255, 255, 255, 0.1);
+          box-shadow: inset 0 2px 4px rgba(0,0,0,0.5);
+          margin-bottom: 16px;
+        }
+        .markdown-body pre code {
+          background-color: transparent;
+          padding: 0;
+          border-radius: 0;
+          color: #d4d4d4;
+        }
+        
+        .chat-bubble {
+          max-width: 85%;
+          padding: 14px 18px;
+          border-radius: 20px;
+          box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+          line-height: 1.5;
+        }
+        .chat-user {
+          align-self: flex-end;
+          background: linear-gradient(135deg, var(--accent-purple), var(--accent-pink));
+          color: white;
+          border-bottom-right-radius: 4px;
+        }
+        .chat-ai {
+          align-self: flex-start;
+          background: var(--bg-tertiary);
+          border: 1px solid var(--border-color);
+          color: var(--text-primary);
+          border-bottom-left-radius: 4px;
+        }
+        
+        .quest-node-container {
+          position: relative;
+        }
+        .quest-node-container::before {
+          content: '';
+          position: absolute;
+          top: 15px;
+          bottom: 20px;
+          left: 19px;
+          width: 1px;
+          background: rgba(255, 255, 255, 0.1);
+          z-index: 0;
+        }
+      `}} />
     </div>
   );
 };

@@ -17,6 +17,7 @@ import {
   Shield,
   Monitor
 } from 'lucide-react';
+import { showAlert, showConfirm } from '../utils/Alerts';
 
 const Settings = () => {
   const [activeTab, setActiveTab] = useState('profile');
@@ -128,7 +129,7 @@ const Settings = () => {
     const file = e.target.files[0];
     if (file) {
       if (file.size > 1024 * 1024) { // 1MB limit for localStorage
-        alert("Please select an image smaller than 1MB.");
+        showAlert("Please select an image smaller than 1MB.");
         return;
       }
       const reader = new FileReader();
@@ -151,7 +152,7 @@ const Settings = () => {
     const file = e.target.files[0];
     if (file) {
       if (!file.name.endsWith('.zip')) {
-        alert('Please select a valid .zip backup file.');
+        showAlert('Please select a valid .zip backup file.');
         return;
       }
       setSelectedFile(file);
@@ -160,7 +161,7 @@ const Settings = () => {
 
   const handleRestoreBackup = async () => {
     if (!selectedFile) return;
-    const confirmed = window.confirm(
+    const confirmed = await showConfirm(
       "WARNING: Restoring this backup will PERMANENTLY overwrite all current data. This cannot be undone. Are you absolutely sure?"
     );
     if (!confirmed) return;
@@ -176,14 +177,14 @@ const Settings = () => {
       });
       const result = await response.json();
       if (response.ok) {
-        alert('Backup restored successfully! Returning to dashboard.');
+        showAlert('Backup restored successfully! Returning to dashboard.');
         window.location.href = '/';
       } else {
-        alert(`Restore failed: ${result.error}`);
+        showAlert(`Restore failed: ${result.error}`);
       }
     } catch (err) {
       console.error(err);
-      alert('An unexpected error occurred during restoration.');
+      showAlert('An unexpected error occurred during restoration.');
     } finally {
       setRestoreLoading(false);
     }

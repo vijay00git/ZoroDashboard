@@ -13,6 +13,7 @@ import SyncHub from './pages/SyncHub';
 import Timesheet from './pages/Timesheet';
 import PomodoroTimer from './components/PomodoroTimer';
 import GlobalClock from './components/GlobalClock';
+import { GlobalAlert } from './components/GlobalAlert';
 
 function App() {
   const [theme, setTheme] = useState(localStorage.getItem('tr-theme') || 'dark');
@@ -100,62 +101,73 @@ function App() {
     }}>
       
       {/* Central Header */}
-      <header className="glass-panel" style={{
+      <header style={{
         position: 'sticky',
         top: 0,
         zIndex: 50,
         display: 'flex',
         justifyContent: 'space-between',
         alignItems: 'center',
-        padding: '16px 32px',
-        margin: '16px 24px',
-        borderRadius: '16px'
+        padding: '10px 24px',
+        background: 'rgba(0,0,0,0.2)',
+        backdropFilter: 'blur(12px)',
+        borderBottom: '1px solid var(--border-color)',
+        boxShadow: '0 4px 20px rgba(0,0,0,0.1)'
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           {avatarUrl ? (
             <img 
               src={avatarUrl} 
               alt="Avatar" 
-              style={{ width: '42px', height: '42px', borderRadius: '50%', objectFit: 'cover', border: '2px solid var(--accent-purple)', boxShadow: '0 0 10px var(--glow-purple)' }} 
+              style={{ width: '36px', height: '36px', borderRadius: '50%', objectFit: 'cover', border: '2px solid var(--accent-purple)' }} 
             />
           ) : (
             <div style={{
-              width: '32px',
-              height: '32px',
+              width: '36px',
+              height: '36px',
               borderRadius: '50%',
               background: 'linear-gradient(135deg, var(--accent-purple), var(--accent-pink))',
-              boxShadow: '0 0 10px var(--glow-purple)'
-            }} />
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: '#fff',
+              fontWeight: 'bold',
+              fontSize: '1rem'
+            }}>
+              {displayName.charAt(0).toUpperCase()}
+            </div>
           )}
-          <span style={{ fontSize: '1.25rem', fontWeight: '800', letterSpacing: '0.5px', textTransform: 'uppercase' }}>
-            {displayName} <strong className="gradient-text">PORTAL</strong>
-          </span>
+          <div style={{ display: 'flex', flexDirection: 'column' }}>
+            <span style={{ fontSize: '1.1rem', fontWeight: '800', letterSpacing: '0.5px', textTransform: 'uppercase', lineHeight: '1.2' }}>
+              {displayName}
+            </span>
+            <span className="gradient-text" style={{ fontSize: '0.7rem', fontWeight: '800', letterSpacing: '1px', textTransform: 'uppercase' }}>
+              PORTAL
+            </span>
+          </div>
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-          <GlobalClock />
           <PomodoroTimer />
+          <GlobalClock />
+          
           <button
             onClick={toggleTheme}
             style={{
               background: 'var(--bg-tertiary)',
               border: '1px solid var(--border-color)',
-              borderRadius: '12px',
-              padding: '8px 16px',
+              borderRadius: '16px',
+              padding: '8px',
               cursor: 'pointer',
               color: 'var(--text-primary)',
-              fontSize: '1rem',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              transition: 'all var(--transition-fast)'
+              transition: 'all var(--transition-fast)',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
             }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.borderColor = 'var(--accent-purple)';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.borderColor = 'var(--border-color)';
-            }}
+            className="nav-item-hover"
+            title="Toggle Theme"
           >
             {theme === 'dark' ? '🌙' : '☀️'}
           </button>
@@ -166,10 +178,11 @@ function App() {
       <div style={{
         display: 'flex',
         gap: '24px',
-        padding: '0 24px 24px 24px',
+        padding: '24px',
         flexGrow: 1
       }}>
         
+        <GlobalAlert />
         {/* Sidebar Nav */}
         <Navbar />
 

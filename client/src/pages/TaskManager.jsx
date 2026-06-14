@@ -9,8 +9,95 @@ import {
   AlertCircle,
   ChevronLeft,
   ChevronRight,
-  Clock
+  Clock,
+  RefreshCcw,
+  ChevronDown,
+  Flag,
+  Bell,
+  Repeat
 } from 'lucide-react';
+import Flatpickr from 'react-flatpickr';
+import 'flatpickr/dist/themes/dark.css';
+
+const CustomSelect = ({ value, onChange, options, icon: Icon, iconColor }) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const selectedOption = options.find(o => o.value === value) || options[0];
+
+  return (
+    <div style={{ position: 'relative', flex: 1, minWidth: '140px' }}>
+      <div 
+        onClick={() => setIsOpen(!isOpen)}
+        style={{
+          background: 'var(--bg-tertiary)',
+          border: isOpen ? '1px solid var(--accent-purple)' : '1px solid var(--border-color)',
+          color: 'var(--text-primary)',
+          padding: '10px 36px 10px 38px',
+          borderRadius: '10px',
+          fontSize: '0.85rem',
+          cursor: 'pointer',
+          display: 'flex',
+          alignItems: 'center',
+          transition: 'all 0.2s ease',
+          boxShadow: isOpen ? '0 0 0 2px rgba(168, 85, 247, 0.2)' : 'none',
+          fontWeight: 500,
+          whiteSpace: 'nowrap'
+        }}
+      >
+        <div style={{ position: 'absolute', left: '12px', display: 'flex', color: iconColor || 'var(--text-muted)', pointerEvents: 'none' }}>
+          {Icon && <Icon size={16} />}
+        </div>
+        <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis' }}>{selectedOption.label}</span>
+        <div style={{ position: 'absolute', right: '12px', display: 'flex', color: 'var(--text-muted)', pointerEvents: 'none' }}>
+          <ChevronDown size={14} style={{ transform: isOpen ? 'rotate(180deg)' : 'rotate(0)', transition: 'transform 0.2s' }} />
+        </div>
+      </div>
+
+      {isOpen && (
+        <div style={{
+          position: 'absolute',
+          top: 'calc(100% + 8px)',
+          left: 0,
+          width: '100%',
+          background: 'var(--bg-primary)',
+          border: '1px solid var(--border-glow)',
+          borderRadius: '10px',
+          boxShadow: '0 10px 30px rgba(0,0,0,0.8)',
+          zIndex: 100,
+          overflow: 'hidden',
+          display: 'flex',
+          flexDirection: 'column'
+        }}>
+          {options.map((opt) => (
+            <div
+              key={opt.value}
+              onClick={() => { onChange(opt.value); setIsOpen(false); }}
+              style={{
+                padding: '10px 16px',
+                fontSize: '0.85rem',
+                cursor: 'pointer',
+                background: value === opt.value ? 'rgba(168, 85, 247, 0.15)' : 'transparent',
+                color: value === opt.value ? 'var(--accent-purple)' : 'var(--text-primary)',
+                transition: 'background 0.2s ease',
+                fontWeight: value === opt.value ? 'bold' : 'normal'
+              }}
+              onMouseOver={(e) => { if (value !== opt.value) e.currentTarget.style.background = 'rgba(255,255,255,0.05)'; }}
+              onMouseOut={(e) => { if (value !== opt.value) e.currentTarget.style.background = 'transparent'; }}
+            >
+              {opt.label}
+            </div>
+          ))}
+        </div>
+      )}
+      
+      {isOpen && (
+        <div 
+          style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', zIndex: 90 }} 
+          onClick={(e) => { e.stopPropagation(); setIsOpen(false); }}
+        />
+      )}
+    </div>
+  );
+};
 
 const TaskManager = () => {
   // --- Tasks State ---
@@ -19,8 +106,16 @@ const TaskManager = () => {
   const [newTaskDeadline, setNewTaskDeadline] = useState('');
   const [newTaskPriority, setNewTaskPriority] = useState('medium');
   const [newTaskReminder, setNewTaskReminder] = useState('none');
+  const [newTaskRecurring, setNewTaskRecurring] = useState('none');
+  const [newTaskRecurringDays, setNewTaskRecurringDays] = useState([]);
   const [subtaskInputs, setSubtaskInputs] = useState({});
   const [taskFilter, setTaskFilter] = useState('all');
+  const [expandedTasks, setExpandedTasks] = useState({});
+  const [hoveredDay, setHoveredDay] = useState(null);
+
+  const toggleSubtasks = (taskId) => {
+    setExpandedTasks(prev => ({ ...prev, [taskId]: !prev[taskId] }));
+  };
 
   // --- Calendar State ---
   const [currentDate, setCurrentDate] = useState(new Date());
@@ -56,7 +151,7 @@ const TaskManager = () => {
     } catch (e) { }
   }, []);
 
-  useEffect(() => {
+  const loadTimesheetData = () => {
     const year = currentDate.getFullYear();
     const month = String(currentDate.getMonth() + 1).padStart(2, '0');
     const key = `ts-data-${year}-${month}`;
@@ -71,6 +166,28 @@ const TaskManager = () => {
       }
     } catch (e) { }
     setTimesheetData([]);
+  };
+
+  useEffect(() => {
+    loadTimesheetData();
+
+    const handleStorage = (e) => {
+      const year = currentDate.getFullYear();
+      const month = String(currentDate.getMonth() + 1).padStart(2, '0');
+      const key = `ts-data-${year}-${month}`;
+      if (e.key === key) {
+        loadTimesheetData();
+      }
+    };
+    
+    // Also add a custom event listener in case they navigate within the same tab and storage event doesn't fire
+    window.addEventListener('storage', handleStorage);
+    window.addEventListener('timesheet-updated', loadTimesheetData);
+    
+    return () => {
+      window.removeEventListener('storage', handleStorage);
+      window.removeEventListener('timesheet-updated', loadTimesheetData);
+    };
   }, [currentDate]);
 
   const saveTasks = (updated) => {
@@ -89,6 +206,8 @@ const TaskManager = () => {
       deadline: newTaskDeadline,
       priority: newTaskPriority,
       reminder: newTaskReminder,
+      recurring: newTaskRecurring,
+      recurringDays: newTaskRecurringDays,
       completed: false,
       subtasks: []
     };
@@ -98,10 +217,63 @@ const TaskManager = () => {
     setNewTaskTitle('');
     setNewTaskDeadline('');
     setNewTaskReminder('none');
+    setNewTaskRecurring('none');
+    setNewTaskRecurringDays([]);
+  };
+
+  const calculateNextDeadline = (dateString, recurring, recurringDays = []) => {
+    if (!dateString) return '';
+    const date = new Date(dateString);
+    if (recurring === 'daily') date.setDate(date.getDate() + 1);
+    else if (recurring === 'weekly') date.setDate(date.getDate() + 7);
+    else if (recurring === 'monthly') date.setMonth(date.getMonth() + 1);
+    else if (recurring === 'custom_days') {
+      const currentDay = date.getDay(); // 0 is Sunday
+      if (!recurringDays || recurringDays.length === 0) {
+        date.setDate(date.getDate() + 7);
+      } else {
+        const sortedDays = [...recurringDays].sort();
+        let daysToAdd = -1;
+        for (let day of sortedDays) {
+          if (day > currentDay) {
+            daysToAdd = day - currentDay;
+            break;
+          }
+        }
+        if (daysToAdd === -1) {
+          daysToAdd = (7 - currentDay) + sortedDays[0];
+        }
+        date.setDate(date.getDate() + daysToAdd);
+      }
+    }
+    
+    const pad = (n) => String(n).padStart(2, '0');
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
   };
 
   const handleToggleTask = (id) => {
-    saveTasks(tasks.map(t => t.id === id ? { ...t, completed: !t.completed } : t));
+    let updatedTasks = [...tasks];
+    const taskIndex = updatedTasks.findIndex(t => t.id === id);
+    if (taskIndex === -1) return;
+
+    const task = updatedTasks[taskIndex];
+    const isNowCompleted = !task.completed;
+    updatedTasks[taskIndex] = { ...task, completed: isNowCompleted };
+
+    // Handle Recurrence (Spawn new task)
+    if (isNowCompleted && task.recurring && task.recurring !== 'none') {
+      const nextDeadline = calculateNextDeadline(task.deadline, task.recurring, task.recurringDays);
+      const nextTask = {
+        ...task,
+        id: 't_' + Date.now() + Math.random().toString(36).substr(2, 5),
+        completed: false,
+        deadline: nextDeadline,
+        subtasks: (task.subtasks || []).map(st => ({ ...st, completed: false })) // Reset subtasks
+      };
+      updatedTasks.push(nextTask);
+    }
+
+    saveTasks(updatedTasks);
   };
 
   const handleDeleteTask = (id) => {
@@ -176,10 +348,30 @@ const TaskManager = () => {
   const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
   const getTasksForDate = (day) => {
+    const targetDayOnly = new Date(currentYear, currentMonth, day);
+    const dayOfWeek = targetDayOnly.getDay();
+
     return tasks.filter(task => {
       if (!task.deadline) return false;
       const taskDate = new Date(task.deadline);
-      return taskDate.getFullYear() === currentYear && taskDate.getMonth() === currentMonth && taskDate.getDate() === day;
+      const taskDayOnly = new Date(taskDate.getFullYear(), taskDate.getMonth(), taskDate.getDate());
+      
+      // Exact current deadline match
+      if (taskDayOnly.getTime() === targetDayOnly.getTime()) {
+        return true;
+      }
+
+      // Project future recurrences for incomplete tasks
+      if (task.recurring && task.recurring !== 'none' && !task.completed) {
+        if (targetDayOnly > taskDayOnly) {
+          if (task.recurring === 'daily') return true;
+          if (task.recurring === 'weekly') return taskDate.getDay() === dayOfWeek;
+          if (task.recurring === 'monthly') return taskDate.getDate() === day;
+          if (task.recurring === 'custom_days') return task.recurringDays?.includes(dayOfWeek);
+        }
+      }
+      
+      return false;
     });
   };
 
@@ -199,13 +391,14 @@ const TaskManager = () => {
 
     const dayStr = String(d).padStart(2, '0');
     const monthStr = String(currentMonth + 1).padStart(2, '0');
-    const tsDateStr = `${dayStr}-${monthStr}-${currentYear}`;
-    const tsRow = timesheetData.find(r => r.date === tsDateStr);
+    const tsDateStr1 = `${dayStr}-${monthStr}-${currentYear}`;
+    const tsDateStr2 = `${currentYear}-${monthStr}-${dayStr}`;
+    const tsRow = timesheetData.find(r => r.date === tsDateStr1 || r.date === tsDateStr2);
 
     let leaveType = null;
     let isWeekend = false;
     if (tsRow) {
-      if (tsRow.type === 'Leave' || tsRow.type === 'Holiday' || tsRow.type === 'Comp Off') {
+      if (['Leave', 'Holiday', 'Comp Off', 'WFH'].includes(tsRow.type)) {
         leaveType = tsRow.type;
       }
       if (tsRow.type === 'WeekEnd') {
@@ -214,43 +407,71 @@ const TaskManager = () => {
     }
 
     calendarCells.push(
-      <div key={`day-${d}`} style={{
-        minHeight: '100px',
-        background: isToday(d) ? 'rgba(168, 85, 247, 0.1)' : (isWeekend ? 'rgba(255,255,255,0.02)' : 'var(--bg-tertiary)'),
-        border: isToday(d) ? '1px solid var(--accent-purple)' : '1px solid var(--border-color)',
-        borderRadius: '12px',
-        padding: '8px',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: '4px',
-        transition: 'all 0.2s ease',
-        cursor: 'pointer'
-      }}
-        className="nav-item-hover">
-        <span style={{
-          fontSize: '0.85rem',
-          fontWeight: isToday(d) ? 'bold' : '600',
-          color: isToday(d) ? 'var(--accent-purple)' : 'var(--text-secondary)',
-          alignSelf: 'flex-end',
-          width: '24px',
-          height: '24px',
+      <div key={`day-${d}`} 
+        onMouseEnter={() => setHoveredDay(d)}
+        onMouseLeave={() => setHoveredDay(null)}
+        style={{
+          minHeight: '100px',
+          background: isToday(d) ? 'rgba(168, 85, 247, 0.1)' : (isWeekend ? 'rgba(255,255,255,0.02)' : 'var(--bg-tertiary)'),
+          border: isToday(d) ? '1px solid var(--accent-purple)' : '1px solid var(--border-color)',
+          borderRadius: '12px',
+          padding: '8px',
           display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          borderRadius: '50%',
-          background: isToday(d) ? 'rgba(168, 85, 247, 0.2)' : 'transparent'
-        }}>{d}</span>
+          flexDirection: 'column',
+          gap: '4px',
+          transition: 'all 0.2s ease',
+          cursor: 'pointer',
+          position: 'relative'
+        }}
+        className="nav-item-hover">
+        
+        {/* Cell Header */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', width: '100%', marginBottom: '4px' }}>
+          {/* Top Left: In/Out Times */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', flex: 1 }}>
+            {tsRow && tsRow.inTime && tsRow.outTime && tsRow.inTime.trim() !== '' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
+                <span style={{ fontSize: '0.6rem', color: '#10b981', fontWeight: 'bold', lineHeight: 1 }}>↓ {tsRow.inTime}</span>
+                <span style={{ fontSize: '0.6rem', color: '#ef4444', fontWeight: 'bold', lineHeight: 1 }}>↑ {tsRow.outTime}</span>
+              </div>
+            )}
+          </div>
 
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '4px', overflowY: 'auto' }} className="custom-scrollbar">
+          {/* Top Right: Status & Date */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+            {leaveType && (
+              <span style={{ 
+                fontSize: '0.6rem', 
+                background: leaveType === 'WFH' ? 'rgba(245,158,11,0.15)' : 'rgba(239,68,68,0.15)', 
+                color: leaveType === 'WFH' ? '#f59e0b' : '#ef4444', 
+                padding: '2px 4px', 
+                borderRadius: '4px', 
+                fontWeight: 'bold',
+                whiteSpace: 'nowrap'
+              }}>
+                {leaveType.toUpperCase()}
+              </span>
+            )}
+            <span style={{
+              fontSize: '0.85rem',
+              fontWeight: isToday(d) ? 'bold' : '600',
+              color: isToday(d) ? 'var(--accent-purple)' : 'var(--text-secondary)',
+              width: '24px',
+              height: '24px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              borderRadius: '50%',
+              background: isToday(d) ? 'rgba(168, 85, 247, 0.2)' : 'transparent',
+              flexShrink: 0
+            }}>{d}</span>
+          </div>
+        </div>
 
-          {leaveType && (
-            <div style={{ fontSize: '0.65rem', padding: '4px 6px', borderRadius: '6px', background: 'rgba(239,68,68,0.15)', color: '#ef4444', fontWeight: 'bold', borderLeft: '2px solid #ef4444', textAlign: 'center', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-              {leaveType.toUpperCase()}
-            </div>
-          )}
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '4px', overflow: 'hidden' }}>
 
           {dayEvents.map((evt, idx) => (
-            <div key={`evt-${idx}`} style={{ fontSize: '0.65rem', padding: '4px 6px', borderRadius: '6px', background: 'rgba(59,130,246,0.15)', color: '#3b82f6', fontWeight: 'bold', borderLeft: '2px solid #3b82f6', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={evt.summary}>
+            <div key={`evt-${idx}`} style={{ fontSize: '0.65rem', padding: '4px 6px', borderRadius: '6px', background: 'rgba(59,130,246,0.15)', color: '#3b82f6', fontWeight: 'bold', borderLeft: '2px solid #3b82f6', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
               📅 {evt.summary}
             </div>
           ))}
@@ -274,12 +495,68 @@ const TaskManager = () => {
                 textDecoration: task.completed ? 'line-through' : 'none',
                 opacity: task.completed ? 0.6 : 1,
                 borderLeft: `2px solid ${badgeColor}`
-              }} title={task.title}>
+              }}>
                 {task.title}
               </div>
             );
           })}
         </div>
+        
+        {hoveredDay === d && (dayTasks.length > 0 || dayEvents.length > 0 || leaveType) && (
+          <div style={{
+            position: 'absolute',
+            bottom: '105%',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            background: 'var(--bg-primary)',
+            border: '1px solid var(--border-glow)',
+            padding: '16px',
+            borderRadius: '12px',
+            boxShadow: '0 10px 30px rgba(0,0,0,0.8)',
+            zIndex: 100,
+            minWidth: '220px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '12px'
+          }}>
+            <h4 style={{ margin: 0, fontSize: '0.85rem', color: 'var(--text-muted)', borderBottom: '1px solid var(--border-color)', paddingBottom: '6px', fontWeight: 'bold' }}>
+              {monthNames[currentMonth]} {d}, {currentYear}
+            </h4>
+            
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              {leaveType && (
+                <div style={{ fontSize: '0.75rem', padding: '6px 8px', borderRadius: '6px', background: 'rgba(239,68,68,0.15)', color: '#ef4444', fontWeight: 'bold', borderLeft: '2px solid #ef4444' }}>
+                  {leaveType.toUpperCase()}
+                </div>
+              )}
+              {dayEvents.map((evt, idx) => (
+                <div key={`evt-tt-${idx}`} style={{ fontSize: '0.75rem', padding: '6px 8px', borderRadius: '6px', background: 'rgba(59,130,246,0.15)', color: '#3b82f6', fontWeight: 'bold', borderLeft: '2px solid #3b82f6' }}>
+                  📅 {evt.summary}
+                </div>
+              ))}
+              {dayTasks.map(task => {
+                const isHigh = task.priority === 'high';
+                const isLow = task.priority === 'low';
+                const badgeColor = isHigh ? 'var(--accent-red)' : (isLow ? '#10b981' : '#f59e0b');
+                return (
+                  <div key={`task-tt-${task.id}`} style={{
+                    fontSize: '0.75rem',
+                    padding: '6px 8px',
+                    borderRadius: '6px',
+                    background: `rgba(${isHigh ? '244,63,94' : (isLow ? '16,185,129' : '245,158,11')}, 0.15)`,
+                    color: badgeColor,
+                    fontWeight: '600',
+                    textDecoration: task.completed ? 'line-through' : 'none',
+                    opacity: task.completed ? 0.6 : 1,
+                    borderLeft: `2px solid ${badgeColor}`
+                  }}>
+                    {task.title}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
       </div>
     );
   }
@@ -324,7 +601,7 @@ const TaskManager = () => {
       <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
 
         {/* Add Task Card */}
-        <div className="glass-panel" style={{ padding: '24px' }}>
+        <div className="glass-panel" style={{ padding: '24px', position: 'relative', zIndex: 10 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '20px' }}>
             <div style={{ background: 'linear-gradient(135deg, var(--accent-purple), var(--accent-pink))', padding: '8px', borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <Sparkles size={18} color="#fff" />
@@ -350,35 +627,168 @@ const TaskManager = () => {
               required
             />
 
-            <div style={{ display: 'flex', gap: '10px' }}>
-              <select
-                value={newTaskPriority}
-                onChange={(e) => setNewTaskPriority(e.target.value)}
-                style={{ flex: 1, background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', padding: '8px 10px', borderRadius: '8px', outline: 'none', fontSize: '0.85rem' }}
-              >
-                <option value="high">🔴 High Priority</option>
-                <option value="medium">🟡 Medium Priority</option>
-                <option value="low">🟢 Low Priority</option>
-              </select>
+            <style>{`
+              .premium-input-group {
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+                gap: 12px;
+              }
+              .premium-select-wrapper {
+                position: relative;
+                width: 100%;
+              }
+              .premium-select, .premium-date {
+                width: 100%;
+                appearance: none;
+                background: var(--bg-tertiary);
+                border: 1px solid var(--border-color);
+                color: var(--text-primary);
+                padding: 10px 36px 10px 38px;
+                border-radius: 10px;
+                outline: none;
+                font-size: 0.85rem;
+                transition: all 0.2s ease;
+                font-weight: 500;
+                cursor: pointer;
+              }
+              .premium-date {
+                padding: 10px 14px 10px 38px;
+              }
+              .premium-select:hover, .premium-date:hover {
+                background: rgba(255,255,255,0.05);
+                border-color: rgba(255,255,255,0.1);
+              }
+              .premium-select:focus, .premium-date:focus {
+                border-color: var(--accent-purple);
+                box-shadow: 0 0 0 2px rgba(168, 85, 247, 0.2);
+              }
+              .premium-icon-left {
+                position: absolute;
+                left: 12px;
+                top: 50%;
+                transform: translateY(-50%);
+                color: var(--text-muted);
+                pointer-events: none;
+                display: flex;
+                align-items: center;
+              }
+              .premium-icon-right {
+                position: absolute;
+                right: 12px;
+                top: 50%;
+                transform: translateY(-50%);
+                color: var(--text-muted);
+                pointer-events: none;
+                display: flex;
+                align-items: center;
+              }
+              .premium-date::-webkit-calendar-picker-indicator {
+                position: absolute;
+                right: 0;
+                top: 0;
+                width: 100%;
+                height: 100%;
+                opacity: 0;
+                cursor: pointer;
+              }
+            `}</style>
 
-              <input
-                type="datetime-local"
-                value={newTaskDeadline}
-                onChange={(e) => setNewTaskDeadline(e.target.value)}
-                style={{ flex: 1, background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', padding: '8px 10px', borderRadius: '8px', outline: 'none', fontSize: '0.85rem' }}
+            <div className="premium-input-group">
+              <CustomSelect
+                value={newTaskPriority}
+                onChange={setNewTaskPriority}
+                icon={Flag}
+                iconColor={newTaskPriority === 'high' ? '#f43f5e' : (newTaskPriority === 'medium' ? '#f59e0b' : '#10b981')}
+                options={[
+                  { value: 'high', label: 'High Priority' },
+                  { value: 'medium', label: 'Medium Priority' },
+                  { value: 'low', label: 'Low Priority' }
+                ]}
               />
 
-              <select
+              <div className="premium-select-wrapper">
+                <div className="premium-icon-left"><Clock size={16} /></div>
+                <Flatpickr
+                  data-enable-time
+                  value={newTaskDeadline}
+                  onChange={([date]) => {
+                    if (date) {
+                      const offset = date.getTimezoneOffset() * 60000;
+                      const localISOTime = (new Date(date - offset)).toISOString().slice(0, 16);
+                      setNewTaskDeadline(localISOTime);
+                    } else {
+                      setNewTaskDeadline('');
+                    }
+                  }}
+                  options={{
+                    dateFormat: "Y-m-d H:i",
+                    time_24hr: true,
+                    disableMobile: true,
+                    placeholder: "Select deadline..."
+                  }}
+                  className="premium-date"
+                />
+              </div>
+
+              <CustomSelect
                 value={newTaskReminder}
-                onChange={(e) => setNewTaskReminder(e.target.value)}
-                style={{ flex: 1, background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', padding: '8px 10px', borderRadius: '8px', outline: 'none', fontSize: '0.85rem' }}
-              >
-                <option value="none">No Reminder</option>
-                <option value="15m">15 min before</option>
-                <option value="1h">1 hour before</option>
-                <option value="1d">1 day before</option>
-              </select>
+                onChange={setNewTaskReminder}
+                icon={Bell}
+                options={[
+                  { value: 'none', label: 'No Reminder' },
+                  { value: '15m', label: '15 min before' },
+                  { value: '1h', label: '1 hour before' },
+                  { value: '1d', label: '1 day before' }
+                ]}
+              />
+
+              <CustomSelect
+                value={newTaskRecurring}
+                onChange={setNewTaskRecurring}
+                icon={Repeat}
+                options={[
+                  { value: 'none', label: 'No Repeat' },
+                  { value: 'daily', label: 'Daily' },
+                  { value: 'weekly', label: 'Weekly' },
+                  { value: 'monthly', label: 'Monthly' },
+                  { value: 'custom_days', label: 'Custom Days' }
+                ]}
+              />
             </div>
+
+            {newTaskRecurring === 'custom_days' && (
+              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '12px', background: 'var(--bg-tertiary)', padding: '12px', borderRadius: '10px', border: '1px solid var(--border-color)' }}>
+                {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day, index) => {
+                  const isSelected = newTaskRecurringDays.includes(index);
+                  return (
+                    <button
+                      key={day}
+                      type="button"
+                      onClick={() => {
+                        if (isSelected) {
+                          setNewTaskRecurringDays(prev => prev.filter(d => d !== index));
+                        } else {
+                          setNewTaskRecurringDays(prev => [...prev, index]);
+                        }
+                      }}
+                      style={{
+                        padding: '6px 12px',
+                        borderRadius: '6px',
+                        border: isSelected ? '1px solid rgba(59,130,246,0.4)' : '1px solid var(--border-color)',
+                        background: isSelected ? 'rgba(59,130,246,0.15)' : 'transparent',
+                        color: isSelected ? '#3b82f6' : 'var(--text-secondary)',
+                        fontSize: '0.8rem',
+                        fontWeight: 'bold',
+                        cursor: 'pointer',
+                        transition: 'all 0.2s'
+                      }}
+                    >
+                      {day}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
 
             <button type="submit" className="glow-btn" style={{ justifyContent: 'center', padding: '12px', marginTop: '4px' }}>
               <Plus size={18} />
@@ -388,7 +798,7 @@ const TaskManager = () => {
         </div>
 
         {/* Tasks List */}
-        <div className="glass-panel" style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '24px' }}>
+        <div className="glass-panel" style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '24px', position: 'relative', zIndex: 1 }}>
           {/* Header & Radial Progress */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div>
@@ -534,12 +944,21 @@ const TaskManager = () => {
                               {new Date(task.deadline).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}
                             </span>
                           )}
-                          <span style={{ fontSize: '0.65rem', fontWeight: 'bold', color: task.completed ? 'var(--text-muted)' : badgeColor, textTransform: 'uppercase', letterSpacing: '1px' }}>
+                          <span style={{ fontSize: '0.65rem', fontWeight: 'bold', color: task.completed ? 'var(--text-muted)' : badgeColor, textTransform: 'uppercase', letterSpacing: '1px', display: 'flex', alignItems: 'center', gap: '6px', background: task.completed ? 'transparent' : `rgba(${isHigh ? '244,63,94' : (isLow ? '16,185,129' : '245,158,11')}, 0.1)`, padding: '2px 8px', borderRadius: '12px', border: task.completed ? '1px solid var(--border-color)' : `1px solid ${badgeColor}` }}>
+                            {!task.completed && <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: badgeColor, boxShadow: `0 0 8px ${badgeColor}` }} />}
                             {task.completed ? 'Done' : `${task.priority} Priority`}
                           </span>
                           {task.reminder && task.reminder !== 'none' && (
                             <span style={{ fontSize: '0.65rem', fontWeight: 'bold', color: 'var(--accent-purple)', display: 'flex', alignItems: 'center', gap: '3px' }}>
                               <AlertCircle size={10} /> {task.reminder}
+                            </span>
+                          )}
+                          {task.recurring && task.recurring !== 'none' && (
+                            <span style={{ fontSize: '0.65rem', fontWeight: 'bold', color: '#10b981', display: 'flex', alignItems: 'center', gap: '3px', background: 'rgba(16,185,129,0.15)', padding: '2px 6px', borderRadius: '6px', textTransform: 'capitalize' }}>
+                              <RefreshCcw size={10} /> 
+                              {task.recurring === 'custom_days' && task.recurringDays?.length
+                                ? task.recurringDays.map(d => ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][d]).join(', ')
+                                : task.recurring === 'custom_days' ? 'Custom' : task.recurring}
                             </span>
                           )}
                         </div>
@@ -566,37 +985,57 @@ const TaskManager = () => {
 
                     {/* Subtasks */}
                     {(task.subtasks?.length > 0 || !task.completed) && (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', margin: '2px 0', paddingLeft: '32px' }}>
-                        {(task.subtasks || []).map(st => (
-                          <div key={st.id} style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }} onClick={(e) => { e.stopPropagation(); handleToggleSubtask(task.id, st.id); }}>
-                            {st.completed ? <CheckSquare size={12} className="gradient-text" /> : <Square size={12} style={{ color: 'var(--text-muted)' }} />}
-                            <span style={{ fontSize: '0.75rem', textDecoration: st.completed ? 'line-through' : 'none', color: st.completed ? 'var(--text-muted)' : 'var(--text-secondary)' }}>{st.title}</span>
+                      <div style={{ marginTop: '8px', paddingLeft: '32px' }}>
+                        {task.subtasks?.length > 0 && (
+                          <div 
+                            onClick={(e) => { e.stopPropagation(); toggleSubtasks(task.id); }}
+                            style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', background: 'rgba(255,255,255,0.03)', padding: '6px 12px', borderRadius: '8px', marginBottom: '8px', border: '1px solid var(--border-color)' }}
+                          >
+                            <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 'bold' }}>
+                              Subtasks ({task.subtasks.filter(st => st.completed).length}/{task.subtasks.length})
+                            </span>
+                            <div style={{ flex: 1, margin: '0 12px', height: '6px', background: 'var(--bg-primary)', borderRadius: '3px', overflow: 'hidden' }}>
+                              <div style={{ height: '100%', width: `${(task.subtasks.filter(st => st.completed).length / task.subtasks.length) * 100}%`, background: 'linear-gradient(90deg, var(--accent-purple), var(--accent-pink))', transition: 'width 0.3s ease' }} />
+                            </div>
+                            <ChevronRight size={14} style={{ color: 'var(--text-muted)', transform: expandedTasks[task.id] ? 'rotate(90deg)' : 'rotate(0)', transition: 'transform 0.2s' }} />
                           </div>
-                        ))}
-                        {!task.completed && (
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '2px' }}>
-                            <Plus size={12} style={{ color: 'var(--text-muted)' }} />
-                            <input
-                              type="text"
-                              placeholder="Subtask..."
-                              value={subtaskInputs[task.id] || ''}
-                              onClick={(e) => e.stopPropagation()}
-                              onChange={(e) => setSubtaskInputs({ ...subtaskInputs, [task.id]: e.target.value })}
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter') {
-                                  handleAddSubtask(task.id, subtaskInputs[task.id]);
-                                  setSubtaskInputs({ ...subtaskInputs, [task.id]: '' });
-                                }
-                              }}
-                              style={{
-                                background: 'transparent',
-                                border: 'none',
-                                color: 'var(--text-primary)',
-                                outline: 'none',
-                                fontSize: '0.7rem',
-                                width: '100%'
-                              }}
-                            />
+                        )}
+
+                        {(!task.subtasks?.length || expandedTasks[task.id] || (!task.completed && !task.subtasks?.length)) && (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                            {(task.subtasks || []).map(st => (
+                              <div key={st.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', padding: '4px 0' }} onClick={(e) => { e.stopPropagation(); handleToggleSubtask(task.id, st.id); }}>
+                                {st.completed ? <CheckSquare size={14} className="gradient-text" /> : <Square size={14} style={{ color: 'var(--text-muted)' }} />}
+                                <span style={{ fontSize: '0.8rem', textDecoration: st.completed ? 'line-through' : 'none', color: st.completed ? 'var(--text-muted)' : 'var(--text-secondary)' }}>{st.title}</span>
+                              </div>
+                            ))}
+                            {!task.completed && (
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px', padding: '4px 0' }}>
+                                <Plus size={14} style={{ color: 'var(--text-muted)' }} />
+                                <input
+                                  type="text"
+                                  placeholder="Add a subtask..."
+                                  value={subtaskInputs[task.id] || ''}
+                                  onClick={(e) => e.stopPropagation()}
+                                  onChange={(e) => setSubtaskInputs({ ...subtaskInputs, [task.id]: e.target.value })}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                      handleAddSubtask(task.id, subtaskInputs[task.id]);
+                                      setSubtaskInputs({ ...subtaskInputs, [task.id]: '' });
+                                      setExpandedTasks(prev => ({ ...prev, [task.id]: true }));
+                                    }
+                                  }}
+                                  style={{
+                                    background: 'transparent',
+                                    border: 'none',
+                                    color: 'var(--text-primary)',
+                                    outline: 'none',
+                                    fontSize: '0.8rem',
+                                    width: '100%'
+                                  }}
+                                />
+                              </div>
+                            )}
                           </div>
                         )}
                       </div>

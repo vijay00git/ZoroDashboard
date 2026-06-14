@@ -37,48 +37,43 @@ const PomodoroTimer = () => {
   return (
     <div style={{
       display: 'flex',
-      flexDirection: 'column',
       alignItems: 'center',
-      justifyContent: 'center',
-      padding: '8px 24px',
-      background: 'var(--bg-glass)',
-      borderRadius: '24px',
-      border: `1px solid ${isActive ? 'var(--accent-pink)' : 'var(--border-glow)'}`,
-      boxShadow: isActive ? '0 0 25px var(--glow-pink)' : '0 0 15px rgba(0,0,0,0.2)',
+      gap: '12px',
+      padding: '4px 12px',
+      background: 'var(--bg-tertiary)',
+      borderRadius: '20px',
+      border: `1px solid ${isActive ? 'var(--accent-pink)' : 'var(--border-color)'}`,
+      boxShadow: isActive ? '0 0 10px rgba(236,72,153,0.3)' : 'none',
       transition: 'all 0.3s ease'
     }}>
       <div style={{
         fontFamily: 'var(--font-mono)',
-        fontSize: '2.8rem',
-        fontWeight: '900',
-        letterSpacing: '2px',
-        lineHeight: '1',
-        color: isActive ? 'var(--text-primary)' : 'var(--text-muted)',
+        fontSize: '1.2rem',
+        fontWeight: '800',
+        color: isActive ? 'var(--text-primary)' : 'var(--text-secondary)',
         display: 'flex',
-        alignItems: 'baseline',
-        gap: '4px',
+        alignItems: 'center',
+        gap: '2px',
         transition: 'all 0.3s ease'
       }}>
         <span>{mins}</span>
         <span style={{ 
-          opacity: isActive && timeLeft % 2 === 0 ? 1 : 0.4, 
+          opacity: isActive && timeLeft % 2 === 0 ? 1 : 0.5, 
           transition: 'opacity 0.2s ease', 
           color: isActive ? 'var(--accent-pink)' : 'var(--text-muted)'
         }}>:</span>
         <span style={{ 
           color: isActive ? 'var(--accent-pink)' : 'var(--text-secondary)', 
-          fontSize: '2.2rem', 
-          paddingLeft: '2px',
-          textShadow: isActive ? '0 0 12px rgba(236, 72, 153, 0.5)' : 'none'
+          textShadow: isActive ? '0 0 8px rgba(236, 72, 153, 0.4)' : 'none'
         }}>{secs}</span>
       </div>
       
-      <div style={{ display: 'flex', gap: '16px', marginTop: '6px' }}>
-        <button onClick={toggleTimer} style={{ background: 'transparent', border: 'none', color: isActive ? 'var(--text-primary)' : 'var(--text-secondary)', cursor: 'pointer', padding: '4px', display: 'flex', alignItems: 'center', transition: 'color 0.2s ease' }}>
-          {isActive ? <Pause size={20} /> : <Play size={20} />}
+      <div style={{ display: 'flex', gap: '4px' }}>
+        <button onClick={toggleTimer} style={{ background: 'transparent', border: 'none', color: isActive ? 'var(--text-primary)' : 'var(--text-muted)', cursor: 'pointer', padding: '4px', display: 'flex', alignItems: 'center', transition: 'color 0.2s ease' }} className="nav-item-hover">
+          {isActive ? <Pause size={14} /> : <Play size={14} />}
         </button>
-        <button onClick={resetTimer} style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '4px', display: 'flex', alignItems: 'center', transition: 'color 0.2s ease' }} title="Reset">
-          <RotateCcw size={18} />
+        <button onClick={resetTimer} style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '4px', display: 'flex', alignItems: 'center', transition: 'color 0.2s ease' }} className="nav-item-hover" title="Reset">
+          <RotateCcw size={14} />
         </button>
       </div>
     </div>
