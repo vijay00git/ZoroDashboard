@@ -1,6 +1,8 @@
 # Dependencies
 node_modules/
 package-lock.json
+client/node_modules/
+client/dist/
 
 # User Data & Storage (Do not commit personal data!)
 data/matrices/
@@ -12,9 +14,6 @@ data/calendar.ics
 
 # Server Logs
 *.log
-
-# Dev/Test Scratch Scripts
-scripts/
 
 # OS Files
 .DS_Store

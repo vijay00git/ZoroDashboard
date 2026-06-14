@@ -13,7 +13,7 @@ const PORT = 3000;
 
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
-app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.static(path.join(__dirname, 'client/dist')));
 
 // Ensure data directories exist
 const DATA_DIR = path.join(__dirname, 'data', 'matrices');
@@ -25,14 +25,14 @@ const QL_DIR = path.join(__dirname, 'data', 'quicklaunch');
 });
 
 app.post('/api/save', (req, res) => {
-    const { name, testCases } = req.body;
+    const { name, folder, testCases } = req.body;
     if (!name || !testCases) return res.status(400).json({ error: 'Missing name or testCases' });
-    
+
     const safeName = name.replace(/[^a-z0-9_-]/gi, '_').toLowerCase();
     const filePath = path.join(DATA_DIR, `${safeName}.json`);
-    
+
     try {
-        fs.writeFileSync(filePath, JSON.stringify({ name, testCases }, null, 2));
+        fs.writeFileSync(filePath, JSON.stringify({ name, folder: folder || 'Uncategorized', testCases }, null, 2));
         res.status(200).json({ success: true, message: 'Saved successfully.' });
     } catch (e) {
         res.status(500).json({ error: e.message });
@@ -47,7 +47,7 @@ app.get('/api/matrices', (req, res) => {
             const filePath = path.join(DATA_DIR, f);
             const stat = fs.statSync(filePath);
             const content = JSON.parse(fs.readFileSync(filePath));
-            
+
             const statusCounts = { PASSED: 0, FAILED: 0, UNTESTED: 0, OTHER: 0 };
             if (content.testCases) {
                 content.testCases.forEach(tc => {
@@ -65,9 +65,10 @@ app.get('/api/matrices', (req, res) => {
                     }
                 });
             }
-            return { 
-                id: f.replace('.json', ''), 
+            return {
+                id: f.replace('.json', ''),
                 name: content.name,
+                folder: content.folder || 'Uncategorized',
                 testCaseCount: content.testCases ? content.testCases.length : 0,
                 mtime: stat.mtimeMs,
                 statusCounts
@@ -83,7 +84,7 @@ app.get('/api/matrix/:id', (req, res) => {
     const { id } = req.params;
     const filePath = path.join(DATA_DIR, `${id}.json`);
     if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'Matrix not found' });
-    
+
     try {
         const content = JSON.parse(fs.readFileSync(filePath));
         res.status(200).json(content);
@@ -94,8 +95,8 @@ app.get('/api/matrix/:id', (req, res) => {
 
 app.put('/api/matrix/:id', (req, res) => {
     const { id } = req.params;
-    const { testCases, name } = req.body;
-    
+    const { testCases, name, folder } = req.body;
+
     const filePath = path.join(DATA_DIR, `${id}.json`);
     if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'Matrix not found' });
 
@@ -103,6 +104,7 @@ app.put('/api/matrix/:id', (req, res) => {
         const existing = JSON.parse(fs.readFileSync(filePath));
         if (testCases) existing.testCases = testCases;
         if (name) existing.name = name;
+        if (folder !== undefined) existing.folder = folder;
         fs.writeFileSync(filePath, JSON.stringify(existing, null, 2));
         res.status(200).json({ success: true, message: 'Updated successfully.' });
     } catch (e) {
@@ -113,7 +115,7 @@ app.put('/api/matrix/:id', (req, res) => {
 app.delete('/api/matrix/:id', (req, res) => {
     const { id } = req.params;
     const filePath = path.join(DATA_DIR, `${id}.json`);
-    
+
     if (!fs.existsSync(filePath)) {
         return res.status(404).json({ error: 'Matrix not found' });
     }
@@ -127,6 +129,28 @@ app.delete('/api/matrix/:id', (req, res) => {
 });
 
 // --- Notes API ---
+app.get('/api/notes', (req, res) => {
+    try {
+        const files = fs.readdirSync(NOTES_DIR).filter(f => f.endsWith('.md'));
+        const notes = files.map(file => {
+            const filePath = path.join(NOTES_DIR, file);
+            const content = fs.readFileSync(filePath, 'utf-8');
+            const stat = fs.statSync(filePath);
+            const id = file.replace(/\.md$/, '');
+            const name = id.replace(/[-_]/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+            return {
+                id,
+                name,
+                content,
+                created: stat.birthtimeMs || Date.now()
+            };
+        });
+        res.status(200).json(notes);
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
 app.post('/api/notes', (req, res) => {
     const { id, name, content, created, oldName } = req.body;
     if (!name || !id) return res.status(400).json({ error: 'Missing name or id' });
@@ -140,7 +164,7 @@ app.post('/api/notes', (req, res) => {
 
     const safeName = name.replace(/[^a-z0-9_-]/gi, '_').toLowerCase() || 'untitled';
     const filePath = path.join(NOTES_DIR, `${safeName}.md`);
-    
+
     try {
         // We'll write it as a simple markdown file to satisfy "saved in local machine with correct file name"
         fs.writeFileSync(filePath, content || '');
@@ -156,7 +180,7 @@ app.delete('/api/notes', (req, res) => {
 
     const safeName = name.replace(/[^a-z0-9_-]/gi, '_').toLowerCase();
     const filePath = path.join(NOTES_DIR, `${safeName}.md`);
-    
+
     if (fs.existsSync(filePath)) {
         try {
             fs.unlinkSync(filePath);
@@ -186,7 +210,7 @@ app.post('/api/testrail/sync', async (req, res) => {
         });
 
         const data = await response.text();
-        
+
         if (response.ok) {
             res.status(200).send(data);
         } else {
@@ -199,6 +223,19 @@ app.post('/api/testrail/sync', async (req, res) => {
 });
 
 // --- Timesheet API ---
+app.get('/api/timesheets', (req, res) => {
+    try {
+        const files = fs.readdirSync(TS_DIR).filter(f => f.endsWith('.csv'));
+        const months = files.map(file => {
+            const match = file.match(/_(\d{4}-\d{2})_Timesheet\.csv$/);
+            return match ? match[1] : null;
+        }).filter(m => m);
+        res.status(200).json({ months: Array.from(new Set(months)) });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
 app.post('/api/timesheet', (req, res) => {
     const { filename, csvData, oldFilename } = req.body;
     if (!filename || !csvData) return res.status(400).json({ error: 'Missing filename or csvData' });
@@ -212,7 +249,7 @@ app.post('/api/timesheet', (req, res) => {
 
     const safeName = filename.replace(/[^a-z0-9_.-]/gi, '_');
     const filePath = path.join(TS_DIR, safeName);
-    
+
     try {
         fs.writeFileSync(filePath, csvData);
         res.status(200).json({ success: true, message: 'Timesheet saved successfully.', file: safeName });
@@ -225,12 +262,12 @@ app.get('/api/timesheet/:month', (req, res) => {
     const month = req.params.month;
     const empName = req.query.empName;
     if (!month.match(/^\d{4}-\d{2}$/)) return res.status(400).json({ error: 'Invalid month format' });
-    
+
     try {
         const files = fs.readdirSync(TS_DIR);
         const matches = files.filter(f => f.includes(`_${month}_Timesheet.csv`));
         if (!matches.length) return res.status(404).json({ error: 'Not found' });
-        
+
         let target = null;
         if (empName) {
             const safeEmp = empName.replace(/ /g, '_').replace(/[^a-z0-9_.-]/gi, '_');
@@ -239,7 +276,7 @@ app.get('/api/timesheet/:month', (req, res) => {
                 target = specificFile;
             }
         }
-        
+
         if (!target) {
             const namedMatches = matches.filter(f => !f.startsWith('Unknown_Emp_'));
             const listToUse = namedMatches.length > 0 ? namedMatches : matches;
@@ -248,16 +285,16 @@ app.get('/api/timesheet/:month', (req, res) => {
             });
             target = listToUse[0];
         }
-        
+
         const data = fs.readFileSync(path.join(TS_DIR, target), 'utf8');
         const lines = data.split('\n');
-        
+
         // Parse metadata line
         const metaParts = lines[0].split(',');
         const parsedEmpId = metaParts[3] || '';
         const parsedEmpName = metaParts[5] || '';
         const parsedOrg = metaParts[7] || '';
-        
+
         const rows = [];
         for (let i = 3; i < lines.length; i++) {
             const line = lines[i].trim();
@@ -403,7 +440,7 @@ app.get('/api/holidays/:year/:country', async (req, res) => {
         const response = await fetch(`https://date.nager.at/api/v3/PublicHolidays/${year}/${country}`, {
             headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' }
         });
-        
+
         if (response.status === 204) {
             return res.status(200).json([]); // Handle 204 explicitly
         }
@@ -411,7 +448,7 @@ app.get('/api/holidays/:year/:country', async (req, res) => {
         if (!response.ok) {
             return res.status(response.status).json({ error: 'Failed to fetch holidays from Nager API' });
         }
-        
+
         const data = await response.json();
         res.status(200).json(data);
     } catch (error) {
@@ -450,21 +487,21 @@ if (!fs.existsSync(TEMPLATE_DIR)) {
 }
 
 const DEFAULT_TEMPLATES = [
-  {
-    id: "std-standup",
-    name: "Standard Daily Standup",
-    content: `# Daily Status Report - {DATE}\n\n## ✅ Completed Today\n{TASKS_COMPLETED}\n\n## 🚧 In Progress / Next Steps\n{TASKS_IN_PROGRESS}\n\n## 🚫 Blockers / Concerns\n{TASKS_BLOCKED}\n\n---\n*Generated from today's work logs*`
-  },
-  {
-    id: "tech-sprint",
-    name: "Detailed Technical Status (with Table)",
-    content: `# Tech Sprint Progress - {DATE}\n\n## Task Breakdown\n| Task / Activity | Project / Module | Status | Details / Notes / Links |\n| --- | --- | --- | --- |\n| {TASKS_TABLE_ROW} |\n\n## Summary of Accomplishments\n1. All code committed and verified locally.\n2. Zoro Productivity Workstation sync successful.\n3. Key artifacts updated and reviewed.\n\n## Key Links & References\n- PR: https://bitbucket.org/elosystemsteam/ic-tokyo/pull-requests/1361/diff\n- Jenkins Offline: http://10.42.24.115:8080/job/Vj_offline_01/17/console\n- Jenkins Online: http://10.42.24.115:8080/job/Vj_online_01/lastBuild/console`
-  },
-  {
-    id: "exec-matrix",
-    name: "Executive Summary & Metrics",
-    content: `# Executive Status Summary - {DATE}\n\n## Deliverables Health\n| Stream | Key Progress Metrics | Status Health |\n| --- | --- | --- |\n| Engineering Deliverables | Completed: **{TASKS_COMPLETED_COUNT}** | ✅ On Track |\n| In Flight Workstreams | Active: **{TASKS_IN_PROGRESS_COUNT}** | 🔄 Active |\n| Impediments & Blockers | Blocked: **{TASKS_BLOCKED_COUNT}** | {HEALTH_STATUS} |\n\n## Strategic Highlights\n- Accomplished today's core deliverables. See detailed task list for notes.\n- Aligned with team on sprint priorities.\n- Maintained quality checks and test coverage.\n- Reviewed PRs and provided feedback.\n\n## Risk / Action Items\n| Risk / Item | Owner | ETA |\n| --- | --- | --- |\n| {BLOCKER_ITEM} | TBD | TBD |`
-  }
+    {
+        id: "std-standup",
+        name: "Standard Daily Standup",
+        content: `# Daily Status Report - {DATE}\n\n## ✅ Completed Today\n{TASKS_COMPLETED}\n\n## 🚧 In Progress / Next Steps\n{TASKS_IN_PROGRESS}\n\n## 🚫 Blockers / Concerns\n{TASKS_BLOCKED}\n\n---\n*Generated from today's work logs*`
+    },
+    {
+        id: "tech-status",
+        name: "Detailed Technical Status (with Table)",
+        content: `# Tech Status Progress - {DATE}\n\n## Task Breakdown\n| Task / Activity | Project / Module | Status | Details / Notes / Links |\n| --- | --- | --- | --- |\n| {TASKS_TABLE_ROW} |\n\n## Summary of Accomplishments\n1. All code committed and verified locally.\n2. Zoro Productivity Workstation sync successful.\n3. Key artifacts updated and reviewed.\n\n## Key Links & References\n- PR: https://bitbucket.org/elosystemsteam/ic-tokyo/pull-requests/1361/diff\n- Jenkins Offline: http://10.42.24.115:8080/job/Vj_offline_01/17/console\n- Jenkins Online: http://10.42.24.115:8080/job/Vj_online_01/lastBuild/console`
+    },
+    {
+        id: "exec-matrix",
+        name: "Executive Summary & Metrics",
+        content: `# Executive Status Summary - {DATE}\n\n## Deliverables Health\n| Stream | Key Progress Metrics | Status Health |\n| --- | --- | --- |\n| Engineering Deliverables | Completed: **{TASKS_COMPLETED_COUNT}** | ✅ On Track |\n| In Flight Workstreams | Active: **{TASKS_IN_PROGRESS_COUNT}** | 🔄 Active |\n| Impediments & Blockers | Blocked: **{TASKS_BLOCKED_COUNT}** | {HEALTH_STATUS} |\n\n## Strategic Highlights\n- Accomplished today's core deliverables. See detailed task list for notes.\n- Aligned with team on status priorities.\n- Maintained quality checks and test coverage.\n- Reviewed PRs and provided feedback.\n\n## Risk / Action Items\n| Risk / Item | Owner | ETA |\n| --- | --- | --- |\n| {BLOCKER_ITEM} | TBD | TBD |`
+    }
 ];
 
 function seedTemplatesIfEmpty() {
@@ -491,7 +528,7 @@ app.get('/api/status/templates', (req, res) => {
             const filePath = path.join(TEMPLATE_DIR, file);
             const content = fs.readFileSync(filePath, 'utf-8');
             const id = file.replace(/\.md$/, '');
-            
+
             let name = id.replace(/[-_]/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
             let cleanContent = content;
             const nameMatch = content.match(/^<!-- name:\s*(.*?)\s*-->/);
@@ -499,7 +536,7 @@ app.get('/api/status/templates', (req, res) => {
                 name = nameMatch[1];
                 cleanContent = content.substring(nameMatch[0].length).trim();
             }
-            
+
             return { id, name, content: cleanContent };
         });
         res.json(templates);
@@ -514,21 +551,21 @@ app.post('/api/status/templates', (req, res) => {
         if (!templates || !Array.isArray(templates)) {
             return res.status(400).json({ error: 'Invalid or missing templates array' });
         }
-        
+
         const existingFiles = fs.readdirSync(TEMPLATE_DIR).filter(f => f.endsWith('.md'));
         const newIds = templates.map(t => `${t.id}.md`);
-        
+
         existingFiles.forEach(file => {
             if (!newIds.includes(file)) {
                 fs.unlinkSync(path.join(TEMPLATE_DIR, file));
             }
         });
-        
+
         templates.forEach(t => {
             const fileContent = `<!-- name: ${t.name} -->\n${t.content}`;
             fs.writeFileSync(path.join(TEMPLATE_DIR, `${t.id}.md`), fileContent, 'utf-8');
         });
-        
+
         res.json({ success: true });
     } catch (e) {
         res.status(500).json({ error: e.message });
@@ -539,7 +576,7 @@ app.get('/api/calendar/upcoming', async (req, res) => {
     try {
         const url = req.query.url;
         const useLocal = req.query.local === 'true';
-        
+
         if (!url && !useLocal) return res.status(400).json({ error: 'Missing calendar source' });
 
         let events;
@@ -557,16 +594,16 @@ app.get('/api/calendar/upcoming', async (req, res) => {
         // Fetch up to 1 year in advance to ensure we find at least 6 events
         const rangeStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
         const rangeEnd = new Date(now.getFullYear() + 1, now.getMonth(), now.getDate());
-        
+
         let output = [];
         for (const k in events) {
             if (!Object.hasOwn(events, k)) continue;
             const ev = events[k];
             if (ev.type !== 'VEVENT') continue;
-            
+
             const title = ev.summary;
             const start = ev.start;
-            
+
             if (typeof ev.rrule === 'undefined') {
                 if (start >= rangeStart && start <= rangeEnd) {
                     output.push({ date: start.toISOString(), name: title });
@@ -578,10 +615,10 @@ app.get('/api/calendar/upcoming', async (req, res) => {
                 }
             }
         }
-        
+
         // Sort ascending
         output.sort((a, b) => a.date.localeCompare(b.date));
-        
+
         // Return up to 20 to be safe (frontend will limit to 6 or more)
         res.status(200).json(output.slice(0, 20));
     } catch (e) {
@@ -595,7 +632,7 @@ app.get('/api/calendar/:year/:month', async (req, res) => {
         const { year, month } = req.params;
         const url = req.query.url;
         const useLocal = req.query.local === 'true';
-        
+
         if (!url && !useLocal) return res.status(400).json({ error: 'Missing calendar source' });
 
         let events;
@@ -610,17 +647,17 @@ app.get('/api/calendar/:year/:month', async (req, res) => {
         // month is 1-indexed from frontend
         const rangeStart = new Date(year, parseInt(month) - 1, 1);
         const rangeEnd = new Date(year, parseInt(month), 0, 23, 59, 59);
-        
+
         const output = [];
-        
+
         for (const k in events) {
             if (!Object.hasOwn(events, k)) continue;
             const ev = events[k];
             if (ev.type !== 'VEVENT') continue;
-            
+
             const title = ev.summary;
             const start = ev.start;
-            
+
             if (typeof ev.rrule === 'undefined') {
                 if (start >= rangeStart && start <= rangeEnd) {
                     output.push({ date: start.toISOString(), name: title });
@@ -650,7 +687,7 @@ app.get('/api/backup', (req, res) => {
         if (fs.existsSync(dataPath)) {
             zip.addLocalFolder(dataPath, 'data');
         }
-        
+
         const zipBuffer = zip.toBuffer();
         res.setHeader('Content-Type', 'application/zip');
         res.setHeader('Content-Disposition', 'attachment; filename="zoro_dashboard_backup.zip"');
@@ -665,18 +702,18 @@ app.post('/api/restore', upload.single('backup'), (req, res) => {
     if (!req.file) {
         return res.status(400).json({ error: 'No backup file uploaded' });
     }
-    
+
     try {
         const zip = new AdmZip(req.file.path);
         const extractPath = __dirname;
-        
+
         // Extract the zip to the root (since we backed up 'data' folder inside)
         // Overwrite existing files
         zip.extractAllTo(extractPath, true);
-        
+
         // Cleanup uploaded file
         fs.unlinkSync(req.file.path);
-        
+
         res.status(200).json({ success: true, message: 'Backup restored successfully' });
     } catch (e) {
         console.error("Backup restoration failed:", e);
@@ -685,10 +722,13 @@ app.post('/api/restore', upload.single('backup'), (req, res) => {
     }
 });
 
+app.get('*', (req, res) => {
+    res.sendFile(path.join(__dirname, 'client/dist', 'index.html'));
+});
+
 app.listen(PORT, () => {
     console.log(`\n=================================================`);
-    console.log(`🚀 TestRail Proxy Server running at http://localhost:${PORT}`);
-    console.log(`✅ Save/Load Matrix features are active.`);
-    console.log(`✅ You can now use the Test Reporter without CORS issues.`);
+    console.log(`🚀 Zoro's Portal Server running at http://localhost:${PORT}`);
+    console.log(`✅ App and APIs are active.`);
     console.log(`=================================================\n`);
 });

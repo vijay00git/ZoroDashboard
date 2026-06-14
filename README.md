@@ -2,7 +2,7 @@
 
 Welcome to **ZORO's Productivity Suite**, an all-in-one, locally hosted productivity dashboard designed to keep track of your most important day-to-day tasks, timesheets, hydration, daily standup reports, and quick links.
 
-Built with vanilla web technologies, Node.js, and a beautifully modernized dark/light UI, this suite ensures absolute privacy by saving your data securely on your local file system—no cloud syncing required!
+Built with modern **React**, **Vite**, and **Node.js**, and featuring a beautifully modernized dark/light UI, this suite ensures absolute privacy by saving your data securely on your local file system—no cloud syncing required!
 
 ---
 
@@ -28,20 +28,20 @@ Built with vanilla web technologies, Node.js, and a beautifully modernized dark/
 
 ## 📂 Project Structure
 
-The codebase is neatly organized for maintainability:
+The codebase is neatly organized into a full-stack architecture:
 
 ```text
 Test Reporter/
-├── server.js              ← Main backend Express server
+├── server.js              ← Main backend Express server (Hosts API & built React frontend)
 ├── start.sh               ← Application launcher
-├── package.json           ← Node dependencies
+├── package.json           ← Backend dependencies
 ├── .gitignore             ← Git rules (protects your data)
 │
-├── public/                ← Static frontend assets
-│   ├── index.html         ← Main Dashboard page
-│   ├── pages/             ← Application modules (Timesheet, Productivity, etc.)
-│   ├── css/               ← Stylesheets (Global theme, page-specific CSS)
-│   └── js/                ← Client-side scripts (AI logic, module interactions)
+├── client/                ← Modern React SPA (Vite)
+│   ├── src/               ← React source code (Components, Pages, App.jsx, etc.)
+│   ├── public/            ← Static frontend assets
+│   ├── package.json       ← Frontend dependencies
+│   └── vite.config.js     ← Vite bundler configuration
 │
 ├── data/                  ← Persisted user data (Auto-generated)
 │   ├── matrices/          ← Sync Hub state logic
@@ -50,16 +50,14 @@ Test Reporter/
 │   ├── quicklaunch/       ← Bookmark links and folders
 │   ├── templates/         ← Daily Status templates
 │   └── calendar.ics       ← Your uploaded calendar file
-│
-└── scripts/               ← Dev/Test scratch utility scripts
 ```
 
 ---
 
 ## 🛠️ Technology Stack
 
-*   **Frontend**: HTML5, Vanilla JavaScript, CSS3 (Custom Variables, CSS Grid, Glassmorphism UI)
-*   **Backend Proxy**: Node.js, Express.js
+*   **Frontend**: React, Vite, CSS Modules (Custom Variables, Flexbox/Grid, Glassmorphism UI), Lucide React (Icons)
+*   **Backend**: Node.js, Express.js
 *   **Third-party Libraries**:
     *   [Chart.js](https://www.chartjs.org/) (Data Analytics)
     *   [Flatpickr](https://flatpickr.js.org/) (Date Selection)
@@ -85,17 +83,31 @@ Make sure you have [Node.js](https://nodejs.org/) installed on your machine.
 
 2. **Install dependencies:**
    ```bash
-   npm install express cors node-ical
+   # Install Backend Dependencies
+   npm install
+
+   # Install Frontend Dependencies
+   cd client
+   npm install
    ```
 
-3. **Start the local server:**
+3. **Build the React Frontend:**
+   ```bash
+   npm run build
+   cd ..
+   ```
+
+4. **Start the local server:**
    ```bash
    ./start.sh
    ```
    *(Or manually run `node server.js` and open `http://localhost:3000` in your browser).*
 
-4. **Add AI Capabilities (Optional):**
-   Click the AI icon in the bottom right corner of the dashboard and paste your Gemini API key to unlock smart AI features across the suite.
+5. **Development Mode:**
+   If you want to edit the React frontend with hot-reload, run the backend `node server.js` in one terminal, and `npm run dev` in the `client/` folder in another terminal, then navigate to `http://localhost:5173`.
+
+6. **Add AI Capabilities (Optional):**
+   Click the Settings module in the dashboard and paste your Gemini API key under the AI Configuration section to unlock smart AI features across the suite.
 
 ---
 
@@ -103,7 +115,7 @@ Make sure you have [Node.js](https://nodejs.org/) installed on your machine.
 
 Privacy is a core feature. All your personal data is saved securely to the `data/` folder in the project root.
 
-> **⚠️ Note to Contributors/Forks:** The `.gitignore` is pre-configured to ensure your personal `data/` directory and test `scripts/` are never accidentally pushed to the public repository.
+> **⚠️ Note to Contributors/Forks:** The `.gitignore` is pre-configured to ensure your personal `data/` directory is never accidentally pushed to the public repository.
 
 ---
 
