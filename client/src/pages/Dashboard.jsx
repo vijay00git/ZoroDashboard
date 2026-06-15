@@ -2,9 +2,10 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Play, Pause, RotateCcw, Award, ChevronLeft, ChevronRight, Clock, Activity, CheckCircle,
-  Compass, Droplet, Plus, Moon, Sun, ClipboardList, Globe, Zap, Calendar, FileText, Database, Layers, CheckSquare, Sparkles, Settings, User
+  Compass, Droplet, Plus, Moon, Sun, ClipboardList, Globe, Zap, Calendar, FileText, Database, Layers, CheckSquare, Sparkles, Settings, User, Terminal
 } from 'lucide-react';
 import { useToast } from '../contexts/ToastContext';
+import PomodoroTimer from '../components/PomodoroTimer';
 
 const Dashboard = () => {
   const navigate = useNavigate();
@@ -42,9 +43,18 @@ const Dashboard = () => {
         parsed.splice(miniGridIdx, 1, { id: 'hydration', enabled: true }, { id: 'timesheet_widget', enabled: true });
         localStorage.setItem('tr-dash-widgets', JSON.stringify(parsed));
       }
+      if (!parsed.find(w => w.id === 'profile_widget')) {
+        parsed.unshift({ id: 'profile_widget', enabled: true });
+      }
+      if (!parsed.find(w => w.id === 'pomodoro_widget')) {
+        parsed.unshift({ id: 'pomodoro_widget', enabled: true });
+      }
+      localStorage.setItem('tr-dash-widgets', JSON.stringify(parsed));
       return parsed;
     }
     return [
+      { id: 'profile_widget', enabled: true },
+      { id: 'pomodoro_widget', enabled: true },
       { id: 'learning', enabled: true },
       { id: 'events', enabled: true },
       { id: 'hydration', enabled: true },
@@ -469,6 +479,38 @@ const Dashboard = () => {
   const currentLevel = getLevel(activeXP);
 
   const widgetsMap = {
+    profile_widget: (
+      <div className="glass-panel" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <User size={18} style={{ color: 'var(--accent-purple)' }} />
+          <h3 style={{ fontSize: '1rem', fontWeight: 'bold' }}>Career Profile</h3>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '16px', background: 'var(--bg-tertiary)', padding: '16px', borderRadius: '12px', border: '1px solid var(--border-color)' }}>
+          <div style={{ fontSize: '2.5rem', filter: 'drop-shadow(0 0 8px rgba(255,255,255,0.2))' }}>{currentLevel.icon}</div>
+          <div style={{ flexGrow: 1 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '8px' }}>
+              <div style={{ fontSize: '1.1rem', fontWeight: '800', color: 'var(--text-primary)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>{currentLevel.title}</div>
+              <div style={{ fontSize: '0.85rem', color: 'var(--accent-pink)', fontWeight: 'bold' }}>Level {Math.floor(activeXP / 100)}</div>
+            </div>
+            <div style={{ width: '100%', height: '8px', background: 'rgba(0,0,0,0.4)', borderRadius: '4px', overflow: 'hidden', boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.5)' }}>
+              <div style={{ width: `${currentLevel.pct}%`, height: '100%', background: 'linear-gradient(90deg, var(--accent-pink), var(--accent-purple))', borderRadius: '4px', boxShadow: '0 0 10px var(--glow-purple)' }} />
+            </div>
+            <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '8px', textAlign: 'right' }}>{activeXP} / {currentLevel.max} XP to next level</div>
+          </div>
+        </div>
+      </div>
+    ),
+    pomodoro_widget: (
+      <div className="glass-panel" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px', alignItems: 'center', justifyContent: 'center' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%', justifyContent: 'flex-start' }}>
+          <Clock size={18} style={{ color: 'var(--accent-pink)' }} />
+          <h3 style={{ fontSize: '1rem', fontWeight: 'bold' }}>Focus Timer</h3>
+        </div>
+        <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px 0' }}>
+          <PomodoroTimer />
+        </div>
+      </div>
+    ),
     learning: (
       <div className="glass-panel" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
@@ -780,64 +822,31 @@ const Dashboard = () => {
         {/* Top Section: Greeting & Stats */}
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '20px', padding: '20px', alignItems: 'center' }}>
 
-          {/* Left: Greeting & Rank Profile (Compact) */}
-          <div style={{ flex: '1 1 250px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          {/* Left: Greeting */}
+          <div style={{ flex: '1 1 250px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
             <div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
-                <Activity size={14} style={{ color: 'var(--accent-cyan)' }} />
-                <span style={{ fontSize: '0.75rem', color: 'var(--accent-cyan)', textTransform: 'uppercase', letterSpacing: '1px', fontWeight: '800' }}>Command Center</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '6px' }}>
+                <Terminal size={14} style={{ color: 'var(--accent-cyan)' }} />
+                <span style={{ fontSize: '0.7rem', color: 'var(--accent-cyan)', textTransform: 'uppercase', letterSpacing: '1.5px', fontWeight: '800' }}>Command Center • Active</span>
               </div>
-              <h1 style={{ fontSize: '2rem', fontWeight: '900', letterSpacing: '-1px', lineHeight: '1', margin: 0 }}>
-                {greeting}, <span style={{ background: 'linear-gradient(135deg, var(--accent-cyan), var(--accent-purple))', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>{displayName}</span>
+              <h1 style={{ fontSize: '2.2rem', fontWeight: '900', letterSpacing: '-1px', lineHeight: '1.1', margin: 0 }}>
+                {greeting},<br/>
+                <span style={{ background: 'linear-gradient(135deg, var(--accent-cyan), var(--accent-purple), var(--accent-pink))', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>{displayName}</span>
               </h1>
             </div>
+          </div>
 
-            {/* Compact Profile */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', background: 'var(--bg-tertiary)', padding: '10px 14px', borderRadius: '12px', border: '1px solid var(--border-color)' }}>
-              <div style={{ fontSize: '1.5rem' }}>{currentLevel.icon}</div>
-              <div style={{ flexGrow: 1 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
-                  <div style={{ fontSize: '0.9rem', fontWeight: '800', color: 'var(--text-primary)' }}>{currentLevel.title}</div>
-                  <div style={{ fontSize: '0.7rem', color: 'var(--accent-pink)', fontWeight: 'bold' }}>Lvl {Math.floor(activeXP / 100)}</div>
-                </div>
-                <div style={{ width: '100%', height: '4px', background: 'rgba(0,0,0,0.3)', borderRadius: '2px', overflow: 'hidden' }}>
-                  <div style={{ width: `${currentLevel.pct}%`, height: '100%', background: 'linear-gradient(90deg, var(--accent-pink), var(--accent-purple))', borderRadius: '2px' }} />
-                </div>
+          {/* Right: Insight Panel */}
+          <div style={{ flex: '1 1 350px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            {/* Daily Directive */}
+            <div style={{ flex: 1, background: 'linear-gradient(135deg, rgba(6, 182, 212, 0.05), rgba(168, 85, 247, 0.05))', border: '1px solid rgba(6, 182, 212, 0.2)', borderRadius: '16px', padding: '16px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <Sparkles size={14} style={{ color: 'var(--accent-cyan)' }} />
+                <div style={{ fontSize: '0.7rem', color: 'var(--accent-cyan)', textTransform: 'uppercase', letterSpacing: '1px', fontWeight: '800' }}>Daily Directive</div>
               </div>
-            </div>
-          </div>
-
-          {/* Center: Detailed Stats Grid (Compact) */}
-          <div style={{ flex: '2 1 350px', display: 'flex', flexWrap: 'wrap', gap: '12px' }}>
-            {[
-              { label: 'Pending Tasks', value: stats.tasks, icon: CheckSquare, color: 'var(--accent-purple)' },
-              { label: 'Hydration', value: `${stats.water}ml`, icon: Droplet, color: 'var(--accent-cyan)' },
-              { label: 'Syncs', value: stats.syncs, icon: Compass, color: 'var(--accent-pink)' },
-              { label: 'Streak', value: `${stats.days}d`, icon: Zap, color: 'var(--accent-green)' }
-            ].map((item, index) => {
-              const Icon = item.icon;
-              return (
-                <div key={index} style={{ flex: '1 1 100px', background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '10px', display: 'flex', alignItems: 'center', gap: '10px' }}>
-                  <div style={{ background: item.color + '15', color: item.color, padding: '8px', borderRadius: '8px', flexShrink: 0 }}>
-                    <Icon size={16} />
-                  </div>
-                  <div>
-                    <div style={{ fontSize: '1rem', fontWeight: '800', color: 'var(--text-primary)', lineHeight: '1' }}>{item.value}</div>
-                    <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px', fontWeight: '700', marginTop: '2px' }}>{item.label}</div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-
-          {/* Right: Quote Panel (Compact) */}
-          <div style={{ flex: '1 1 200px', background: 'linear-gradient(135deg, rgba(6, 182, 212, 0.05), rgba(168, 85, 247, 0.05))', border: '1px solid rgba(6, 182, 212, 0.2)', borderRadius: '12px', padding: '12px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <Sparkles size={14} style={{ color: 'var(--accent-cyan)' }} />
-              <div style={{ fontSize: '0.65rem', color: 'var(--accent-cyan)', textTransform: 'uppercase', letterSpacing: '1px', fontWeight: '800' }}>Daily Directive</div>
-            </div>
-            <div style={{ fontSize: '0.85rem', color: 'var(--text-primary)', fontStyle: 'italic', lineHeight: '1.3', fontWeight: '500' }}>
-              "{quoteLoading ? 'Thinking...' : quote}"
+              <div style={{ fontSize: '0.9rem', color: 'var(--text-primary)', fontStyle: 'italic', lineHeight: '1.4', fontWeight: '500' }}>
+                "{quoteLoading ? 'Thinking...' : quote}"
+              </div>
             </div>
           </div>
         </div>
@@ -873,7 +882,7 @@ const Dashboard = () => {
       {/* Main Grid: Masonry Layout */}
       <div style={{ display: 'flex', gap: '24px', alignItems: 'flex-start' }}>
         {(() => {
-          const isSmallWidget = (id) => ['events', 'clocks', 'hydration', 'timesheet_widget'].includes(id);
+          const isSmallWidget = (id) => ['events', 'clocks', 'hydration', 'timesheet_widget', 'pomodoro_widget'].includes(id);
           const groupedSlots = [];
           const activeWidgets = widgetOrder.filter(w => w.enabled !== false).map((w, index) => ({ ...w, originalIndex: index }));
           

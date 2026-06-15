@@ -25,7 +25,7 @@ const CustomSelect = ({ value, onChange, options, icon: Icon, iconColor }) => {
 
   return (
     <div style={{ position: 'relative', flex: 1, minWidth: '140px' }}>
-      <div 
+      <div
         onClick={() => setIsOpen(!isOpen)}
         style={{
           background: 'var(--bg-tertiary)',
@@ -88,10 +88,10 @@ const CustomSelect = ({ value, onChange, options, icon: Icon, iconColor }) => {
           ))}
         </div>
       )}
-      
+
       {isOpen && (
-        <div 
-          style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', zIndex: 90 }} 
+        <div
+          style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', zIndex: 90 }}
           onClick={(e) => { e.stopPropagation(); setIsOpen(false); }}
         />
       )}
@@ -179,11 +179,11 @@ const TaskManager = () => {
         loadTimesheetData();
       }
     };
-    
+
     // Also add a custom event listener in case they navigate within the same tab and storage event doesn't fire
     window.addEventListener('storage', handleStorage);
     window.addEventListener('timesheet-updated', loadTimesheetData);
-    
+
     return () => {
       window.removeEventListener('storage', handleStorage);
       window.removeEventListener('timesheet-updated', loadTimesheetData);
@@ -246,7 +246,7 @@ const TaskManager = () => {
         date.setDate(date.getDate() + daysToAdd);
       }
     }
-    
+
     const pad = (n) => String(n).padStart(2, '0');
     return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
   };
@@ -355,7 +355,7 @@ const TaskManager = () => {
       if (!task.deadline) return false;
       const taskDate = new Date(task.deadline);
       const taskDayOnly = new Date(taskDate.getFullYear(), taskDate.getMonth(), taskDate.getDate());
-      
+
       // Exact current deadline match
       if (taskDayOnly.getTime() === targetDayOnly.getTime()) {
         return true;
@@ -370,7 +370,7 @@ const TaskManager = () => {
           if (task.recurring === 'custom_days') return task.recurringDays?.includes(dayOfWeek);
         }
       }
-      
+
       return false;
     });
   };
@@ -407,7 +407,7 @@ const TaskManager = () => {
     }
 
     calendarCells.push(
-      <div key={`day-${d}`} 
+      <div key={`day-${d}`}
         onMouseEnter={() => setHoveredDay(d)}
         onMouseLeave={() => setHoveredDay(null)}
         style={{
@@ -424,7 +424,7 @@ const TaskManager = () => {
           position: 'relative'
         }}
         className="nav-item-hover">
-        
+
         {/* Cell Header */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', width: '100%', marginBottom: '4px' }}>
           {/* Top Left: In/Out Times */}
@@ -440,12 +440,12 @@ const TaskManager = () => {
           {/* Top Right: Status & Date */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
             {leaveType && (
-              <span style={{ 
-                fontSize: '0.6rem', 
-                background: leaveType === 'WFH' ? 'rgba(245,158,11,0.15)' : 'rgba(239,68,68,0.15)', 
-                color: leaveType === 'WFH' ? '#f59e0b' : '#ef4444', 
-                padding: '2px 4px', 
-                borderRadius: '4px', 
+              <span style={{
+                fontSize: '0.6rem',
+                background: leaveType === 'WFH' ? 'rgba(245,158,11,0.15)' : 'rgba(239,68,68,0.15)',
+                color: leaveType === 'WFH' ? '#f59e0b' : '#ef4444',
+                padding: '2px 4px',
+                borderRadius: '4px',
                 fontWeight: 'bold',
                 whiteSpace: 'nowrap'
               }}>
@@ -501,7 +501,7 @@ const TaskManager = () => {
             );
           })}
         </div>
-        
+
         {hoveredDay === d && (dayTasks.length > 0 || dayEvents.length > 0 || leaveType) && (
           <div style={{
             position: 'absolute',
@@ -522,7 +522,7 @@ const TaskManager = () => {
             <h4 style={{ margin: 0, fontSize: '0.85rem', color: 'var(--text-muted)', borderBottom: '1px solid var(--border-color)', paddingBottom: '6px', fontWeight: 'bold' }}>
               {monthNames[currentMonth]} {d}, {currentYear}
             </h4>
-            
+
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
               {leaveType && (
                 <div style={{ fontSize: '0.75rem', padding: '6px 8px', borderRadius: '6px', background: 'rgba(239,68,68,0.15)', color: '#ef4444', fontWeight: 'bold', borderLeft: '2px solid #ef4444' }}>
@@ -955,7 +955,7 @@ const TaskManager = () => {
                           )}
                           {task.recurring && task.recurring !== 'none' && (
                             <span style={{ fontSize: '0.65rem', fontWeight: 'bold', color: '#10b981', display: 'flex', alignItems: 'center', gap: '3px', background: 'rgba(16,185,129,0.15)', padding: '2px 6px', borderRadius: '6px', textTransform: 'capitalize' }}>
-                              <RefreshCcw size={10} /> 
+                              <RefreshCcw size={10} />
                               {task.recurring === 'custom_days' && task.recurringDays?.length
                                 ? task.recurringDays.map(d => ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][d]).join(', ')
                                 : task.recurring === 'custom_days' ? 'Custom' : task.recurring}
@@ -987,7 +987,7 @@ const TaskManager = () => {
                     {(task.subtasks?.length > 0 || !task.completed) && (
                       <div style={{ marginTop: '8px', paddingLeft: '32px' }}>
                         {task.subtasks?.length > 0 && (
-                          <div 
+                          <div
                             onClick={(e) => { e.stopPropagation(); toggleSubtasks(task.id); }}
                             style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', background: 'rgba(255,255,255,0.03)', padding: '6px 12px', borderRadius: '8px', marginBottom: '8px', border: '1px solid var(--border-color)' }}
                           >
