@@ -4,6 +4,7 @@ import Navbar from './components/Navbar';
 import Dashboard from './pages/Dashboard';
 import LearnSkills from './pages/LearnSkills';
 import QuickLaunch from './pages/QuickLaunch';
+import ResumeUp from './pages/ResumeUp';
 import Notebook from './pages/Notebook';
 import TaskManager from './pages/TaskManager';
 import Water from './pages/Water';
@@ -203,6 +204,7 @@ function App() {
                  <Route path="/quicklaunch" element={<QuickLaunch />} />
                  <Route path="/status" element={<Status />} />
                  <Route path="/goal" element={<LearnSkills />} />
+                 <Route path="/resume" element={<ResumeUp />} />
                  <Route path="/settings" element={<Settings />} />
                </Routes>
            </div>

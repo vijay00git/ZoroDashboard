@@ -13,7 +13,8 @@ import {
   Database,
   Edit3,
   Menu,
-  X
+  X,
+  Briefcase
 } from 'lucide-react';
 
 const Navbar = () => {
@@ -30,6 +31,7 @@ const Navbar = () => {
     { path: '/quicklaunch', label: 'Quick-Launch', icon: Rocket },
     { path: '/status', label: 'Daily Status', icon: FileText },
     { path: '/goal', label: 'Learn Skills', icon: BookOpen },
+    { path: '/resume', label: 'ResumeUp', icon: Briefcase },
     { path: '/settings', label: 'Settings', icon: Settings }
   ];
 

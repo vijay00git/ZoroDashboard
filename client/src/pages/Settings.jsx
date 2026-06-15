@@ -27,6 +27,31 @@ const Settings = () => {
   const [model, setModel] = useState('gemini-1.5-flash-8b');
   const [theme, setTheme] = useState('dark');
   
+  const [availableModels, setAvailableModels] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('zoro-ai-models-list')) || null; } catch { return null; }
+  });
+  const [fetchingModels, setFetchingModels] = useState(false);
+
+  const handleFetchModels = async () => {
+    if (!apiKey) {
+      showAlert('Please enter an API key first to pull models.');
+      return;
+    }
+    setFetchingModels(true);
+    try {
+      const res = await fetch(`http://localhost:3000/api/ai/models?key=${apiKey}`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to fetch models');
+      setAvailableModels(data.models);
+      localStorage.setItem('zoro-ai-models-list', JSON.stringify(data.models));
+      showAlert(`Successfully fetched ${data.models.length} models!`);
+    } catch (e) {
+      showAlert('Error fetching models: ' + e.message);
+    } finally {
+      setFetchingModels(false);
+    }
+  };
+
   // Profile State
   const [displayName, setDisplayName] = useState('');
   const [avatarUrl, setAvatarUrl] = useState('');
@@ -491,18 +516,37 @@ const Settings = () => {
                 </div>
 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  <label style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', fontWeight: '600' }}>Default Model Engine</label>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <label style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', fontWeight: '600' }}>Default Model Engine</label>
+                    <button
+                      type="button"
+                      onClick={handleFetchModels}
+                      disabled={fetchingModels}
+                      style={{ background: 'var(--bg-primary)', border: '1px solid var(--border-glow)', color: 'var(--accent-cyan)', padding: '4px 12px', borderRadius: '6px', cursor: 'pointer', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '6px' }}
+                    >
+                      {fetchingModels ? <RefreshCw size={14} className="spinner" /> : <Download size={14} />}
+                      Pull Models
+                    </button>
+                  </div>
                   <select
                     value={model}
                     onChange={(e) => setModel(e.target.value)}
                     style={{ background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', padding: '14px 16px', borderRadius: '10px', outline: 'none', fontSize: '0.95rem', fontWeight: '500' }}
                   >
-                    <option value="gemini-2.5-flash">gemini-2.5-flash (Next-Gen Fast)</option>
-                    <option value="gemini-2.0-flash-exp">gemini-2.0-flash-exp (Experimental Fast)</option>
-                    <option value="gemini-2.0-pro-exp">gemini-2.0-pro-exp (Experimental Pro)</option>
-                    <option value="gemini-1.5-pro">gemini-1.5-pro (Standard Pro)</option>
-                    <option value="gemini-1.5-flash">gemini-1.5-flash (Standard Fast)</option>
-                    <option value="gemini-1.5-flash-8b">gemini-1.5-flash-8b (Ultra Fast / Cheap)</option>
+                    {availableModels ? (
+                      availableModels.map(m => (
+                        <option key={m.id} value={m.id}>{m.displayName || m.id}</option>
+                      ))
+                    ) : (
+                      <>
+                        <option value="gemini-2.5-flash">gemini-2.5-flash (Next-Gen Fast)</option>
+                        <option value="gemini-2.0-flash-exp">gemini-2.0-flash-exp (Experimental Fast)</option>
+                        <option value="gemini-2.0-pro-exp">gemini-2.0-pro-exp (Experimental Pro)</option>
+                        <option value="gemini-1.5-pro">gemini-1.5-pro (Standard Pro)</option>
+                        <option value="gemini-1.5-flash">gemini-1.5-flash (Standard Fast)</option>
+                        <option value="gemini-1.5-flash-8b">gemini-1.5-flash-8b (Ultra Fast / Cheap)</option>
+                      </>
+                    )}
                   </select>
                 </div>
 

@@ -105,6 +105,7 @@ const SyncHub = () => {
   const [activeCompareTab, setActiveCompareTab] = useState('needsSync');
 
   // Sync Log
+  const [reportModalOpen, setReportModalOpen] = useState(false);
   const [syncLogs, setSyncLogs] = useState([]);
   const [isSyncing, setIsSyncing] = useState(false);
 
@@ -1364,6 +1365,30 @@ const SyncHub = () => {
                           </button>
                         ))}
                       </div>
+
+                      
+                      {selectedTags.length > 0 && (
+                        <button
+                          onClick={() => setReportModalOpen(true)}
+                          style={{
+                            background: 'rgba(168,85,247,0.1)',
+                            border: '1px solid var(--accent-purple)',
+                            color: 'var(--accent-purple)',
+                            borderRadius: '8px',
+                            padding: '4px 12px',
+                            cursor: 'pointer',
+                            fontSize: '0.75rem',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                            fontWeight: 'bold',
+                            marginLeft: 'auto'
+                          }}
+                        >
+                          <FileText size={12} />
+                          Generate Report
+                        </button>
+                      )}
                     </div>
                   )}
                 </div>
@@ -1772,6 +1797,91 @@ const SyncHub = () => {
                 style={{ padding: '8px 16px' }}
               >
                 Done
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* Report Modal */}
+      {reportModalOpen && createPortal(
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, backdropFilter: 'blur(4px)' }}>
+          <div className="glass-panel" style={{ width: '600px', maxWidth: '90vw', padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px', background: 'var(--bg-primary)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h2 style={{ fontSize: '1.25rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <FileSpreadsheet size={18} style={{ color: 'var(--accent-purple)' }} />
+                Execution Summary
+              </h2>
+              <button onClick={() => setReportModalOpen(false)} style={{ background: 'transparent', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: '1.2rem' }}>&times;</button>
+            </div>
+            
+            <div id="report-table-container" style={{ overflowX: 'auto', background: '#fff', color: '#000', padding: '16px', borderRadius: '8px', border: '1px solid #ccc' }}>
+              <p style={{ fontWeight: 'bold', marginBottom: '8px', fontSize: '14px', fontFamily: 'sans-serif' }}>Please find Execution Summary</p>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: 'sans-serif', fontSize: '13px' }}>
+                <thead>
+                  <tr>
+                    <th style={{ border: '1px solid #000', padding: '8px', textAlign: 'center', fontWeight: 'bold' }}>Metric</th>
+                    {selectedTags.map(tag => (
+                      <th key={tag} style={{ border: '1px solid #000', padding: '8px', textAlign: 'center', fontWeight: 'bold' }}>{tag}</th>
+                    ))}
+                    <th style={{ border: '1px solid #000', padding: '8px', textAlign: 'center', fontWeight: 'bold' }}>Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td style={{ border: '1px solid #000', padding: '8px', fontWeight: 'bold' }}>Passed</td>
+                    {selectedTags.map(tag => {
+                      const passed = testCases.filter(tc => tc.mapAction === 'Map' && tc.status === 'PASSED' && (tc.tags || '').split(',').map(t => t.trim()).includes(tag)).length;
+                      return <td key={tag} style={{ border: '1px solid #000', padding: '8px', textAlign: 'left' }}>{passed}</td>;
+                    })}
+                    <td style={{ border: '1px solid #000', padding: '8px', textAlign: 'left' }}>
+                      {selectedTags.reduce((sum, tag) => sum + testCases.filter(tc => tc.mapAction === 'Map' && tc.status === 'PASSED' && (tc.tags || '').split(',').map(t => t.trim()).includes(tag)).length, 0)}
+                    </td>
+                  </tr>
+                  <tr>
+                    <td style={{ border: '1px solid #000', padding: '8px', fontWeight: 'bold' }}>Failed</td>
+                    {selectedTags.map(tag => {
+                      const failed = testCases.filter(tc => tc.mapAction === 'Map' && tc.status === 'FAILED' && (tc.tags || '').split(',').map(t => t.trim()).includes(tag)).length;
+                      return <td key={tag} style={{ border: '1px solid #000', padding: '8px', textAlign: 'left' }}>{failed}</td>;
+                    })}
+                    <td style={{ border: '1px solid #000', padding: '8px', textAlign: 'left' }}>
+                      {selectedTags.reduce((sum, tag) => sum + testCases.filter(tc => tc.mapAction === 'Map' && tc.status === 'FAILED' && (tc.tags || '').split(',').map(t => t.trim()).includes(tag)).length, 0)}
+                    </td>
+                  </tr>
+                  <tr>
+                    <td style={{ border: '1px solid #000', padding: '8px', fontWeight: 'bold' }}>Total Test Cases</td>
+                    {selectedTags.map(tag => {
+                      const total = testCases.filter(tc => tc.mapAction === 'Map' && (tc.tags || '').split(',').map(t => t.trim()).includes(tag)).length;
+                      return <td key={tag} style={{ border: '1px solid #000', padding: '8px', textAlign: 'left' }}>{total}</td>;
+                    })}
+                    <td style={{ border: '1px solid #000', padding: '8px', textAlign: 'left' }}>
+                      {selectedTags.reduce((sum, tag) => sum + testCases.filter(tc => tc.mapAction === 'Map' && (tc.tags || '').split(',').map(t => t.trim()).includes(tag)).length, 0)}
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '8px' }}>
+              <button
+                onClick={() => {
+                  const node = document.getElementById('report-table-container');
+                  const range = document.createRange();
+                  range.selectNode(node);
+                  window.getSelection().removeAllRanges();
+                  window.getSelection().addRange(range);
+                  document.execCommand('copy');
+                  window.getSelection().removeAllRanges();
+                  addLog('Table copied to clipboard!', 'success');
+                  setReportModalOpen(false);
+                  showAlert('Table copied to clipboard!');
+                }}
+                className="glow-btn"
+                style={{ padding: '8px 16px', display: 'flex', alignItems: 'center', gap: '6px' }}
+              >
+                <Clipboard size={14} />
+                Copy Table
               </button>
             </div>
           </div>
