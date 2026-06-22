@@ -122,8 +122,19 @@ const SyncHub = () => {
       const response = await fetch('http://localhost:3000/api/matrices');
       if (response.ok) {
         const data = await response.json();
-        setStates(data.matrices || []);
+        const matrices = data.matrices || [];
+        setStates(matrices);
         setGlobalTags(data.globalTags || []);
+        // Auto-expand all folders so matrices are visible by default
+        setExpandedFolders(prev => {
+          if (matrices.length === 0) return prev;
+          const allFolderNames = Array.from(new Set(matrices.map(m => m.folder || 'Uncategorized')));
+          const missing = allFolderNames.filter(f => !prev.includes(f));
+          if (missing.length === 0) return prev;
+          const next = [...prev, ...missing];
+          localStorage.setItem('tr-sync-expandedFolders', JSON.stringify(next));
+          return next;
+        });
       }
     } catch (e) {
       console.error("Failed to load saved states:", e);

@@ -1,972 +1,748 @@
-import React, { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Play, Pause, RotateCcw, Award, ChevronLeft, ChevronRight, Clock, Activity, CheckCircle,
-  Compass, Droplet, Plus, Moon, Sun, ClipboardList, Globe, Zap, Calendar, FileText, Database, Layers, CheckSquare, Sparkles, Settings, User, Terminal
+  ChevronLeft, ChevronRight, Clock, Activity, CheckCircle,
+  Compass, Droplet, Plus, ClipboardList, Globe, Calendar,
+  FileText, Database, Layers, CheckSquare, Sparkles, Terminal, User,
+  Rocket
 } from 'lucide-react';
 import { useToast } from '../contexts/ToastContext';
 import PomodoroTimer from '../components/PomodoroTimer';
 
+/* ─────────────────────────────────────────────────────────────
+   WORLD CLOCK (sub-component)
+───────────────────────────────────────────────────────────── */
+const WorldClockItem = ({ label, flag, tz, color }) => {
+  const [time, setTime] = useState('--:--');
+
+  useEffect(() => {
+    const update = () => {
+      const now = new Date();
+      setTime(now.toLocaleTimeString('en-US', { timeZone: tz, hour: '2-digit', minute: '2-digit', hour12: false }));
+    };
+    update();
+    const id = setInterval(update, 10000);
+    return () => clearInterval(id);
+  }, [tz]);
+
+  return (
+    <div className="world-clock-item">
+      <div className="world-clock-bar" style={{ background: color }} />
+      <span className="world-clock-flag">{flag}</span>
+      <span className="world-clock-time">{time}</span>
+      <span className="world-clock-city">{label}</span>
+    </div>
+  );
+};
+
+/* ─────────────────────────────────────────────────────────────
+   WIDGET HEADER (consistent pattern)
+───────────────────────────────────────────── */
+const WgtHeader = ({ icon: Icon, iconColor, title, badge, badgeVariant, right }) => (
+  <div className="wgt-header">
+    <div className="wgt-title">
+      <Icon size={16} style={{ color: iconColor || 'var(--accent-purple)', flexShrink: 0 }} strokeWidth={2} />
+      <span className="wgt-title-text">{title}</span>
+    </div>
+    {badge != null && (
+      <span className={`wgt-badge${badgeVariant ? ` wgt-badge--${badgeVariant}` : ''}`}>{badge}</span>
+    )}
+    {right}
+  </div>
+);
+
+/* ─────────────────────────────────────────────────────────────
+   DASHBOARD
+───────────────────────────────────────────── */
 const Dashboard = () => {
   const navigate = useNavigate();
   const { showToast } = useToast();
-  const [scratchpadContent, setScratchpadContent] = useState('');
-  const [displayName, setDisplayName] = useState(localStorage.getItem('tr-display-name') || "Zoro");
 
-  // Extra Widgets Data
-  const [upcomingEvents, setUpcomingEvents] = useState([]);
-  const [quickLinks, setQuickLinks] = useState([]);
+  const displayName = localStorage.getItem('tr-display-name') || 'Zoro';
+  const [scratchpadContent, setScratchpadContent] = useState('');
   const [statusDraft, setStatusDraft] = useState('');
   const [quote, setQuote] = useState('Loading daily wisdom...');
   const [quoteLoading, setQuoteLoading] = useState(false);
   const [pinnedMatrix, setPinnedMatrix] = useState(null);
+  const [upcomingEvents, setUpcomingEvents] = useState([]);
+  const [quickLinks, setQuickLinks] = useState([]);
+  const [tasks, setTasks] = useState([]);
+  const [isClockedIn, setIsClockedIn] = useState(false);
+  const [clockInTime, setClockInTime] = useState('--:--');
+  const [stats, setStats] = useState({ tasks: 0, water: 0, days: 0, syncs: 0 });
+  const [flashcards, setFlashcards] = useState([]);
+  const [currentCardIdx, setCurrentCardIdx] = useState(0);
+  const [lessonProgress, setLessonProgress] = useState({ completed: 0, total: 0 });
+  const [activeGoalName, setActiveGoalName] = useState('Learning Goals');
+  const [currentTime, setCurrentTime] = useState(new Date());
 
-  const [columnsCount, setColumnsCount] = useState(3);
-
-  useEffect(() => {
-    const handleResize = () => {
-      if (window.innerWidth < 768) setColumnsCount(1);
-      else if (window.innerWidth < 1100) setColumnsCount(2);
-      else setColumnsCount(3);
-    };
-    handleResize();
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
-
+  /* ── Widget order (drag-to-reorder) ── */
   const [widgetOrder, setWidgetOrder] = useState(() => {
     const saved = localStorage.getItem('tr-dash-widgets');
     if (saved) {
       let parsed = JSON.parse(saved);
-      const miniGridIdx = parsed.findIndex(w => w.id === 'status_mini_grid');
-      if (miniGridIdx !== -1) {
-        parsed.splice(miniGridIdx, 1, { id: 'hydration', enabled: true }, { id: 'timesheet_widget', enabled: true });
-        localStorage.setItem('tr-dash-widgets', JSON.stringify(parsed));
+      // Migrate old widget ids
+      const miniIdx = parsed.findIndex(w => w.id === 'status_mini_grid');
+      if (miniIdx !== -1) {
+        parsed.splice(miniIdx, 1, { id: 'hydration', enabled: true }, { id: 'timesheet_widget', enabled: true });
       }
-      if (!parsed.find(w => w.id === 'profile_widget')) {
-        parsed.unshift({ id: 'profile_widget', enabled: true });
-      }
-      if (!parsed.find(w => w.id === 'pomodoro_widget')) {
-        parsed.unshift({ id: 'pomodoro_widget', enabled: true });
-      }
+      if (!parsed.find(w => w.id === 'profile_widget')) parsed.unshift({ id: 'profile_widget', enabled: true });
       localStorage.setItem('tr-dash-widgets', JSON.stringify(parsed));
       return parsed;
     }
     return [
-      { id: 'profile_widget', enabled: true },
-      { id: 'pomodoro_widget', enabled: true },
-      { id: 'learning', enabled: true },
-      { id: 'events', enabled: true },
-      { id: 'hydration', enabled: true },
+      { id: 'profile_widget',   enabled: true },
+      { id: 'tasks',            enabled: true },
+      { id: 'learning',         enabled: true },
+      { id: 'matrix',           enabled: true },
+      { id: 'scratchpad',       enabled: true },
+      { id: 'draft',            enabled: true },
+      { id: 'links',            enabled: true },
+      { id: 'hydration',        enabled: true },
       { id: 'timesheet_widget', enabled: true },
-      { id: 'scratchpad', enabled: true },
-      { id: 'tasks', enabled: true },
-      { id: 'draft', enabled: true },
-      { id: 'matrix', enabled: true },
-      { id: 'links', enabled: true },
-      { id: 'clocks', enabled: true }
+      { id: 'events',           enabled: true },
+      { id: 'clocks',           enabled: true },
     ];
   });
 
-  const handleDragStart = (e, index) => {
-    e.dataTransfer.setData('widgetIndex', index);
-  };
-
+  /* ── Drag handlers ── */
+  const handleDragStart = (e, index) => e.dataTransfer.setData('widgetIndex', index);
+  const handleDragOver  = (e) => e.preventDefault();
   const handleDrop = (e, targetIndex) => {
     e.preventDefault();
-    const sourceIndex = e.dataTransfer.getData('widgetIndex');
-    if (sourceIndex === '' || Number(sourceIndex) === targetIndex) return;
-    const newWidgets = [...widgetOrder];
-    const [moved] = newWidgets.splice(Number(sourceIndex), 1);
-    newWidgets.splice(targetIndex, 0, moved);
-    setWidgetOrder(newWidgets);
-    localStorage.setItem('tr-dash-widgets', JSON.stringify(newWidgets));
+    const src = parseInt(e.dataTransfer.getData('widgetIndex'), 10);
+    if (isNaN(src) || src === targetIndex) return;
+    const next = [...widgetOrder];
+    const [moved] = next.splice(src, 1);
+    next.splice(targetIndex, 0, moved);
+    setWidgetOrder(next);
+    localStorage.setItem('tr-dash-widgets', JSON.stringify(next));
   };
 
-  const handleDragOver = (e) => e.preventDefault();
-
-  // Load scratchpad
+  /* ── Live clock ── */
   useEffect(() => {
-    try {
-      const saved = localStorage.getItem('tr-dash-scratchpad');
-      if (saved) setScratchpadContent(saved);
-    } catch (e) { }
+    const id = setInterval(() => setCurrentTime(new Date()), 1000);
+    return () => clearInterval(id);
   }, []);
 
-  const handleScratchpadChange = (e) => {
-    const val = e.target.value;
-    setScratchpadContent(val);
-    localStorage.setItem('tr-dash-scratchpad', val);
-  };
+  const hour = currentTime.getHours();
+  const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
 
-  // Load Status Draft
+  /* ── Scratchpad ── */
   useEffect(() => {
-    try {
-      const saved = localStorage.getItem('tr-status-draft');
-      if (saved) setStatusDraft(saved);
-    } catch (e) { }
+    try { const s = localStorage.getItem('tr-dash-scratchpad'); if (s) setScratchpadContent(s); } catch (_) {}
   }, []);
 
-  const handleStatusDraftChange = (e) => {
-    setStatusDraft(e.target.value);
-    localStorage.setItem('tr-status-draft', e.target.value);
-  };
+  /* ── Status draft ── */
+  useEffect(() => {
+    try { const s = localStorage.getItem('tr-status-draft'); if (s) setStatusDraft(s); } catch (_) {}
+  }, []);
 
-  // Fetch Daily Quote
+  /* ── Daily quote ── */
   useEffect(() => {
     const fetchQuote = async () => {
       const todayStr = new Date().toDateString();
-      const savedDate = localStorage.getItem('tr-quote-date');
-      const savedQuote = localStorage.getItem('tr-quote-text');
-
-      if (savedDate === todayStr && savedQuote) {
-        setQuote(savedQuote);
-        return;
-      }
+      const cachedDate  = localStorage.getItem('tr-quote-date');
+      const cachedQuote = localStorage.getItem('tr-quote-text');
+      if (cachedDate === todayStr && cachedQuote) { setQuote(cachedQuote); return; }
 
       setQuoteLoading(true);
       try {
-        const key = localStorage.getItem('zoro-ai-key');
+        const key   = localStorage.getItem('zoro-ai-key');
         const model = localStorage.getItem('zoro-ai-model') || 'gemini-1.5-flash-8b';
-
-        if (!key) {
-          setQuote("Set your Gemini API key in Settings to get daily AI insights!");
-          return;
-        }
-
-        const system = "You are a highly motivating senior engineering mentor. Generate one very short (max 2 sentences), inspiring quote or insightful tip about programming, software engineering, or focus. Do not include markdown or quotation marks.";
-        const prompt = "Give me today's insight.";
+        if (!key) { setQuote('Set your Gemini API key in Settings to get daily AI insights!'); return; }
 
         const res = await fetch('http://localhost:3000/api/ai/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ key, model, system, prompt })
+          body: JSON.stringify({
+            key, model,
+            system: 'You are a highly motivating senior engineering mentor. Generate one very short (max 2 sentences), inspiring quote or insightful tip about programming, software engineering, or focus. No markdown or quotation marks.',
+            prompt: 'Give me today\'s insight.'
+          })
         });
-
         if (res.ok) {
           const data = await res.json();
-          const cleanQuote = data.text.replace(/["']/g, '');
-          setQuote(cleanQuote);
+          const clean = data.text.replace(/["']/g, '');
+          setQuote(clean);
           localStorage.setItem('tr-quote-date', todayStr);
-          localStorage.setItem('tr-quote-text', cleanQuote);
-        } else {
-          setQuote("Stay focused and write great code!");
-        }
-      } catch (err) {
-        setQuote("Stay focused and write great code!");
-      } finally {
-        setQuoteLoading(false);
-      }
+          localStorage.setItem('tr-quote-text', clean);
+        } else { setQuote('Stay focused and write great code!'); }
+      } catch (_) { setQuote('Stay focused and write great code!'); }
+      finally { setQuoteLoading(false); }
     };
     fetchQuote();
   }, []);
 
-  // --- Live Clock ---
-  const [currentTime, setCurrentTime] = useState(new Date());
+  /* ── Flashcards / Learning ── */
   useEffect(() => {
-    const timer = setInterval(() => setCurrentTime(new Date()), 1000);
-    return () => clearInterval(timer);
+    const libraryStr = localStorage.getItem('tr-goals-library');
+    const currentId  = localStorage.getItem('tr-goals-active-id');
+    if (libraryStr && currentId) {
+      const library = JSON.parse(libraryStr);
+      const activeGoal = library.find(g => g.id === currentId);
+      if (activeGoal?.roadmap) {
+        setActiveGoalName(activeGoal.title);
+        let roadmap = activeGoal.roadmap;
+        if (roadmap[0] && !roadmap[0].subtopics) roadmap = [{ subtopics: roadmap }];
+        let completed = 0, total = 0, cards = [];
+        roadmap.forEach(m => {
+          const subs = m.subtopics || [];
+          total += subs.length;
+          completed += subs.filter(t => t.completed).length;
+          subs.filter(t => t.lessonContent).forEach(t => {
+            const clean = t.lessonContent.replace(/[*_`#]/g, '').replace(/\n+/g, ' ').replace(/\s+/g, ' ');
+            const sentences = clean.split(/(?<=[.!?])\s+/).map(s => s.trim()).filter(s => s.length > 20);
+            for (let i = 0; i < sentences.length; i += 3) {
+              const chunk = sentences.slice(i, i + 3).join(' ');
+              if (chunk.length > 80) cards.push({ title: t.title, text: chunk });
+            }
+          });
+        });
+        setLessonProgress({ completed, total });
+        setFlashcards(cards.length > 0 ? cards : [{ title: 'No Lessons Yet', text: 'Generate roadmaps with lessons in Learn Skills to see flashcards here!' }]);
+        return;
+      }
+    }
+    setFlashcards([
+      { title: 'Welcome', text: 'Define learning goals in the Learn Skills tab, build structured roadmaps with Gemini, and see key takeaways here.' },
+      { title: 'Consistency Wins', text: 'Ten minutes of daily review beats two hours once a week. Open Learn Skills to get started.' }
+    ]);
   }, []);
 
-  // --- Theme/Greeting ---
-  const hour = currentTime.getHours();
-  let greeting = 'Good evening';
-  if (hour < 12) greeting = 'Good morning';
-  else if (hour < 17) greeting = 'Good afternoon';
+  const progressPct = lessonProgress.total > 0 ? Math.round((lessonProgress.completed / lessonProgress.total) * 100) : 0;
+  const activeXP = lessonProgress.completed * 10;
+  const getLevel = (xp) => {
+    if (xp < 100)  return { title: 'Novice',      max: 100,  pct: xp,                       icon: '🥚' };
+    if (xp < 300)  return { title: 'Apprentice',  max: 300,  pct: ((xp-100)/200)*100,        icon: '🌱' };
+    if (xp < 600)  return { title: 'Scholar',     max: 600,  pct: ((xp-300)/300)*100,        icon: '📘' };
+    if (xp < 1000) return { title: 'Expert',      max: 1000, pct: ((xp-600)/400)*100,        icon: '🔥' };
+    return           { title: 'Grandmaster', max: 1000, pct: 100,                        icon: '👑' };
+  };
+  const lvl = getLevel(activeXP);
 
-  // --- Dynamic Stats ---
-  const [stats, setStats] = useState({
-    tasks: 0,
-    water: 0,
-    days: 0,
-    syncs: 0
-  });
-
-  // --- Tasks State ---
-  const [tasks, setTasks] = useState([]);
-
-  // --- Timesheet Punch-in State ---
-  const [isClockedIn, setIsClockedIn] = useState(false);
-  const [clockInTime, setClockInTime] = useState('--:--');
-
+  /* ── Data loader ── */
   const loadAllStates = async () => {
     // Tasks
     let tasksList = [];
-    try {
-      const savedTasks = localStorage.getItem('tr-run-tasks');
-      if (savedTasks) {
-        tasksList = JSON.parse(savedTasks);
-        if (!Array.isArray(tasksList)) tasksList = [];
-      }
-    } catch (e) { }
+    try { tasksList = JSON.parse(localStorage.getItem('tr-run-tasks') || '[]'); if (!Array.isArray(tasksList)) tasksList = []; } catch (_) {}
     setTasks(tasksList);
 
     // Water
-    const savedWater = localStorage.getItem('tr-water-intake-ml');
-    const waterAmt = savedWater ? parseInt(savedWater) || 0 : 0;
+    const waterAmt = parseInt(localStorage.getItem('tr-water-intake-ml') || '0') || 0;
 
-    // Days (Timesheets)
-    let daysCount = 0;
-    let clockedInToday = false;
-    let punchInStr = '--:--';
+    // Timesheet
+    let daysCount = 0, clockedIn = false, punchStr = '--:--';
     const now = new Date();
-    const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-    const empName = localStorage.getItem('ts-empName') || 'Zoro';
-
+    const monthKey = `ts-data-${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
     try {
-      const response = await fetch(`http://localhost:3000/api/timesheet/${currentMonth}?empName=${encodeURIComponent(empName)}`);
-      if (response.ok) {
-        const data = await response.json();
-        if (data && Array.isArray(data.rows)) {
-          daysCount = data.rows.filter(r => r.inTime).length;
-          const todayDateStr = `${String(now.getDate()).padStart(2, '0')}-${String(now.getMonth() + 1).padStart(2, '0')}-${now.getFullYear()}`;
-          const todayRow = data.rows.find(r => r.date === todayDateStr);
-          if (todayRow && todayRow.inTime) {
-            clockedInToday = !todayRow.outTime;
-            punchInStr = todayRow.inTime;
-          }
-        }
-      } else {
-        const monthKey = `ts-data-${currentMonth}`;
-        const savedTS = localStorage.getItem(monthKey);
-        if (savedTS) {
-          const parsedTS = JSON.parse(savedTS);
-          if (parsedTS && Array.isArray(parsedTS.rows)) {
-            daysCount = parsedTS.rows.filter(r => r.inTime).length;
-            const todayDateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-            const todayRow = parsedTS.rows.find(r => r.date === todayDateStr);
-            if (todayRow && todayRow.inTime) {
-              clockedInToday = !todayRow.outTime;
-              punchInStr = todayRow.inTime;
-            }
-          }
+      const savedTS = localStorage.getItem(monthKey);
+      if (savedTS) {
+        const ts = JSON.parse(savedTS);
+        if (ts?.rows) {
+          daysCount = ts.rows.filter(r => r.inTime).length;
+          const todayStr = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
+          const row = ts.rows.find(r => r.date === todayStr);
+          if (row?.inTime) { clockedIn = !row.outTime; punchStr = row.inTime; }
         }
       }
-    } catch (e) { }
+    } catch (_) {}
+    setIsClockedIn(clockedIn);
+    setClockInTime(punchStr);
 
-    setIsClockedIn(clockedInToday);
-    setClockInTime(punchInStr);
-
-    // Quick Launch links count & Quick Links Widget
-    let qCount = 0;
-    let qLinks = [];
+    // Quick links
+    let qCount = 0, qLinks = [];
     try {
       const res = await fetch('http://localhost:3000/api/quicklaunch');
       if (res.ok) {
-        const parsedQuick = await res.json();
-        if (Array.isArray(parsedQuick)) {
-          qCount = parsedQuick.length;
-          qLinks = parsedQuick;
-        }
+        const parsed = await res.json();
+        if (Array.isArray(parsed)) { qCount = parsed.length; qLinks = parsed; }
       } else {
-        const savedQuick = localStorage.getItem('tr-quicklaunch-data');
-        if (savedQuick) {
-          const parsedQuick = JSON.parse(savedQuick);
-          if (Array.isArray(parsedQuick)) {
-            qCount = parsedQuick.length;
-            qLinks = parsedQuick;
-          }
-        }
+        const saved = localStorage.getItem('tr-quicklaunch-data');
+        if (saved) { const p = JSON.parse(saved); if (Array.isArray(p)) { qCount = p.length; qLinks = p; } }
       }
+      let flat = [];
+      qLinks.forEach(item => { if (item.links) flat.push(...item.links); else if (item.url) flat.push(item); });
+      flat.sort((a, b) => (b.clicks||0) - (a.clicks||0));
+      setQuickLinks(flat.slice(0, 5));
+    } catch (_) {}
 
-      let extracted = [];
-      qLinks.forEach(item => {
-        if (item.links && Array.isArray(item.links)) {
-          extracted.push(...item.links);
-        } else if (item.url) {
-          extracted.push(item);
-        }
-      });
-      extracted.sort((a, b) => (b.clicks || 0) - (a.clicks || 0));
-      setQuickLinks(extracted.slice(0, 4));
-    } catch (e) { }
+    setStats({ tasks: tasksList.filter(t => !t.completed).length, water: waterAmt, days: daysCount, syncs: qCount });
 
-    setStats({
-      tasks: tasksList.filter(t => !t.completed).length,
-      water: waterAmt,
-      days: daysCount,
-      syncs: qCount
-    });
-
-    // Upcoming Events
+    // Events
     try {
-      const storedEvents = localStorage.getItem('ts-events');
-      if (storedEvents) {
-        const parsed = JSON.parse(storedEvents).map(e => ({ ...e, start: new Date(e.start) }));
-        const futureEvents = parsed.filter(e => e.start >= new Date(new Date().setHours(0, 0, 0, 0)));
-        futureEvents.sort((a, b) => a.start - b.start);
-        setUpcomingEvents(futureEvents.slice(0, 3));
+      const ev = localStorage.getItem('ts-events');
+      if (ev) {
+        const all = JSON.parse(ev).map(e => ({ ...e, start: new Date(e.start) }));
+        const future = all.filter(e => e.start >= new Date(new Date().setHours(0,0,0,0))).sort((a,b) => a.start - b.start);
+        setUpcomingEvents(future.slice(0, 3));
       }
-    } catch (e) { }
+    } catch (_) {}
   };
 
   const fetchPinnedMatrix = async () => {
     try {
-      const pinnedId = localStorage.getItem('tr-sync-pinned');
-      if (!pinnedId) return;
+      const id = localStorage.getItem('tr-sync-pinned');
+      if (!id) return;
       const res = await fetch('http://localhost:3000/api/matrices');
       if (res.ok) {
         const data = await res.json();
-        const found = data.matrices?.find(m => m.filename === pinnedId || m.id === pinnedId);
+        const found = data.matrices?.find(m => m.filename === id || m.id === id);
         if (found) setPinnedMatrix(found);
       }
-    } catch (e) { console.error(e); }
+    } catch (_) {}
   };
 
-  useEffect(() => {
-    loadAllStates();
-    fetchPinnedMatrix();
-  }, []);
+  useEffect(() => { loadAllStates(); fetchPinnedMatrix(); }, []);
 
-  // --- Task toggle checklist ---
-  const handleToggleTask = (taskId) => {
-    const updated = tasks.map(t => {
-      if (t.id === taskId) {
-        const isNowCompleted = !t.completed;
-        if (isNowCompleted) showToast(`Task completed! Keep it up.`, 'success');
-        return { ...t, completed: isNowCompleted };
-      }
-      return t;
-    });
+  /* ── Actions ── */
+  const handleToggleTask = (id) => {
+    const updated = tasks.map(t => t.id === id ? { ...t, completed: !t.completed } : t);
+    const done = updated.find(t => t.id === id);
+    if (done?.completed) showToast('Task completed! Keep it up.', 'success');
     setTasks(updated);
     localStorage.setItem('tr-run-tasks', JSON.stringify(updated));
     loadAllStates();
   };
 
-  // --- Quick Hydration Log ---
-  const handleAddWaterQuick = () => {
-    const todayStr = new Date().toDateString();
-    const currentIntake = parseInt(localStorage.getItem('tr-water-intake-ml') || '0');
-    const updatedIntake = currentIntake + 250;
-
+  const handleAddWater = () => {
+    const cur = parseInt(localStorage.getItem('tr-water-intake-ml') || '0');
+    const next = cur + 250;
     let logs = [];
-    try {
-      logs = JSON.parse(localStorage.getItem('tr-water-log') || '[]');
-    } catch (e) { }
-
-    const now = new Date();
-    const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    const newLog = { id: Date.now(), time: timeStr, amount: 250 };
-    const updatedLogs = [newLog, ...logs];
-
-    localStorage.setItem('tr-water-intake-ml', String(updatedIntake));
-    localStorage.setItem('tr-water-log', JSON.stringify(updatedLogs));
-    localStorage.setItem('tr-water-date', todayStr);
-
-    showToast(`Hydration logged! +250ml`, 'success');
+    try { logs = JSON.parse(localStorage.getItem('tr-water-log') || '[]'); } catch (_) {}
+    const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    localStorage.setItem('tr-water-intake-ml', String(next));
+    localStorage.setItem('tr-water-log', JSON.stringify([{ id: Date.now(), time: timeStr, amount: 250 }, ...logs]));
+    localStorage.setItem('tr-water-date', new Date().toDateString());
+    showToast('+250 ml logged!', 'success');
     loadAllStates();
   };
 
-  // --- Quick Timesheet Punch In / Out ---
   const handleTogglePunch = () => {
     const now = new Date();
     const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
-    const monthKey = `ts-data-${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-    const todayDateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-
-    let tsData = { empId: '', empName: 'Zoro', org: 'Elo Systems', rows: [] };
-    const savedTS = localStorage.getItem(monthKey);
-    if (savedTS) {
-      try { tsData = JSON.parse(savedTS); } catch (e) { }
+    const monthKey = `ts-data-${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+    const todayStr = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
+    let tsData = { empId: '', empName: 'Zoro', org: '', rows: [] };
+    try { tsData = JSON.parse(localStorage.getItem(monthKey)) || tsData; } catch (_) {}
+    let idx = tsData.rows.findIndex(r => r.date === todayStr);
+    if (idx === -1) {
+      tsData.rows.push({ day: now.getDate(), date: todayStr, dayName: now.toLocaleDateString([],{weekday:'short'}), type: 'Working', inTime: '', outTime: '', notes: '' });
+      idx = tsData.rows.length - 1;
     }
-
-    let todayRowIdx = tsData.rows.findIndex(r => r.date === todayDateStr);
-    if (todayRowIdx === -1) {
-      tsData.rows.push({
-        day: now.getDate(),
-        date: todayDateStr,
-        dayName: now.toLocaleDateString([], { weekday: 'short' }),
-        type: 'Working',
-        inTime: '',
-        outTime: '',
-        notes: ''
-      });
-      todayRowIdx = tsData.rows.length - 1;
-    }
-
     if (!isClockedIn) {
-      tsData.rows[todayRowIdx].inTime = timeStr;
-      tsData.rows[todayRowIdx].outTime = '';
-      setIsClockedIn(true);
-      setClockInTime(timeStr);
+      tsData.rows[idx].inTime = timeStr; tsData.rows[idx].outTime = '';
+      setIsClockedIn(true); setClockInTime(timeStr);
       showToast(`Clocked in at ${timeStr}`, 'success');
     } else {
-      tsData.rows[todayRowIdx].outTime = timeStr;
+      tsData.rows[idx].outTime = timeStr;
       setIsClockedIn(false);
       showToast(`Clocked out at ${timeStr}`, 'info');
     }
-
     localStorage.setItem(monthKey, JSON.stringify(tsData));
     loadAllStates();
   };
 
+  /* ─────────────────────────────────────────────────────────────
+     WIDGETS MAP
+  ───────────────────────────────────────────────────────────── */
+  const WATER_GOAL = 2000;
+  const waterPct = Math.min(100, Math.round((stats.water / WATER_GOAL) * 100));
 
-
-  // --- Flashcard Learning Widget State ---
-  const [flashcards, setFlashcards] = useState([]);
-  const [currentCardIdx, setCurrentCardIdx] = useState(0);
-  const [lessonProgress, setLessonProgress] = useState({ completed: 0, total: 0 });
-  const [activeGoalName, setActiveGoalName] = useState('Learning Goals');
-
-  useEffect(() => {
-    const libraryStr = localStorage.getItem('tr-goals-library');
-    const currentId = localStorage.getItem('tr-goals-active-id');
-
-    if (libraryStr && currentId) {
-      const library = JSON.parse(libraryStr);
-      const activeGoal = library.find(g => g.id === currentId);
-
-      if (activeGoal && activeGoal.roadmap) {
-        setActiveGoalName(activeGoal.title);
-
-        let displayRoadmap = activeGoal.roadmap;
-        if (displayRoadmap[0] && !displayRoadmap[0].subtopics) {
-          displayRoadmap = [{ subtopics: activeGoal.roadmap }];
-        }
-
-        let completed = 0;
-        let total = 0;
-        let extractedCards = [];
-
-        displayRoadmap.forEach(m => {
-          const subs = m.subtopics || [];
-          total += subs.length;
-          completed += subs.filter(t => t.completed).length;
-
-          const savedTopics = subs.filter(t => t.lessonContent);
-          savedTopics.forEach(t => {
-            const cleanText = t.lessonContent.replace(/[*_`#]/g, '').replace(/\n+/g, ' ').replace(/\s+/g, ' ');
-            const sentences = cleanText.split(/(?<=[.!?])\s+/).map(s => s.trim()).filter(s => s.length > 20);
-
-            for (let i = 0; i < sentences.length; i += 3) {
-              const chunk = sentences.slice(i, i + 3).join(' ');
-              if (chunk.length > 80) {
-                extractedCards.push({ title: t.title, text: chunk });
-              }
-            }
-          });
-        });
-
-        setLessonProgress({ completed, total });
-        if (extractedCards.length > 0) {
-          setFlashcards(extractedCards);
-        } else {
-          setFlashcards([
-            { title: 'No Lessons Found', text: 'Generate roadmaps with lessons in the Learn Skills module to see flashcards here!' }
-          ]);
-        }
-      }
-    } else {
-      setFlashcards([
-        { title: 'Welcome to Learn Skills', text: 'Define your learning goals in the Learn Skills tab, build structured roadmaps using Gemini, and see key takeaways dynamically generated here!' },
-        { title: 'Consistency is Key', text: 'Spend just 10 minutes every day reviewing your active roadmaps. Committing lessons to memory builds solid professional growth!' }
-      ]);
-    }
-  }, []);
-
-  const progressPercentage = lessonProgress.total > 0
-    ? Math.round((lessonProgress.completed / lessonProgress.total) * 100)
-    : 0;
-
-  const activeXP = lessonProgress.completed * 10;
-  const getLevel = (xp) => {
-    if (xp < 100) return { title: 'Novice', min: 0, max: 100, pct: xp, icon: '🥚' };
-    if (xp < 300) return { title: 'Apprentice', min: 100, max: 300, pct: ((xp - 100) / 200) * 100, icon: '🌱' };
-    if (xp < 600) return { title: 'Scholar', min: 300, max: 600, pct: ((xp - 300) / 300) * 100, icon: '📘' };
-    if (xp < 1000) return { title: 'Expert', min: 600, max: 1000, pct: ((xp - 600) / 400) * 100, icon: '🔥' };
-    return { title: 'Grandmaster', min: 1000, max: 1000, pct: 100, icon: '👑' };
-  };
-  const currentLevel = getLevel(activeXP);
+  const passed   = pinnedMatrix?.statusCounts?.PASSED   || 0;
+  const failed   = pinnedMatrix?.statusCounts?.FAILED   || 0;
+  const untested = pinnedMatrix?.statusCounts?.UNTESTED || 0;
+  const total    = passed + failed + untested;
+  const passPct  = total > 0 ? Math.round((passed / total) * 100) : 0;
 
   const widgetsMap = {
+
+    /* ── Career Profile ── */
     profile_widget: (
-      <div className="glass-panel" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <User size={18} style={{ color: 'var(--accent-purple)' }} />
-          <h3 style={{ fontSize: '1rem', fontWeight: 'bold' }}>Career Profile</h3>
+      <div className="glass-panel wgt">
+        <WgtHeader icon={User} iconColor="var(--accent-purple)" title="Career Profile"
+          badge={`Lvl ${Math.floor(activeXP / 100)}`} badgeVariant="amber" />
+        <div style={{ display:'flex', alignItems:'center', gap:'14px', background:'var(--bg-tertiary)', padding:'14px', borderRadius:'var(--radius-md)', border:'1px solid var(--border-color)' }}>
+          <span style={{ fontSize:'2.2rem', lineHeight:1 }}>{lvl.icon}</span>
+          <div style={{ flex:1, minWidth:0 }}>
+            <div style={{ display:'flex', justifyContent:'space-between', marginBottom:'8px' }}>
+              <span style={{ fontSize:'0.85rem', fontWeight:'800', textTransform:'uppercase', letterSpacing:'1px', color:'var(--text-primary)' }}>{lvl.title}</span>
+              <span style={{ fontSize:'0.72rem', color:'var(--accent-pink)', fontWeight:'700' }}>{activeXP} XP</span>
+            </div>
+            <div className="xp-bar">
+              <div className="xp-fill" style={{ width: `${lvl.pct}%` }} />
+            </div>
+            <div style={{ fontSize:'0.6rem', color:'var(--text-muted)', marginTop:'6px', textAlign:'right' }}>
+              {activeXP} / {lvl.max} XP to next level
+            </div>
+          </div>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '16px', background: 'var(--bg-tertiary)', padding: '16px', borderRadius: '12px', border: '1px solid var(--border-color)' }}>
-          <div style={{ fontSize: '2.5rem', filter: 'drop-shadow(0 0 8px rgba(255,255,255,0.2))' }}>{currentLevel.icon}</div>
-          <div style={{ flexGrow: 1 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '8px' }}>
-              <div style={{ fontSize: '1.1rem', fontWeight: '800', color: 'var(--text-primary)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>{currentLevel.title}</div>
-              <div style={{ fontSize: '0.85rem', color: 'var(--accent-pink)', fontWeight: 'bold' }}>Level {Math.floor(activeXP / 100)}</div>
-            </div>
-            <div style={{ width: '100%', height: '8px', background: 'rgba(0,0,0,0.4)', borderRadius: '4px', overflow: 'hidden', boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.5)' }}>
-              <div style={{ width: `${currentLevel.pct}%`, height: '100%', background: 'linear-gradient(90deg, var(--accent-pink), var(--accent-purple))', borderRadius: '4px', boxShadow: '0 0 10px var(--glow-purple)' }} />
-            </div>
-            <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '8px', textAlign: 'right' }}>{activeXP} / {currentLevel.max} XP to next level</div>
+        <div style={{ display:'flex', gap:'8px' }}>
+          <div style={{ flex:1, background:'var(--bg-tertiary)', border:'1px solid var(--border-color)', borderRadius:'var(--radius-sm)', padding:'10px', textAlign:'center' }}>
+            <div style={{ fontFamily:'var(--font-mono)', fontSize:'1rem', fontWeight:'700', color:'var(--accent-purple)' }}>{lessonProgress.completed}</div>
+            <div style={{ fontSize:'0.58rem', fontWeight:'700', letterSpacing:'1.5px', textTransform:'uppercase', color:'var(--text-muted)', marginTop:'3px' }}>Lessons</div>
+          </div>
+          <div style={{ flex:1, background:'var(--bg-tertiary)', border:'1px solid var(--border-color)', borderRadius:'var(--radius-sm)', padding:'10px', textAlign:'center' }}>
+            <div style={{ fontFamily:'var(--font-mono)', fontSize:'1rem', fontWeight:'700', color:'var(--accent-cyan)' }}>{progressPct}%</div>
+            <div style={{ fontSize:'0.58rem', fontWeight:'700', letterSpacing:'1.5px', textTransform:'uppercase', color:'var(--text-muted)', marginTop:'3px' }}>Progress</div>
+          </div>
+          <div style={{ flex:1, background:'var(--bg-tertiary)', border:'1px solid var(--border-color)', borderRadius:'var(--radius-sm)', padding:'10px', textAlign:'center' }}>
+            <div style={{ fontFamily:'var(--font-mono)', fontSize:'1rem', fontWeight:'700', color:'var(--accent-green)' }}>{stats.days}</div>
+            <div style={{ fontSize:'0.58rem', fontWeight:'700', letterSpacing:'1.5px', textTransform:'uppercase', color:'var(--text-muted)', marginTop:'3px' }}>Days In</div>
           </div>
         </div>
       </div>
     ),
+
+    /* ── Focus Timer (hidden from default, kept for old saved configs) ── */
     pomodoro_widget: (
-      <div className="glass-panel" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px', alignItems: 'center', justifyContent: 'center' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%', justifyContent: 'flex-start' }}>
-          <Clock size={18} style={{ color: 'var(--accent-pink)' }} />
-          <h3 style={{ fontSize: '1rem', fontWeight: 'bold' }}>Focus Timer</h3>
-        </div>
-        <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px 0' }}>
-          <PomodoroTimer />
-        </div>
+      <div className="glass-panel wgt" style={{ alignItems:'center', justifyContent:'center' }}>
+        <WgtHeader icon={Clock} iconColor="var(--accent-pink)" title="Focus Timer" />
+        <div style={{ padding:'16px 0' }}><PomodoroTimer /></div>
       </div>
     ),
+
+    /* ── Active Learning ── */
     learning: (
-      <div className="glass-panel" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <Layers size={18} style={{ color: 'var(--accent-purple)' }} />
-              <h3 style={{ fontSize: '1rem', fontWeight: 'bold' }}>Active Learning</h3>
+      <div className="glass-panel wgt">
+        <WgtHeader icon={Layers} iconColor="var(--accent-purple)" title="Active Learning"
+          right={<span style={{ fontSize:'0.68rem', color:'var(--accent-purple)', fontWeight:'700' }}>{progressPct}%</span>} />
+        <p className="wgt-subtitle">{activeGoalName}</p>
+        <div className="prog-bar"><div className="prog-fill" style={{ width:`${progressPct}%` }} /></div>
+        <div className="flashcard">
+          <span className="flashcard-topic">{flashcards[currentCardIdx]?.title}</span>
+          <p className="flashcard-text">{flashcards[currentCardIdx]?.text}</p>
+          <div className="flashcard-footer">
+            <span className="flashcard-count">{currentCardIdx + 1} / {flashcards.length}</span>
+            <div className="flashcard-btns">
+              <button className="flashcard-btn" onClick={() => setCurrentCardIdx(p => Math.max(0, p-1))} disabled={currentCardIdx === 0}>
+                <ChevronLeft size={14} strokeWidth={2} />
+              </button>
+              <button className="flashcard-btn" onClick={() => setCurrentCardIdx(p => Math.min(flashcards.length-1, p+1))} disabled={currentCardIdx === flashcards.length-1}>
+                <ChevronRight size={14} strokeWidth={2} />
+              </button>
             </div>
-            <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: '4px' }}>{activeGoalName}</div>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', background: 'rgba(168, 85, 247, 0.1)', color: 'var(--accent-purple)', padding: '4px 8px', borderRadius: '12px', fontSize: '0.75rem', fontWeight: 'bold' }}>
-            <Award size={12} /> Lvl {currentLevel.icon}
-          </div>
-        </div>
-        <div style={{ width: '100%', height: '6px', background: 'var(--bg-tertiary)', borderRadius: '3px', overflow: 'hidden' }}>
-          <div style={{ width: `${progressPercentage}%`, height: '100%', background: 'linear-gradient(90deg, var(--accent-purple), var(--accent-pink))' }}></div>
-        </div>
-        <div style={{ background: 'var(--bg-tertiary)', padding: '16px', borderRadius: '12px', minHeight: '140px', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-          {flashcards.length > 0 && (
-            <>
-              <span style={{ fontSize: '0.7rem', textTransform: 'uppercase', fontWeight: 'bold', color: 'var(--accent-pink)', marginBottom: '8px' }}>
-                {flashcards[currentCardIdx]?.title}
-              </span>
-              <p style={{ fontSize: '0.95rem', lineHeight: '1.5', fontWeight: '500' }}>
-                {flashcards[currentCardIdx]?.text}
-              </p>
-            </>
-          )}
-        </div>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 'bold' }}>
-            Card {currentCardIdx + 1} / {flashcards.length}
-          </div>
-          <div style={{ display: 'flex', gap: '8px' }}>
-            <button onClick={() => setCurrentCardIdx(prev => Math.max(0, prev - 1))} disabled={currentCardIdx === 0} style={{ padding: '6px', borderRadius: '6px', background: 'var(--bg-tertiary)', border: 'none', cursor: 'pointer', opacity: currentCardIdx === 0 ? 0.4 : 1, color: 'var(--text-primary)' }}>
-              <ChevronLeft size={16} />
-            </button>
-            <button onClick={() => setCurrentCardIdx(prev => Math.min(flashcards.length - 1, prev + 1))} disabled={currentCardIdx === flashcards.length - 1} style={{ padding: '6px', borderRadius: '6px', background: 'var(--bg-tertiary)', border: 'none', cursor: 'pointer', opacity: currentCardIdx === flashcards.length - 1 ? 0.4 : 1, color: 'var(--text-primary)' }}>
-              <ChevronRight size={16} />
-            </button>
           </div>
         </div>
       </div>
     ),
+
+    /* ── Upcoming Events ── */
     events: (
-      <div className="glass-panel" style={{ padding: '14px', display: 'flex', flexDirection: 'column', gap: '10px', aspectRatio: '1 / 1', overflow: 'hidden' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'center' }}>
-          <Calendar size={16} style={{ color: 'var(--accent-orange)' }} />
-          <h3 style={{ fontSize: '0.85rem', fontWeight: 'bold' }}>Upcoming (3)</h3>
-        </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', flex: 1, overflowY: 'auto', paddingRight: '4px' }}>
-          {upcomingEvents.length === 0 ? (
-            <div style={{ margin: 'auto', fontSize: '0.75rem', color: 'var(--text-muted)' }}>No events</div>
-          ) : (
-            upcomingEvents.slice(0, 3).map((evt, idx) => (
-              <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'var(--bg-tertiary)', padding: '8px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
-                <div style={{ background: 'rgba(249, 115, 22, 0.15)', color: 'var(--accent-orange)', padding: '4px 6px', borderRadius: '6px', fontSize: '0.7rem', fontWeight: 'bold', minWidth: '28px', textAlign: 'center' }}>
-                  {evt.start.getDate()}
+      <div className="glass-panel wgt">
+        <WgtHeader icon={Calendar} iconColor="var(--accent-orange)" title="Upcoming Events"
+          badge={upcomingEvents.length > 0 ? upcomingEvents.length : null} />
+        <div style={{ display:'flex', flexDirection:'column', gap:'7px' }}>
+          {upcomingEvents.length === 0
+            ? <div className="wgt-empty">
+                <div className="wgt-empty-icon" style={{ background:'rgba(240,120,48,0.1)', color:'var(--accent-orange)' }}>
+                  <Calendar size={18} />
                 </div>
-                <div style={{ flex: 1, overflow: 'hidden' }}>
-                  <div style={{ fontSize: '0.75rem', fontWeight: '600', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: 'var(--text-primary)' }}>{evt.summary}</div>
-                  <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>{evt.start.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
-                </div>
+                <span className="wgt-empty-title">No upcoming events</span>
+                <span className="wgt-empty-sub">Import a calendar in Timesheet</span>
               </div>
-            ))
-          )}
-        </div>
-      </div>
-    ),
-    scratchpad: (
-      <div className="glass-panel" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <ClipboardList size={18} style={{ color: 'var(--accent-green)' }} />
-            <h3 style={{ fontSize: '1rem', fontWeight: 'bold' }}>Scratchpad</h3>
-          </div>
-          <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Autosaves</span>
-        </div>
-        <textarea
-          value={scratchpadContent}
-          onChange={handleScratchpadChange}
-          placeholder="Jot down quick thoughts..."
-          style={{ width: '100%', minHeight: '140px', background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', padding: '12px', borderRadius: '10px', fontFamily: 'var(--font-mono)', fontSize: '0.85rem', resize: 'vertical', outline: 'none' }}
-        />
-      </div>
-    ),
-    tasks: (
-      <div className="glass-panel" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px', height: '100%' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <CheckCircle size={18} style={{ color: 'var(--accent-cyan)' }} />
-            <h3 style={{ fontSize: '1.05rem', fontWeight: 'bold' }}>Status Checklist</h3>
-          </div>
-          <span style={{ fontSize: '0.75rem', background: 'rgba(6, 182, 212, 0.1)', color: 'var(--accent-cyan)', padding: '2px 8px', borderRadius: '12px', fontWeight: 'bold' }}>
-            {tasks.filter(t => !t.completed).length} Pending
-          </span>
-        </div>
-
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-          {tasks.filter(t => !t.completed).length === 0 ? (
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '12px', padding: '32px 0', background: 'var(--bg-tertiary)', borderRadius: '12px', border: '1px dashed var(--border-color)' }}>
-              <div style={{ width: '48px', height: '48px', borderRadius: '50%', background: 'rgba(16, 185, 129, 0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--accent-green)' }}>
-                <CheckCircle size={24} />
-              </div>
-              <div style={{ textAlign: 'center' }}>
-                <div style={{ fontSize: '0.95rem', fontWeight: 'bold', color: 'var(--text-primary)' }}>Inbox Zero</div>
-                <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '4px' }}>You've crushed all sprint tasks.</div>
-              </div>
-            </div>
-          ) : (
-            tasks.filter(t => !t.completed).slice(0, 6).map(task => {
-              let formattedDate = task.deadline;
-              if (formattedDate) {
-                 try {
-                    const d = new Date(formattedDate);
-                    if (!isNaN(d.getTime())) {
-                       formattedDate = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-                    }
-                 } catch(e) {}
-              }
-
-              return (
-                <div 
-                  key={task.id} 
-                  onClick={() => handleToggleTask(task.id)} 
-                  style={{ 
-                    display: 'flex', 
-                    alignItems: 'flex-start', 
-                    gap: '14px', 
-                    background: 'var(--bg-tertiary)', 
-                    border: '1px solid var(--border-color)', 
-                    padding: '14px', 
-                    borderRadius: '12px', 
-                    cursor: 'pointer', 
-                    transition: 'all 0.2s ease',
-                    position: 'relative'
-                  }} 
-                  className="nav-item-hover"
-                >
-                  <div style={{ 
-                    width: '20px', 
-                    height: '20px', 
-                    borderRadius: '50%', 
-                    border: '2px solid var(--text-muted)', 
-                    display: 'flex', 
-                    alignItems: 'center', 
-                    justifyContent: 'center', 
-                    flexShrink: 0,
-                    marginTop: '2px',
-                    transition: 'border-color 0.2s ease'
-                  }}></div>
-                  
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', flex: 1, minWidth: 0 }}>
-                    <span style={{ fontSize: '0.9rem', color: 'var(--text-primary)', fontWeight: '600', lineHeight: '1.3', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                      {task.title}
-                    </span>
-                    
-                    {formattedDate && (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', background: 'rgba(249, 115, 22, 0.1)', color: 'var(--accent-orange)', padding: '2px 8px', borderRadius: '12px', fontSize: '0.7rem', fontWeight: 'bold' }}>
-                          <Clock size={10} /> {formattedDate}
-                        </div>
-                      </div>
-                    )}
+            : upcomingEvents.map((evt, i) => (
+                <div key={i} className="event-item">
+                  <div className="event-day-badge">{evt.start.getDate()}</div>
+                  <div style={{ flex:1, minWidth:0 }}>
+                    <div className="event-summary">{evt.summary}</div>
+                    <div className="event-time">{evt.start.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</div>
                   </div>
                 </div>
-              );
-            })
-          )}
+              ))
+          }
         </div>
       </div>
     ),
-    draft: (
-      <div className="glass-panel" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <FileText size={18} style={{ color: '#fbbf24' }} />
-            <h3 style={{ fontSize: '1rem', fontWeight: 'bold' }}>Daily Status Draft</h3>
-          </div>
-          <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Autosaves</span>
-        </div>
+
+    /* ── Scratchpad ── */
+    scratchpad: (
+      <div className="glass-panel wgt">
+        <WgtHeader icon={ClipboardList} iconColor="var(--accent-green)" title="Scratchpad"
+          right={<span className="wgt-autosave">Autosaves</span>} />
         <textarea
-          value={statusDraft}
-          onChange={handleStatusDraftChange}
-          placeholder="What did you work on today? Jot it down here so it's ready for 5PM..."
-          style={{ width: '100%', minHeight: '120px', background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', padding: '12px', borderRadius: '10px', fontFamily: 'var(--font-mono)', fontSize: '0.85rem', resize: 'vertical', outline: 'none' }}
+          className="wgt-textarea"
+          value={scratchpadContent}
+          onChange={e => { setScratchpadContent(e.target.value); localStorage.setItem('tr-dash-scratchpad', e.target.value); }}
+          placeholder="Jot down quick thoughts, commands, or snippets..."
         />
       </div>
     ),
+
+    /* ── Status Checklist ── */
+    tasks: (
+      <div className="glass-panel wgt">
+        <WgtHeader icon={CheckCircle} iconColor="var(--accent-cyan)" title="Status Checklist"
+          badge={`${tasks.filter(t => !t.completed).length} pending`} badgeVariant="cyan" />
+        <div className="task-list">
+          {tasks.filter(t => !t.completed).length === 0
+            ? <div className="wgt-empty">
+                <div className="wgt-empty-icon"><CheckCircle size={18} /></div>
+                <span className="wgt-empty-title">Inbox zero</span>
+                <span className="wgt-empty-sub">All sprint tasks crushed</span>
+              </div>
+            : tasks.filter(t => !t.completed).slice(0, 6).map(task => {
+                let due = task.deadline;
+                if (due) try { const d = new Date(due); if (!isNaN(d)) due = d.toLocaleDateString('en-US',{month:'short',day:'numeric'}); } catch (_) {}
+                return (
+                  <div key={task.id} className="task-item" onClick={() => handleToggleTask(task.id)}>
+                    <div className="task-check" />
+                    <div className="task-body">
+                      <span className="task-name">{task.title}</span>
+                      {due && <span className="task-due"><Clock size={9} /> {due}</span>}
+                    </div>
+                  </div>
+                );
+              })
+          }
+        </div>
+        {tasks.filter(t => !t.completed).length > 0 && (
+          <button onClick={() => navigate('/task-manager')}
+            style={{ background:'transparent', border:'none', color:'var(--text-muted)', fontSize:'0.7rem', cursor:'pointer', textAlign:'left', padding:0, marginTop:'-4px' }}>
+            View all in Task Manager →
+          </button>
+        )}
+      </div>
+    ),
+
+    /* ── Daily Status Draft ── */
+    draft: (
+      <div className="glass-panel wgt">
+        <WgtHeader icon={FileText} iconColor="var(--accent-yellow)" title="Daily Status Draft"
+          right={<span className="wgt-autosave">Autosaves</span>} />
+        <textarea
+          className="wgt-textarea"
+          value={statusDraft}
+          onChange={e => { setStatusDraft(e.target.value); localStorage.setItem('tr-status-draft', e.target.value); }}
+          placeholder="What did you work on today? Draft it here before your 5 PM standup..."
+        />
+        <button onClick={() => navigate('/status')} className="glow-btn" style={{ width:'100%', justifyContent:'center', background:'var(--bg-tertiary)', border:'1px solid var(--border-color)', color:'var(--text-secondary)', boxShadow:'none' }}>
+          <Activity size={13} /> Open Daily Status
+        </button>
+      </div>
+    ),
+
+    /* ── Hydration ── */
     hydration: (
-      <div className="glass-panel" style={{ padding: '12px', display: 'flex', flexDirection: 'column', gap: '6px', alignItems: 'center', textAlign: 'center', overflow: 'hidden' }}>
-        <Droplet size={20} style={{ color: 'var(--accent-cyan)' }} />
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-          <h3 style={{ fontSize: '0.85rem', fontWeight: 'bold' }}>Hydration</h3>
-          <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>{stats.water} ml</span>
+      <div className="glass-panel wgt">
+        <WgtHeader icon={Droplet} iconColor="var(--accent-cyan)" title="Hydration"
+          badge={`${waterPct}%`} badgeVariant="cyan" />
+        <div style={{ display:'flex', alignItems:'flex-end', justifyContent:'space-between' }}>
+          <span style={{ fontFamily:'var(--font-mono)', fontSize:'1.4rem', fontWeight:'700', color:'var(--accent-cyan)' }}>
+            {stats.water} <span style={{ fontSize:'0.7rem', color:'var(--text-muted)', fontWeight:'600' }}>ml</span>
+          </span>
+          <span style={{ fontSize:'0.68rem', color:'var(--text-muted)', fontWeight:'600' }}>Goal: {WATER_GOAL} ml</span>
         </div>
-        <button onClick={handleAddWaterQuick} className="glow-btn" style={{ width: '100%', justifyContent: 'center', background: 'rgba(6, 182, 212, 0.15)', color: 'var(--accent-cyan)', border: '1px solid rgba(6, 182, 212, 0.3)', boxShadow: 'none', padding: '6px', fontSize: '0.75rem' }}>
-          <Plus size={12} /> Add
+        <div className="water-meter"><div className="water-fill" style={{ width:`${waterPct}%` }} /></div>
+        <button onClick={handleAddWater} className="glow-btn"
+          style={{ width:'100%', justifyContent:'center', background:'rgba(91,196,245,0.12)', color:'var(--accent-cyan)', border:'1px solid rgba(91,196,245,0.25)', boxShadow:'none' }}>
+          <Plus size={13} /> Add 250 ml
         </button>
       </div>
     ),
+
+    /* ── Timesheet ── */
     timesheet_widget: (
-      <div className="glass-panel" style={{ padding: '12px', display: 'flex', flexDirection: 'column', gap: '6px', alignItems: 'center', textAlign: 'center', overflow: 'hidden' }}>
-        <Clock size={20} style={{ color: isClockedIn ? 'var(--accent-green)' : 'var(--text-muted)' }} />
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-          <h3 style={{ fontSize: '0.85rem', fontWeight: 'bold' }}>Timesheet</h3>
-          <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>{isClockedIn ? clockInTime : 'Out'}</span>
+      <div className="glass-panel wgt">
+        <WgtHeader icon={Clock} iconColor={isClockedIn ? 'var(--accent-green)' : 'var(--text-muted)'} title="Timesheet"
+          badge={`${stats.days} days`} />
+        <div className="punch-status">
+          <div className={`punch-dot ${isClockedIn ? 'punch-dot--on' : 'punch-dot--off'}`} />
+          <span className="punch-state-label">{isClockedIn ? 'Active' : 'Offline'}</span>
+          {isClockedIn && <span className="punch-time">{clockInTime}</span>}
         </div>
-        <button onClick={handleTogglePunch} className="glow-btn" style={{ width: '100%', justifyContent: 'center', background: isClockedIn ? 'rgba(239, 68, 68, 0.15)' : 'rgba(16, 185, 129, 0.15)', color: isClockedIn ? 'var(--accent-red)' : 'var(--accent-green)', border: `1px solid ${isClockedIn ? 'rgba(239, 68, 68, 0.3)' : 'rgba(16, 185, 129, 0.3)'}`, boxShadow: 'none', padding: '6px', fontSize: '0.75rem' }}>
-          {isClockedIn ? 'Out' : 'In'}
+        <button onClick={handleTogglePunch} className="glow-btn"
+          style={{
+            width:'100%', justifyContent:'center', boxShadow:'none',
+            background: isClockedIn ? 'rgba(240,80,80,0.12)' : 'rgba(45,232,134,0.12)',
+            color:       isClockedIn ? 'var(--accent-red)'   : 'var(--accent-green)',
+            border:      isClockedIn ? '1px solid rgba(240,80,80,0.25)' : '1px solid rgba(45,232,134,0.25)'
+          }}>
+          {isClockedIn ? 'Clock Out' : 'Clock In'}
         </button>
       </div>
     ),
+
+    /* ── Pinned Matrix ── */
     matrix: (
-      <div className="glass-panel" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <Database size={18} style={{ color: 'var(--accent-purple)' }} />
-            <h3 style={{ fontSize: '1rem', fontWeight: 'bold' }}>Pinned Matrix</h3>
-          </div>
-          {pinnedMatrix && <span style={{ fontSize: '0.75rem', background: 'var(--bg-primary)', padding: '4px 8px', borderRadius: '12px', border: '1px solid var(--border-color)', fontWeight: 'bold' }}>{pinnedMatrix.testCaseCount || 0} Cases</span>}
-        </div>
+      <div className="glass-panel wgt">
+        <WgtHeader icon={Database} iconColor="var(--accent-purple)" title="Pinned Matrix"
+          badge={pinnedMatrix ? `${pinnedMatrix.testCaseCount || 0} cases` : null} />
         {pinnedMatrix ? (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            <div style={{ fontSize: '0.9rem', fontWeight: '600', color: 'var(--text-primary)', wordBreak: 'break-all' }}>
+          <>
+            <p style={{ fontSize:'0.8rem', fontWeight:'600', color:'var(--text-primary)', wordBreak:'break-all', marginTop:'-6px' }}>
               {pinnedMatrix.name}
+            </p>
+            <div className="matrix-stats">
+              <div className="matrix-stat" style={{ background:'rgba(45,232,134,0.08)', borderColor:'rgba(45,232,134,0.15)' }}>
+                <div className="matrix-stat-val" style={{ color:'var(--accent-green)' }}>{passed}</div>
+                <div className="matrix-stat-label">Passed</div>
+              </div>
+              <div className="matrix-stat" style={{ background:'rgba(240,80,80,0.08)', borderColor:'rgba(240,80,80,0.15)' }}>
+                <div className="matrix-stat-val" style={{ color:'var(--accent-red)' }}>{failed}</div>
+                <div className="matrix-stat-label">Failed</div>
+              </div>
+              <div className="matrix-stat" style={{ background:'rgba(245,200,66,0.08)', borderColor:'rgba(245,200,66,0.15)' }}>
+                <div className="matrix-stat-val" style={{ color:'var(--accent-yellow)' }}>{untested}</div>
+                <div className="matrix-stat-label">Untested</div>
+              </div>
             </div>
-            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-              <div style={{ flex: 1, background: 'rgba(16, 185, 129, 0.1)', border: '1px solid rgba(16, 185, 129, 0.2)', borderRadius: '8px', padding: '10px', textAlign: 'center' }}>
-                <div style={{ fontSize: '1.2rem', fontWeight: 'bold', color: 'var(--accent-green)' }}>{pinnedMatrix.statusCounts?.PASSED || 0}</div>
-                <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: '700' }}>Passed</div>
+            <div>
+              <div style={{ display:'flex', justifyContent:'space-between', marginBottom:'6px' }}>
+                <span style={{ fontSize:'0.62rem', fontWeight:'700', color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'1px' }}>Pass rate</span>
+                <span style={{ fontSize:'0.72rem', fontWeight:'700', fontFamily:'var(--font-mono)', color:'var(--accent-green)' }}>{passPct}%</span>
               </div>
-              <div style={{ flex: 1, background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.2)', borderRadius: '8px', padding: '10px', textAlign: 'center' }}>
-                <div style={{ fontSize: '1.2rem', fontWeight: 'bold', color: 'var(--accent-red)' }}>{pinnedMatrix.statusCounts?.FAILED || 0}</div>
-                <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: '700' }}>Failed</div>
-              </div>
-              <div style={{ flex: 1, background: 'rgba(245, 158, 11, 0.1)', border: '1px solid rgba(245, 158, 11, 0.2)', borderRadius: '8px', padding: '10px', textAlign: 'center' }}>
-                <div style={{ fontSize: '1.2rem', fontWeight: 'bold', color: 'var(--accent-yellow)' }}>{pinnedMatrix.statusCounts?.UNTESTED || 0}</div>
-                <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: '700' }}>Untested</div>
-              </div>
+              <div className="prog-bar"><div className="prog-fill" style={{ width:`${passPct}%`, background:'linear-gradient(90deg, var(--accent-green), rgba(45,232,134,0.5))' }} /></div>
             </div>
-            <button onClick={() => navigate('/synchub')} className="glow-btn" style={{ width: '100%', justifyContent: 'center', background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', padding: '10px', marginTop: '4px', boxShadow: 'none' }}>
+            <button onClick={() => navigate('/synchub')} className="glow-btn"
+              style={{ width:'100%', justifyContent:'center', background:'var(--bg-tertiary)', border:'1px solid var(--border-color)', color:'var(--text-secondary)', boxShadow:'none' }}>
               Open Sync Hub
             </button>
-          </div>
+          </>
         ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px', padding: '20px 0', color: 'var(--text-muted)' }}>
-            <Database size={32} style={{ opacity: 0.4 }} />
-            <span style={{ fontSize: '0.85rem' }}>No matrix pinned</span>
-            <button onClick={() => navigate('/synchub')} style={{ padding: '6px 12px', fontSize: '0.8rem', background: 'var(--bg-primary)', border: '1px solid var(--border-color)', borderRadius: '16px', color: 'var(--text-primary)', cursor: 'pointer' }}>
+          <div className="wgt-empty">
+            <div className="wgt-empty-icon" style={{ background:'rgba(232,168,37,0.1)', color:'var(--accent-purple)' }}><Database size={18} /></div>
+            <span className="wgt-empty-title">No matrix pinned</span>
+            <span className="wgt-empty-sub">Pin one in Sync Hub to track it here</span>
+            <button onClick={() => navigate('/synchub')} style={{ background:'var(--bg-primary)', border:'1px solid var(--border-color)', borderRadius:'20px', color:'var(--text-secondary)', cursor:'pointer', fontSize:'0.72rem', padding:'5px 12px' }}>
               Go to Sync Hub
             </button>
           </div>
         )}
       </div>
     ),
+
+    /* ── Frequently Visited ── */
     links: (
-      <div className="glass-panel" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <Compass size={18} style={{ color: 'var(--accent-pink)' }} />
-          <h3 style={{ fontSize: '1rem', fontWeight: 'bold' }}>Frequently Visited</h3>
-        </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-          {quickLinks.length === 0 ? (
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px', padding: '16px 0', color: 'var(--text-muted)' }}>
-              <Compass size={28} style={{ opacity: 0.4 }} />
-              <span style={{ fontSize: '0.85rem' }}>No links available.</span>
-            </div>
-          ) : (
-            quickLinks.map((link, idx) => (
-              <a key={idx} href={link.url} target="_blank" rel="noreferrer" style={{ display: 'flex', alignItems: 'center', gap: '12px', background: 'var(--bg-tertiary)', padding: '10px 14px', borderRadius: '10px', textDecoration: 'none', color: 'var(--text-primary)' }} className="nav-item-hover" onClick={() => { fetch('http://localhost:3000/api/quicklaunch/click', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: link.id }) }).catch(() => { }); }}>
-                <span style={{ fontSize: '1.2rem' }}>{link.emoji || '🔗'}</span>
-                <span style={{ fontSize: '0.85rem', fontWeight: '600', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flex: 1 }}>{link.name || link.title}</span>
-                <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontWeight: 'bold', background: 'var(--bg-primary)', padding: '2px 6px', borderRadius: '10px' }}>{link.clicks || 0}</span>
-              </a>
-            ))
-          )}
+      <div className="glass-panel wgt">
+        <WgtHeader icon={Compass} iconColor="var(--accent-pink)" title="Frequently Visited" />
+        <div style={{ display:'flex', flexDirection:'column', gap:'7px' }}>
+          {quickLinks.length === 0
+            ? <div className="wgt-empty">
+                <div className="wgt-empty-icon" style={{ background:'rgba(232,83,138,0.1)', color:'var(--accent-pink)' }}><Compass size={18} /></div>
+                <span className="wgt-empty-title">No links yet</span>
+                <span className="wgt-empty-sub">Add links in Quick Launch</span>
+              </div>
+            : quickLinks.map((link, i) => (
+                <a key={i} href={link.url} target="_blank" rel="noreferrer" className="link-item"
+                  onClick={() => fetch('http://localhost:3000/api/quicklaunch/click',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:link.id})}).catch(()=>{})}>
+                  <span className="link-emoji">{link.emoji || '🔗'}</span>
+                  <span className="link-name">{link.name || link.title}</span>
+                  <span className="link-clicks">{link.clicks || 0}</span>
+                </a>
+              ))
+          }
         </div>
       </div>
     ),
+
+    /* ── World Clocks ── */
     clocks: (
-      <div className="glass-panel" style={{ padding: '14px', display: 'flex', flexDirection: 'column', gap: '8px', aspectRatio: '1 / 1', overflow: 'hidden' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
-          <Globe size={16} style={{ color: 'var(--accent-purple)' }} />
-          <h3 style={{ fontSize: '0.85rem', fontWeight: 'bold' }}>Global Sync</h3>
-        </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '6px', flex: 1 }}>
+      <div className="glass-panel wgt">
+        <WgtHeader icon={Globe} iconColor="var(--accent-purple)" title="Global Sync" />
+        <div className="world-clocks-grid">
           {[
-            { label: 'Tokyo', flag: '🇯🇵', tz: 'Asia/Tokyo', color: 'var(--accent-pink)' },
-            { label: 'London', flag: '🇬🇧', tz: 'Europe/London', color: 'var(--accent-cyan)' },
-            { label: 'NY', flag: '🇺🇸', tz: 'America/New_York', color: 'var(--accent-purple)' },
-            { label: 'LA', flag: '🇺🇸', tz: 'America/Los_Angeles', color: 'var(--accent-orange)' }
-          ].map((clock, idx) => (
-            <WorldClockItem key={idx} {...clock} />
-          ))}
+            { label:'Tokyo',  flag:'🇯🇵', tz:'Asia/Tokyo',            color:'var(--accent-pink)' },
+            { label:'London', flag:'🇬🇧', tz:'Europe/London',          color:'var(--accent-cyan)' },
+            { label:'NY',     flag:'🇺🇸', tz:'America/New_York',       color:'var(--accent-purple)' },
+            { label:'LA',     flag:'🇺🇸', tz:'America/Los_Angeles',    color:'var(--accent-yellow)' },
+          ].map((c, i) => <WorldClockItem key={i} {...c} />)}
         </div>
       </div>
-    )
+    ),
   };
 
+  /* ─────────────────────────────────────────────────────────────
+     RENDER
+  ───────────────────────────────────────────────────────────── */
+  const activeWidgets = widgetOrder.filter(w => w.enabled !== false);
+
+  const QUICK_NAV = [
+    { label:'Tasks',    icon:CheckSquare, href:'/task-manager' },
+    { label:'Notes',    icon:FileText,    href:'/notebook' },
+    { label:'Sync Hub', icon:Database,    href:'/synchub' },
+    { label:'Time',     icon:Calendar,    href:'/timesheet' },
+    { label:'Learn',    icon:Layers,      href:'/goal' },
+    { label:'Links',    icon:Rocket,      href:'/quicklaunch' },
+    { label:'Status',   icon:Activity,    href:'/status' },
+  ];
+
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+    <div style={{ display:'flex', flexDirection:'column', gap:'20px' }}>
 
-      {/* Dynamic Top Banner */}
-      {/* Dynamic Top Banner */}
-      <div className="glass-panel" style={{ display: 'flex', flexDirection: 'column', position: 'relative', overflow: 'hidden' }}>
-        <div style={{ position: 'absolute', top: 0, left: 0, width: '4px', height: '100%', background: 'linear-gradient(to bottom, var(--accent-cyan), var(--accent-purple))' }} />
+      {/* ── Hero ── */}
+      <div className="glass-panel" style={{ overflow:'hidden' }}>
 
-        {/* Top Section: Greeting & Stats */}
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '20px', padding: '20px', alignItems: 'center' }}>
-
-          {/* Left: Greeting */}
-          <div style={{ flex: '1 1 250px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-            <div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '6px' }}>
-                <Terminal size={14} style={{ color: 'var(--accent-cyan)' }} />
-                <span style={{ fontSize: '0.7rem', color: 'var(--accent-cyan)', textTransform: 'uppercase', letterSpacing: '1.5px', fontWeight: '800' }}>Command Center • Active</span>
-              </div>
-              <h1 style={{ fontSize: '2.2rem', fontWeight: '900', letterSpacing: '-1px', lineHeight: '1.1', margin: 0 }}>
-                {greeting},<br/>
-                <span style={{ background: 'linear-gradient(135deg, var(--accent-cyan), var(--accent-purple), var(--accent-pink))', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>{displayName}</span>
-              </h1>
+        {/* Top: greeting + directive */}
+        <div className="dash-hero-body">
+          <div className="dash-greeting">
+            <div className="dash-greeting-eyebrow">
+              <Terminal size={11} strokeWidth={2.5} />
+              <span>Command Center · Active</span>
             </div>
+            <h1 className="dash-greeting-h1">
+              {greeting},<br />
+              <span className="gradient-text">{displayName}</span>
+            </h1>
           </div>
 
-          {/* Right: Insight Panel */}
-          <div style={{ flex: '1 1 350px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            {/* Daily Directive */}
-            <div style={{ flex: 1, background: 'linear-gradient(135deg, rgba(6, 182, 212, 0.05), rgba(168, 85, 247, 0.05))', border: '1px solid rgba(6, 182, 212, 0.2)', borderRadius: '16px', padding: '16px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <Sparkles size={14} style={{ color: 'var(--accent-cyan)' }} />
-                <div style={{ fontSize: '0.7rem', color: 'var(--accent-cyan)', textTransform: 'uppercase', letterSpacing: '1px', fontWeight: '800' }}>Daily Directive</div>
-              </div>
-              <div style={{ fontSize: '0.9rem', color: 'var(--text-primary)', fontStyle: 'italic', lineHeight: '1.4', fontWeight: '500' }}>
-                "{quoteLoading ? 'Thinking...' : quote}"
-              </div>
+          <div className="dash-directive">
+            <div className="dash-directive-eyebrow">
+              <Sparkles size={11} strokeWidth={2.5} />
+              <span>Daily Directive</span>
             </div>
+            <p className="dash-directive-text">
+              {quoteLoading ? 'Thinking…' : `"${quote}"`}
+            </p>
           </div>
         </div>
 
-        {/* Bottom Section: Quick Actions Bar (Compact) */}
-        <div style={{ borderTop: '1px solid var(--border-color)', background: 'var(--bg-tertiary)', padding: '12px 20px', display: 'flex', alignItems: 'center', gap: '16px', overflowX: 'auto' }}>
-          <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '1px', fontWeight: '800', whiteSpace: 'nowrap' }}>Quick Launch</span>
-          <div style={{ display: 'flex', gap: '8px' }}>
+        {/* Bottom strip: stats + quick nav */}
+        <div className="dash-hero-foot">
+          <div className="dash-stats-row">
             {[
-              { label: 'Tasks', icon: CheckSquare, href: '/task-manager' },
-              { label: 'Notes', icon: FileText, href: '/notebook' },
-              { label: 'Sync Hub', icon: Database, href: '/synchub' },
-              { label: 'Timesheet', icon: Calendar, href: '/timesheet' },
-              { label: 'Learning', icon: Layers, href: '/goal' },
-              { label: 'Water Log', icon: Droplet, href: '/water' },
-              { label: 'Links', icon: Compass, href: '/quicklaunch' },
-              { label: 'Daily Status', icon: Activity, href: '/status' },
-              { label: 'Settings', icon: Settings, href: '/settings' }
-            ].map((qt, idx) => {
-              const QtIcon = qt.icon;
-              return (
-                <button key={idx} onClick={() => navigate(qt.href)} style={{
-                  display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 14px', background: 'var(--bg-primary)', border: '1px solid var(--border-color)', borderRadius: '16px', color: 'var(--accent-red)', fontSize: '0.75rem', fontWeight: '700', cursor: 'pointer', whiteSpace: 'nowrap', transition: 'all 0.2s ease'
-                }} onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'var(--accent-red)'; e.currentTarget.style.background = 'rgba(239, 68, 68, 0.1)'; }} onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'var(--border-color)'; e.currentTarget.style.background = 'var(--bg-primary)'; }}>
-                  <QtIcon size={14} color="var(--accent-red)" /> {qt.label}
-                </button>
-              );
-            })}
+              { val: stats.tasks,        label: 'Pending',    color: 'var(--accent-cyan)' },
+              { val: `${stats.water}ml`, label: 'Hydrated',   color: 'var(--accent-cyan)' },
+              { val: stats.days,         label: 'Days worked', color: 'var(--accent-purple)' },
+              { val: stats.syncs,        label: 'Quick links', color: 'var(--accent-pink)' },
+            ].map(s => (
+              <div className="dash-stat" key={s.label}>
+                <div className="dash-stat-dot" style={{ background: s.color }} />
+                <div className="dash-stat-inner">
+                  <span className="dash-stat-val">{s.val}</span>
+                  <span className="dash-stat-label">{s.label}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="dash-quick-nav">
+            {QUICK_NAV.map(({ label, icon: Icon, href }) => (
+              <button key={href} className="dash-nav-btn" onClick={() => navigate(href)}>
+                <Icon size={12} strokeWidth={2} />
+                {label}
+              </button>
+            ))}
           </div>
         </div>
       </div>
 
-      {/* Main Grid: Masonry Layout */}
-      <div style={{ display: 'flex', gap: '24px', alignItems: 'flex-start' }}>
-        {(() => {
-          const isSmallWidget = (id) => ['events', 'clocks', 'hydration', 'timesheet_widget', 'pomodoro_widget'].includes(id);
-          const groupedSlots = [];
-          const activeWidgets = widgetOrder.filter(w => w.enabled !== false).map((w, index) => ({ ...w, originalIndex: index }));
-          
-          for (let i = 0; i < activeWidgets.length; i++) {
-            const w1 = activeWidgets[i];
-            if (isSmallWidget(w1.id)) {
-              if (i + 1 < activeWidgets.length && isSmallWidget(activeWidgets[i+1].id)) {
-                groupedSlots.push([w1, activeWidgets[i+1]]);
-                i++;
-              } else {
-                groupedSlots.push([w1]);
-              }
-            } else {
-              groupedSlots.push([w1]);
-            }
-          }
-
-          return Array.from({ length: columnsCount }).map((_, colIndex) => (
-            <div key={colIndex} style={{ flex: 1, minWidth: 0, display: 'flex', flexWrap: 'wrap', gap: '24px', alignContent: 'flex-start' }}>
-              {groupedSlots
-                .filter((_, idx) => idx % columnsCount === colIndex)
-                .flatMap(slot => slot)
-                .map(w => {
-                  const isSmall = isSmallWidget(w.id);
-                  return (
-                    <div
-                      key={w.id}
-                      draggable
-                      onDragStart={(e) => handleDragStart(e, w.originalIndex)}
-                      onDrop={(e) => handleDrop(e, w.originalIndex)}
-                      onDragOver={handleDragOver}
-                      style={{ 
-                        cursor: 'grab', 
-                        display: 'flex', 
-                        flexDirection: 'column',
-                        width: isSmall ? 'calc(50% - 12px)' : '100%'
-                      }}
-                    >
-                      {widgetsMap[w.id]}
-                    </div>
-                  );
-                })}
-            </div>
-          ));
-        })()}
+      {/* ── Widget Grid ── */}
+      <div className="dash-grid">
+        {activeWidgets.map((w, idx) => (
+          <div
+            key={w.id}
+            className="dash-widget"
+            draggable
+            onDragStart={e => handleDragStart(e, widgetOrder.findIndex(x => x.id === w.id))}
+            onDrop={e => handleDrop(e, widgetOrder.findIndex(x => x.id === w.id))}
+            onDragOver={handleDragOver}
+          >
+            {widgetsMap[w.id] ?? null}
+          </div>
+        ))}
       </div>
-    </div>
-  );
-};
 
-// World Clock Item component
-const WorldClockItem = ({ label, flag, tz, color }) => {
-  const [time, setTime] = useState('--:--');
-  const [dateStr, setDateStr] = useState('');
-
-  useEffect(() => {
-    const update = () => {
-      const now = new Date();
-      setTime(now.toLocaleTimeString('en-US', { timeZone: tz, hour: '2-digit', minute: '2-digit', hour12: true }));
-      setDateStr(now.toLocaleDateString('en-US', { timeZone: tz, weekday: 'short', month: 'short', day: 'numeric' }));
-    };
-    update();
-    const interval = setInterval(update, 10000);
-    return () => clearInterval(interval);
-  }, [tz]);
-
-  return (
-    <div style={{
-      display: 'flex',
-      flexDirection: 'column',
-      justifyContent: 'center',
-      alignItems: 'center',
-      padding: '6px 4px',
-      background: 'var(--bg-tertiary)',
-      border: '1px solid var(--border-color)',
-      borderRadius: '8px',
-      position: 'relative',
-      overflow: 'hidden',
-      transition: 'all 0.3s ease'
-    }} className="nav-item-hover">
-      <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '2px', background: color || 'var(--accent-cyan)', opacity: 0.8 }} />
-      <div style={{ fontSize: '1rem', marginBottom: '2px' }}>{flag}</div>
-      <div style={{ fontWeight: '800', fontSize: '1.5rem', color: 'var(--text-primary)', fontFamily: 'var(--font-mono)', letterSpacing: '-0.5px', lineHeight: '1.2' }}>{time.split(' ')[0]}</div>
-      <div style={{ fontWeight: '600', fontSize: '1rem', color: 'var(--text-secondary)', marginTop: '2px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>{label}</div>
     </div>
   );
 };
