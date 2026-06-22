@@ -16,202 +16,121 @@ import PomodoroTimer from './components/PomodoroTimer';
 import GlobalClock from './components/GlobalClock';
 import { GlobalAlert } from './components/GlobalAlert';
 
+const PAGE_TITLES = {
+  '/':             'Dashboard',
+  '/synchub':      'Sync Hub',
+  '/notebook':     'Notebook',
+  '/task-manager': 'Task Manager',
+  '/timesheet':    'Timesheet',
+  '/water':        'Hydration',
+  '/quicklaunch':  'Quick Launch',
+  '/status':       'Daily Status',
+  '/goal':         'Learn Skills',
+  '/resume':       'Resume Up',
+  '/settings':     'Settings',
+};
+
 function App() {
   const [theme, setTheme] = useState(localStorage.getItem('tr-theme') || 'dark');
-  const [displayName, setDisplayName] = useState(localStorage.getItem('tr-display-name') || "ZORO'S");
-  const [avatarUrl, setAvatarUrl] = useState(localStorage.getItem('tr-avatar-url') || '');
   const location = useLocation();
   const navigate = useNavigate();
 
+  const pageTitle = PAGE_TITLES[location.pathname] || 'Portal';
+
+  /* ── Keyboard shortcuts ── */
   useEffect(() => {
     const handleKeyDown = (e) => {
-      if (e.ctrlKey) {
-        let shortcuts = [
-          { path: '/', key: '0' },
-          { path: '/task-manager', key: '1' },
-          { path: '/notebook', key: '2' },
-          { path: '/synchub', key: '3' },
-          { path: '/timesheet', key: '4' },
-          { path: '/goal', key: '5' },
-          { path: '/water', key: '6' },
-          { path: '/quicklaunch', key: '7' },
-          { path: '/status', key: '8' },
-          { path: '/settings', key: '9' }
-        ];
-        try {
-          const saved = localStorage.getItem('tr-shortcuts');
-          if (saved) shortcuts = JSON.parse(saved);
-        } catch (err) {}
-
-        const target = shortcuts.find(s => s.key === e.key);
-        if (target) {
-          e.preventDefault();
-          navigate(target.path);
-        }
-      }
+      if (!e.ctrlKey) return;
+      let shortcuts = [
+        { path: '/',             key: '0' },
+        { path: '/task-manager', key: '1' },
+        { path: '/notebook',     key: '2' },
+        { path: '/synchub',      key: '3' },
+        { path: '/timesheet',    key: '4' },
+        { path: '/goal',         key: '5' },
+        { path: '/water',        key: '6' },
+        { path: '/quicklaunch',  key: '7' },
+        { path: '/status',       key: '8' },
+        { path: '/settings',     key: '9' },
+      ];
+      try {
+        const saved = localStorage.getItem('tr-shortcuts');
+        if (saved) shortcuts = JSON.parse(saved);
+      } catch (_) {}
+      const target = shortcuts.find(s => s.key === e.key);
+      if (target) { e.preventDefault(); navigate(target.path); }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [navigate]);
 
+  /* ── Theme sync ── */
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
     localStorage.setItem('tr-theme', theme);
   }, [theme]);
 
-  // Sync theme and profile changes
   useEffect(() => {
-    const handleStorageChange = (e) => {
-      if (e.key === 'tr-theme' && e.newValue) {
-        setTheme(e.newValue);
-      }
-      if (e.key === 'tr-display-name') setDisplayName(e.newValue || "ZORO'S");
-      if (e.key === 'tr-avatar-url') setAvatarUrl(e.newValue || '');
+    const handleStorage = (e) => {
+      if (e.key === 'tr-theme' && e.newValue) setTheme(e.newValue);
     };
-
-    const handleProfileUpdate = () => {
-      setDisplayName(localStorage.getItem('tr-display-name') || "ZORO'S");
-      setAvatarUrl(localStorage.getItem('tr-avatar-url') || '');
-    };
-
-    window.addEventListener('storage', handleStorageChange);
-    window.addEventListener('profileUpdated', handleProfileUpdate);
-    
-    return () => {
-      window.removeEventListener('storage', handleStorageChange);
-      window.removeEventListener('profileUpdated', handleProfileUpdate);
-    };
+    window.addEventListener('storage', handleStorage);
+    return () => window.removeEventListener('storage', handleStorage);
   }, []);
 
   const toggleTheme = () => {
     document.body.classList.add('theme-transition');
-    setTheme(prev => (prev === 'dark' ? 'light' : 'dark'));
-    setTimeout(() => {
-      document.body.classList.remove('theme-transition');
-    }, 500);
+    const next = theme === 'dark' ? 'light' : theme === 'light' ? 'lava' : 'dark';
+    setTheme(next);
+    setTimeout(() => document.body.classList.remove('theme-transition'), 450);
   };
 
   return (
-    <div style={{
-      display: 'flex',
-      flexDirection: 'column',
-      minHeight: '100vh',
-      background: 'var(--bg-primary)',
-      color: 'var(--text-primary)',
-      transition: 'background var(--transition-normal)'
-    }}>
-      
-      {/* Central Header */}
-      <header style={{
-        position: 'sticky',
-        top: 0,
-        zIndex: 50,
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        padding: '10px 24px',
-        background: 'rgba(0,0,0,0.2)',
-        backdropFilter: 'blur(12px)',
-        borderBottom: '1px solid var(--border-color)',
-        boxShadow: '0 4px 20px rgba(0,0,0,0.1)'
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          {avatarUrl ? (
-            <img 
-              src={avatarUrl} 
-              alt="Avatar" 
-              style={{ width: '36px', height: '36px', borderRadius: '50%', objectFit: 'cover', border: '2px solid var(--accent-purple)' }} 
-            />
-          ) : (
-            <div style={{
-              width: '36px',
-              height: '36px',
-              borderRadius: '50%',
-              background: 'linear-gradient(135deg, var(--accent-purple), var(--accent-pink))',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: '#fff',
-              fontWeight: 'bold',
-              fontSize: '1rem'
-            }}>
-              {displayName.charAt(0).toUpperCase()}
-            </div>
-          )}
-          <div style={{ display: 'flex', flexDirection: 'column' }}>
-            <span style={{ fontSize: '1.1rem', fontWeight: '800', letterSpacing: '0.5px', textTransform: 'uppercase', lineHeight: '1.2' }}>
-              {displayName}
-            </span>
-            <span className="gradient-text" style={{ fontSize: '0.7rem', fontWeight: '800', letterSpacing: '1px', textTransform: 'uppercase' }}>
-              PORTAL
-            </span>
+    <div className="app-shell">
+      <GlobalAlert />
+      <Navbar />
+
+      <div className="app-main">
+        {/* ── Slim Header ── */}
+        <header className="app-header">
+          <div className="app-header-left">
+            <span className="page-title">{pageTitle}</span>
           </div>
-        </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-          <PomodoroTimer />
-          <GlobalClock />
-          
-          <button
-            onClick={toggleTheme}
-            style={{
-              background: 'var(--bg-tertiary)',
-              border: '1px solid var(--border-color)',
-              borderRadius: '16px',
-              padding: '8px',
-              cursor: 'pointer',
-              color: 'var(--text-primary)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              transition: 'all var(--transition-fast)',
-              boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
-            }}
-            className="nav-item-hover"
-            title="Toggle Theme"
-          >
-            {theme === 'dark' ? '🌙' : '☀️'}
-          </button>
-        </div>
-      </header>
+          <div className="app-header-right">
+            <PomodoroTimer />
+            <GlobalClock />
 
-      {/* Workspace Area */}
-      <div style={{
-        display: 'flex',
-        gap: '24px',
-        padding: '24px',
-        flexGrow: 1
-      }}>
-        
-        <GlobalAlert />
-        {/* Sidebar Nav */}
-        <Navbar />
+            <button
+              onClick={toggleTheme}
+              className="theme-toggle-btn"
+              title={`Switch theme (currently ${theme})`}
+              aria-label="Toggle theme"
+            >
+              {theme === 'dark' ? '🌙' : theme === 'light' ? '☀️' : '🌋'}
+            </button>
+          </div>
+        </header>
 
-        {/* Dynamic page content */}
-        <main style={{
-          flexGrow: 1,
-          width: '100%',
-          minWidth: 0
-        }}>
-          <div key={location.pathname} style={{ animation: 'fadeIn 0.3s ease-out forwards' }}>
+        {/* ── Page Content ── */}
+        <main className="app-content">
+          <div key={location.pathname} style={{ animation: 'fadeIn 0.25s ease-out forwards' }}>
             <Routes>
-                 <Route path="/" element={<Dashboard />} />
-                 <Route path="/synchub" element={<SyncHub />} />
-                 <Route path="/notebook" element={<Notebook />} />
-                 <Route path="/task-manager" element={<TaskManager />} />
-                 <Route path="/timesheet" element={<Timesheet />} />
-                 <Route path="/water" element={<Water />} />
-                 <Route path="/quicklaunch" element={<QuickLaunch />} />
-                 <Route path="/status" element={<Status />} />
-                 <Route path="/goal" element={<LearnSkills />} />
-                 <Route path="/resume" element={<ResumeUp />} />
-                 <Route path="/settings" element={<Settings />} />
-               </Routes>
-           </div>
+              <Route path="/"             element={<Dashboard />} />
+              <Route path="/synchub"      element={<SyncHub />} />
+              <Route path="/notebook"     element={<Notebook />} />
+              <Route path="/task-manager" element={<TaskManager />} />
+              <Route path="/timesheet"    element={<Timesheet />} />
+              <Route path="/water"        element={<Water />} />
+              <Route path="/quicklaunch"  element={<QuickLaunch />} />
+              <Route path="/status"       element={<Status />} />
+              <Route path="/goal"         element={<LearnSkills />} />
+              <Route path="/resume"       element={<ResumeUp />} />
+              <Route path="/settings"     element={<Settings />} />
+            </Routes>
+          </div>
         </main>
-
       </div>
-
     </div>
   );
 }
