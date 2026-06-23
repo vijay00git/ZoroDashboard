@@ -5,6 +5,7 @@ client/node_modules/
 client/dist/
 
 # User Data & Storage (Do not commit personal data!)
+data/csv-organizer/
 data/matrices/
 data/notes/
 data/timesheets/
