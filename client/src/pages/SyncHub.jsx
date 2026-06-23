@@ -106,6 +106,9 @@ const SyncHub = () => {
   const [compareData, setCompareData] = useState(null);
   const [activeCompareTab, setActiveCompareTab] = useState('needsSync');
 
+  // Duplicates Modal
+  const [duplicatesModalOpen, setDuplicatesModalOpen] = useState(false);
+
   // Sync Log
   const [reportModalOpen, setReportModalOpen] = useState(false);
   const [syncLogs, setSyncLogs] = useState([]);
@@ -594,6 +597,19 @@ const SyncHub = () => {
   // Global totals (unfiltered) — used for progress bar only
   const totalCases = testCases.length;
   const mappedPct = totalCases > 0 ? Math.round((testCases.filter(t => t.mapAction === 'Map').length / totalCases) * 100) : 0;
+
+  // Duplicate test ID detection
+  const idFrequency = {};
+  testCases.forEach(tc => {
+    if (tc.id && tc.id.trim()) {
+      idFrequency[tc.id] = (idFrequency[tc.id] || 0) + 1;
+    }
+  });
+  const duplicateIds = new Set(Object.keys(idFrequency).filter(id => idFrequency[id] > 1));
+  const hasDuplicates = duplicateIds.size > 0;
+  const duplicateGroups = Object.entries(idFrequency)
+    .filter(([, count]) => count > 1)
+    .map(([id]) => ({ id, cases: testCases.filter(tc => tc.id === id) }));
 
   // Tag pill list always comes from ALL cases so filters don't hide tags
   const availableTags = Array.from(new Set(testCases.flatMap(tc => tc.tags ? tc.tags.split(',').map(t => t.trim()).filter(Boolean) : []))).sort();
@@ -1248,6 +1264,36 @@ const SyncHub = () => {
             {testCases.length > 0 && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
 
+                {/* Duplicate IDs Banner */}
+                {hasDuplicates && (
+                  <div style={{
+                    display: 'flex', alignItems: 'center', gap: '12px',
+                    background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.35)',
+                    borderRadius: '10px', padding: '11px 16px'
+                  }}>
+                    <AlertTriangle size={16} style={{ color: '#f59e0b', flexShrink: 0 }} />
+                    <div style={{ flex: 1 }}>
+                      <span style={{ fontSize: '0.82rem', fontWeight: '700', color: '#f59e0b' }}>
+                        Duplicate Test IDs Detected
+                      </span>
+                      <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginLeft: '8px' }}>
+                        {duplicateIds.size} ID{duplicateIds.size > 1 ? 's' : ''} appear more than once
+                        ({testCases.filter(tc => duplicateIds.has(tc.id)).length} total rows affected)
+                      </span>
+                    </div>
+                    <button
+                      onClick={() => setDuplicatesModalOpen(true)}
+                      style={{
+                        background: 'rgba(245,158,11,0.15)', border: '1px solid rgba(245,158,11,0.4)',
+                        color: '#f59e0b', padding: '5px 14px', borderRadius: '7px', cursor: 'pointer',
+                        fontSize: '0.78rem', fontWeight: '700', whiteSpace: 'nowrap'
+                      }}
+                    >
+                      Review Duplicates →
+                    </button>
+                  </div>
+                )}
+
                 {/* Filter controls */}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                   <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
@@ -1456,7 +1502,7 @@ const SyncHub = () => {
                     </thead>
                     <tbody>
                       {sortedFilteredCases.map((tc) => (
-                        <tr key={tc._uid} style={{ borderBottom: '1px solid var(--border-color)', background: selectedCaseUids.includes(tc._uid) ? 'rgba(168,85,247,0.05)' : 'transparent' }}>
+                        <tr key={tc._uid} style={{ borderBottom: '1px solid var(--border-color)', background: selectedCaseUids.includes(tc._uid) ? 'rgba(168,85,247,0.05)' : duplicateIds.has(tc.id) ? 'rgba(245,158,11,0.04)' : 'transparent' }}>
                           <td style={{ padding: '10px', textAlign: 'center' }}>
                             <input
                               type="checkbox"
@@ -1468,7 +1514,12 @@ const SyncHub = () => {
                               }}
                             />
                           </td>
-                          <td style={{ padding: '10px', fontWeight: 'bold' }}>{tc.id || 'UNMAPPED'}</td>
+                          <td style={{ padding: '10px', fontWeight: 'bold', color: duplicateIds.has(tc.id) ? '#f59e0b' : undefined, whiteSpace: 'nowrap' }}>
+                            {duplicateIds.has(tc.id) && (
+                              <AlertTriangle size={11} style={{ color: '#f59e0b', marginRight: '4px', display: 'inline', verticalAlign: 'middle' }} />
+                            )}
+                            {tc.id || 'UNMAPPED'}
+                          </td>
                           <td style={{ padding: '10px', maxWidth: '240px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={tc.title}>
                             {tc.title}
                           </td>
@@ -2027,6 +2078,111 @@ const SyncHub = () => {
               >
                 <Clipboard size={14} />
                 Copy Table
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* Duplicate IDs Review Modal */}
+      {duplicatesModalOpen && createPortal(
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
+          <div className="glass-panel" style={{ padding: '28px', width: '700px', maxHeight: '80vh', display: 'flex', flexDirection: 'column', gap: '20px', overflow: 'hidden' }}>
+
+            {/* Modal Header */}
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
+              <AlertTriangle size={22} style={{ color: '#f59e0b', marginTop: '2px', flexShrink: 0 }} />
+              <div style={{ flex: 1 }}>
+                <h3 style={{ fontSize: '1.1rem', fontWeight: '800', margin: '0 0 4px' }}>Duplicate Test IDs</h3>
+                <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', margin: 0 }}>
+                  {duplicateGroups.length} duplicate ID{duplicateGroups.length !== 1 ? 's' : ''} found — review each group and decide which entries to keep or remove.
+                </p>
+              </div>
+              {duplicateGroups.length > 0 && (
+                <button
+                  onClick={() => {
+                    const uidsToDelete = duplicateGroups.flatMap(g => g.cases.slice(1).map(tc => tc._uid));
+                    setTestCases(prev => prev.filter(tc => !uidsToDelete.includes(tc._uid)));
+                    addLog(`Auto-resolved: kept first occurrence of each duplicate ID, removed ${uidsToDelete.length} entr${uidsToDelete.length !== 1 ? 'ies' : 'y'}.`, 'success');
+                  }}
+                  style={{ background: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.3)', color: '#10b981', padding: '7px 14px', borderRadius: '8px', cursor: 'pointer', fontSize: '0.78rem', fontWeight: '700', whiteSpace: 'nowrap' }}
+                >
+                  Keep First, Remove Rest
+                </button>
+              )}
+            </div>
+
+            {/* Duplicate Groups */}
+            <div style={{ overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '14px', paddingRight: '4px' }} className="custom-scrollbar">
+              {duplicateGroups.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '32px', color: '#10b981', fontSize: '0.92rem', fontWeight: '600' }}>
+                  ✓ No duplicates remaining — all Test IDs are unique.
+                </div>
+              ) : duplicateGroups.map(group => (
+                <div key={group.id} style={{ background: 'rgba(245,158,11,0.05)', border: '1px solid rgba(245,158,11,0.22)', borderRadius: '10px', padding: '14px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  {/* Group Header */}
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span style={{ fontSize: '0.95rem', fontWeight: '800', color: '#f59e0b' }}>{group.id}</span>
+                      <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', background: 'rgba(245,158,11,0.12)', padding: '2px 8px', borderRadius: '10px', border: '1px solid rgba(245,158,11,0.2)' }}>
+                        {group.cases.length} entries
+                      </span>
+                    </div>
+                    <button
+                      onClick={() => {
+                        const uidsToDelete = group.cases.slice(1).map(tc => tc._uid);
+                        setTestCases(prev => prev.filter(tc => !uidsToDelete.includes(tc._uid)));
+                        addLog(`Kept first occurrence of ${group.id}, removed ${uidsToDelete.length} duplicate(s).`, 'success');
+                      }}
+                      style={{ background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.25)', color: '#10b981', padding: '4px 12px', borderRadius: '6px', cursor: 'pointer', fontSize: '0.73rem', fontWeight: '700' }}
+                    >
+                      Keep First Only
+                    </button>
+                  </div>
+
+                  {/* Rows in group */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    {group.cases.map((tc, i) => (
+                      <div key={tc._uid} style={{ display: 'flex', alignItems: 'center', gap: '10px', background: i === 0 ? 'rgba(16,185,129,0.05)' : 'rgba(255,255,255,0.02)', borderRadius: '7px', padding: '9px 12px', border: `1px solid ${i === 0 ? 'rgba(16,185,129,0.2)' : 'var(--border-color)'}` }}>
+                        <span style={{ fontSize: '0.68rem', fontWeight: '800', color: i === 0 ? '#10b981' : 'var(--text-muted)', minWidth: '32px', background: i === 0 ? 'rgba(16,185,129,0.12)' : 'var(--bg-tertiary)', padding: '2px 6px', borderRadius: '4px', textAlign: 'center' }}>
+                          {i === 0 ? '1st' : `#${i + 1}`}
+                        </span>
+                        <span style={{ flex: 1, fontSize: '0.8rem', color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={tc.title}>
+                          {tc.title || <span style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>No title</span>}
+                        </span>
+                        {tc.tags && (
+                          <span style={{ fontSize: '0.68rem', color: 'var(--accent-purple)', background: 'rgba(168,85,247,0.08)', padding: '2px 6px', borderRadius: '4px', maxWidth: '120px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={tc.tags}>
+                            {tc.tags}
+                          </span>
+                        )}
+                        <span style={{ fontSize: '0.72rem', fontWeight: '700', minWidth: '64px', textAlign: 'center', color: tc.status === 'PASSED' ? '#10b981' : tc.status === 'FAILED' ? '#f43f5e' : tc.status === 'BLOCKED' ? '#f59e0b' : 'var(--text-muted)' }}>
+                          {tc.status}
+                        </span>
+                        <button
+                          onClick={() => {
+                            setTestCases(prev => prev.filter(c => c._uid !== tc._uid));
+                            addLog(`Deleted entry for ${tc.id}${tc.title ? ` — "${tc.title}"` : ''}.`, 'info');
+                          }}
+                          title="Delete this entry"
+                          style={{ background: 'rgba(244,63,94,0.08)', border: '1px solid rgba(244,63,94,0.22)', color: '#f43f5e', padding: '4px 12px', borderRadius: '6px', cursor: 'pointer', fontSize: '0.72rem', fontWeight: '700', whiteSpace: 'nowrap' }}
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Footer */}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', paddingTop: '8px', borderTop: '1px solid var(--border-color)' }}>
+              <button
+                onClick={() => setDuplicatesModalOpen(false)}
+                style={{ background: 'transparent', border: '1px solid var(--border-color)', color: 'var(--text-primary)', padding: '8px 22px', borderRadius: '8px', cursor: 'pointer', fontSize: '0.85rem' }}
+              >
+                Close
               </button>
             </div>
           </div>
