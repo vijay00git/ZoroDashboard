@@ -190,14 +190,15 @@ const SyncHub = () => {
 
     const headerCols = parseCSVLine(lines[0]).map(h => h.trim().toLowerCase());
 
-    // Find column indexes
-    const idIdx = headerCols.findIndex(h => h.includes('id') || h === 'test case');
-    const titleIdx = headerCols.findIndex(h => h.includes('title') || h === 'name');
-    const tagsIdx = headerCols.findIndex(h => h.includes('tag'));
-    const notesIdx = headerCols.findIndex(h => h === 'notes' || h.includes('note'));
-    const statusIdx = headerCols.findIndex(h => h === 'status' || h === 'test status' || h === 'automation status');
-    const syncIdx = headerCols.findIndex(h => h.includes('sync status'));
-    const reasonIdx = headerCols.findIndex(h => h.includes('reason'));
+    // All columns optional — missing ones get safe defaults
+    const idIdx      = headerCols.findIndex(h => h.includes('id') || h === 'test case');
+    const titleIdx   = headerCols.findIndex(h => h.includes('title') || h === 'name');
+    const tagsIdx    = headerCols.findIndex(h => h.includes('tag'));
+    const notesIdx   = headerCols.findIndex(h => h === 'notes' || h.includes('note'));
+    const statusIdx  = headerCols.findIndex(h => h === 'status' || h === 'test status' || h === 'automation status');
+    const mappingIdx = headerCols.findIndex(h => h.includes('mapping') || h === 'map action');
+    const syncIdx    = headerCols.findIndex(h => h.includes('sync status'));
+    const reasonIdx  = headerCols.findIndex(h => h.includes('reason'));
 
     const parsedCases = [];
 
@@ -206,15 +207,19 @@ const SyncHub = () => {
       if (!line) continue;
 
       const cols = parseCSVLine(line);
-      if (cols.length < 2) continue;
+      // Accept rows with at least 1 column (every column is optional)
+      if (cols.length < 1) continue;
 
-      const rawId = idIdx !== -1 ? cols[idIdx] : '';
-      const title = titleIdx !== -1 ? cols[titleIdx] : '';
-      const tags = tagsIdx !== -1 ? cols[tagsIdx] : '';
-      const notes = notesIdx !== -1 ? cols[notesIdx] : '';
-      const status = statusIdx !== -1 ? cols[statusIdx].toUpperCase() : 'UNTESTED';
-      const syncStatus = syncIdx !== -1 ? cols[syncIdx] : 'Unsynced';
-      const reason = reasonIdx !== -1 ? cols[reasonIdx] : '';
+      const col = (idx) => (idx !== -1 && cols[idx] !== undefined) ? cols[idx] : '';
+
+      const rawId     = col(idIdx);
+      const title     = col(titleIdx);
+      const tags      = col(tagsIdx);
+      const notes     = col(notesIdx);
+      const status    = statusIdx !== -1 && col(statusIdx) ? col(statusIdx).toUpperCase() : 'UNTESTED';
+      const syncStatus = col(syncIdx) || 'Unsynced';
+      const reason    = col(reasonIdx);
+      const mappingRaw = col(mappingIdx);
 
       // Support multi-id delimited by semicolon
       const ids = rawId.split(';').map(id => id.trim()).filter(id => id);
@@ -226,7 +231,7 @@ const SyncHub = () => {
           tags,
           notes,
           status,
-          mapAction: 'Don\'t Map',
+          mapAction: mappingRaw || "Don't Map",
           syncStatus,
           reason
         });
@@ -238,7 +243,7 @@ const SyncHub = () => {
             tags,
             notes,
             status,
-            mapAction: 'Map',
+            mapAction: mappingRaw || 'Map',
             syncStatus,
             reason
           });
@@ -531,8 +536,9 @@ const SyncHub = () => {
 
     // Simple comparison metrics compiler
     const headerCols = parseCSVLine(lines[0]).map(h => h.trim().toLowerCase());
-    const idIdx = headerCols.findIndex(h => h.includes('id') || h === 'test case');
+    const idIdx     = headerCols.findIndex(h => h.includes('id') || h === 'test case');
     const statusIdx = headerCols.findIndex(h => h.includes('status'));
+    const titleIdx  = headerCols.findIndex(h => h.includes('title') || h === 'name');
 
     if (idIdx === -1 || statusIdx === -1) {
       showAlert("Compare CSV is missing Case ID or Status headers.");
@@ -546,7 +552,7 @@ const SyncHub = () => {
       const numId = cols[idIdx].replace(/\D/g, '');
       if (numId) {
         trCases.set(numId, {
-          title: cols[1] || '',
+          title: (titleIdx !== -1 ? cols[titleIdx] : cols[1]) || '',
           status: cols[statusIdx].toUpperCase()
         });
       }
@@ -556,6 +562,7 @@ const SyncHub = () => {
     const strictConflicts = [];
     const needsSync = [];
     const missingTr = [];
+    const matched = [];
 
     testCases.forEach(tc => {
       const numId = tc.id.replace(/\D/g, '');
@@ -565,6 +572,8 @@ const SyncHub = () => {
         const trVal = trCases.get(numId);
         if (tc.status !== trVal.status) {
           strictConflicts.push({ id: numId, title: tc.title, local: tc.status, remote: trVal.status });
+        } else {
+          matched.push({ id: numId, title: tc.title, status: tc.status });
         }
       } else {
         missingTr.push({ id: numId, title: tc.title, status: tc.status });
@@ -578,7 +587,7 @@ const SyncHub = () => {
       }
     });
 
-    setCompareData({ strictConflicts, needsSync, missingTr });
+    setCompareData({ strictConflicts, needsSync, missingTr, matched });
     setCompareModalOpen(true);
   };
 
@@ -657,16 +666,30 @@ const SyncHub = () => {
     setSearchTerm('');
   };
 
+  const downloadTemplate = () => {
+    const header = 'ID,Title,Tags,Status,Mapping,Notes,Sync Status,Reason';
+    const example = 'C12345,"Verify login with valid credentials","regression,smoke",PASSED,Map,"Passes on Chrome",Unsynced,""';
+    const blob = new Blob([header + '\n' + example], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = 'synchub-template.csv'; a.click();
+    URL.revokeObjectURL(url);
+    addLog('Downloaded CSV template.', 'success');
+  };
+
   const exportFilteredCSV = () => {
-    const headers = ['ID', 'Title', 'Tags', 'Status', 'Mapping', 'Sync Status', 'Notes'];
+    // Canonical format: ID,Title,Tags,Status,Mapping,Notes,Sync Status,Reason
+    const headers = ['ID', 'Title', 'Tags', 'Status', 'Mapping', 'Notes', 'Sync Status', 'Reason'];
+    const q = (v) => `"${(v || '').replace(/"/g, '""')}"`;
     const rows = sortedFilteredCases.map(tc => [
       tc.id || '',
-      `"${(tc.title || '').replace(/"/g, '""')}"`,
-      `"${(tc.tags || '').replace(/"/g, '""')}"`,
+      q(tc.title),
+      q(tc.tags),
       tc.status || '',
       tc.mapAction || '',
+      q(tc.notes),
       tc.syncStatus || '',
-      `"${(tc.notes || '').replace(/"/g, '""')}"`
+      q(tc.reason)
     ].join(','));
     const csv = [headers.join(','), ...rows].join('\n');
     const blob = new Blob([csv], { type: 'text/csv' });
@@ -821,7 +844,7 @@ const SyncHub = () => {
           <div className="glass-panel" style={{ padding: '16px' }}>
             <h3 style={{ fontSize: '0.9rem', fontWeight: 'bold', marginBottom: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <span>CSV Upload</span>
-              <span style={{ fontSize: '0.7rem', color: 'var(--accent-purple)', cursor: 'pointer' }}>📥 Template</span>
+              <button onClick={downloadTemplate} title="Download CSV template" style={{ fontSize: '0.7rem', color: 'var(--accent-purple)', cursor: 'pointer', background: 'transparent', border: 'none', padding: 0 }}>📥 Template</button>
             </h3>
             <div
               onDragEnter={handleDrag}
@@ -1770,15 +1793,31 @@ const SyncHub = () => {
           justifyContent: 'center',
           zIndex: 100
         }}>
-          <div className="glass-panel" style={{ padding: '24px', width: '600px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          <div className="glass-panel" style={{ padding: '24px', width: '640px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
             <h3 style={{ fontSize: '1.1rem', fontWeight: 'bold' }}>Compare Matrix Diagnostics</h3>
 
-            {/* Tabs */}
-            <div style={{ display: 'flex', gap: '6px', background: 'var(--bg-tertiary)', padding: '2px', borderRadius: '8px' }}>
+            {/* Summary strip */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px' }}>
               {[
+                { label: 'Matched',        count: compareData.matched.length,        color: '#10b981', bg: 'rgba(16,185,129,0.08)'  },
+                { label: 'Conflicts',      count: compareData.strictConflicts.length, color: '#f43f5e', bg: 'rgba(244,63,94,0.08)'   },
+                { label: 'Needs Sync',     count: compareData.needsSync.length,       color: '#f59e0b', bg: 'rgba(245,158,11,0.08)'  },
+                { label: 'Missing Remote', count: compareData.missingTr.length,       color: '#6b7280', bg: 'rgba(107,114,128,0.08)' },
+              ].map(s => (
+                <div key={s.label} style={{ background: s.bg, border: `1px solid ${s.color}30`, borderRadius: '8px', padding: '10px', textAlign: 'center' }}>
+                  <div style={{ fontSize: '1.5rem', fontWeight: '800', color: s.color }}>{s.count}</div>
+                  <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', fontWeight: '600', textTransform: 'uppercase' }}>{s.label}</div>
+                </div>
+              ))}
+            </div>
+
+            {/* Tabs */}
+            <div style={{ display: 'flex', gap: '4px', background: 'var(--bg-tertiary)', padding: '2px', borderRadius: '8px' }}>
+              {[
+                { id: 'matched',   label: `✓ Matched (${compareData.matched.length})` },
                 { id: 'needsSync', label: `Needs Sync (${compareData.needsSync.length})` },
-                { id: 'conflicts', label: `Strict Conflicts (${compareData.strictConflicts.length})` },
-                { id: 'missingTr', label: `Missing Remote (${compareData.missingTr.length})` }
+                { id: 'conflicts', label: `Conflicts (${compareData.strictConflicts.length})` },
+                { id: 'missingTr', label: `Missing (${compareData.missingTr.length})` }
               ].map(tab => (
                 <button
                   key={tab.id}
@@ -1801,6 +1840,33 @@ const SyncHub = () => {
             </div>
 
             <div style={{ height: '250px', overflowY: 'auto', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '10px' }}>
+
+              {activeCompareTab === 'matched' && (
+                compareData.matched.length === 0
+                  ? <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--text-muted)', fontSize: '0.8rem' }}>No perfectly matched cases found.</div>
+                  : <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.75rem' }}>
+                      <thead>
+                        <tr style={{ borderBottom: '1px solid var(--border-color)', color: 'var(--text-muted)' }}>
+                          <th style={{ textAlign: 'left', padding: '4px' }}>Case ID</th>
+                          <th style={{ textAlign: 'left', padding: '4px' }}>Title</th>
+                          <th style={{ textAlign: 'left', padding: '4px' }}>Status</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {compareData.matched.map((c, i) => (
+                          <tr key={i} style={{ borderBottom: '1px solid var(--border-color)' }}>
+                            <td style={{ padding: '6px 4px', fontWeight: 'bold' }}>{c.id}</td>
+                            <td style={{ padding: '6px 4px' }}>{c.title}</td>
+                            <td style={{ padding: '6px 4px' }}>
+                              <span style={{ color: '#10b981', fontWeight: 'bold', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                                ✓ {c.status}
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+              )}
 
               {activeCompareTab === 'needsSync' && (
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.75rem' }}>

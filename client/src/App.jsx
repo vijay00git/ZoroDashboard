@@ -12,6 +12,7 @@ import Settings from './pages/Settings';
 import Status from './pages/Status';
 import SyncHub from './pages/SyncHub';
 import Timesheet from './pages/Timesheet';
+import CSVOrganizer from './pages/CSVOrganizer';
 import PomodoroTimer from './components/PomodoroTimer';
 import GlobalClock from './components/GlobalClock';
 import { GlobalAlert } from './components/GlobalAlert';
@@ -26,8 +27,9 @@ const PAGE_TITLES = {
   '/quicklaunch':  'Quick Launch',
   '/status':       'Daily Status',
   '/goal':         'Learn Skills',
-  '/resume':       'Resume Up',
-  '/settings':     'Settings',
+  '/resume':         'Resume Up',
+  '/csv-organizer':  'CSV Organizer',
+  '/settings':       'Settings',
 };
 
 function App() {
@@ -125,8 +127,9 @@ function App() {
               <Route path="/quicklaunch"  element={<QuickLaunch />} />
               <Route path="/status"       element={<Status />} />
               <Route path="/goal"         element={<LearnSkills />} />
-              <Route path="/resume"       element={<ResumeUp />} />
-              <Route path="/settings"     element={<Settings />} />
+              <Route path="/resume"         element={<ResumeUp />} />
+              <Route path="/csv-organizer" element={<CSVOrganizer />} />
+              <Route path="/settings"      element={<Settings />} />
             </Routes>
           </div>
         </main>

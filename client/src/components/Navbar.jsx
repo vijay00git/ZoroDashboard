@@ -11,20 +11,22 @@ import {
   FileText,
   GraduationCap,
   Briefcase,
+  FileSpreadsheet,
   Settings,
 } from 'lucide-react';
 
 const MAIN_NAV = [
-  { path: '/',             label: 'Dashboard',    icon: LayoutDashboard },
-  { path: '/synchub',      label: 'Sync Hub',     icon: RefreshCw },
-  { path: '/notebook',     label: 'Notebook',     icon: NotebookPen },
-  { path: '/task-manager', label: 'Task Manager', icon: CheckSquare },
-  { path: '/timesheet',    label: 'Timesheet',    icon: CalendarDays },
-  { path: '/water',        label: 'Hydration',    icon: Droplets },
-  { path: '/quicklaunch',  label: 'Quick Launch', icon: Rocket },
-  { path: '/status',       label: 'Daily Status', icon: FileText },
-  { path: '/goal',         label: 'Learn Skills', icon: GraduationCap },
-  { path: '/resume',       label: 'Resume Up',    icon: Briefcase },
+  { path: '/',               label: 'Dashboard',     icon: LayoutDashboard },
+  { path: '/synchub',        label: 'Sync Hub',      icon: RefreshCw },
+  { path: '/notebook',       label: 'Notebook',      icon: NotebookPen },
+  { path: '/task-manager',   label: 'Task Manager',  icon: CheckSquare },
+  { path: '/timesheet',      label: 'Timesheet',     icon: CalendarDays },
+  { path: '/water',          label: 'Hydration',     icon: Droplets },
+  { path: '/quicklaunch',    label: 'Quick Launch',  icon: Rocket },
+  { path: '/status',         label: 'Daily Status',  icon: FileText },
+  { path: '/goal',           label: 'Learn Skills',  icon: GraduationCap },
+  { path: '/resume',         label: 'Resume Up',     icon: Briefcase },
+  { path: '/csv-organizer',  label: 'CSV Organizer', icon: FileSpreadsheet },
 ];
 
 const Navbar = () => {
