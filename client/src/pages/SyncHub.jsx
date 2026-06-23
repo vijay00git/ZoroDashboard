@@ -71,6 +71,8 @@ const SyncHub = () => {
   });
   const [tagLogic, setTagLogic] = useState(() => sessionStorage.getItem('tr-sync-tagLogic') || 'OR');
   const [searchTerm, setSearchTerm] = useState(() => sessionStorage.getItem('tr-sync-searchTerm') || '');
+  const [sortCol, setSortCol] = useState(null);
+  const [sortDir, setSortDir] = useState('asc');
   const [expandedFolders, setExpandedFolders] = useState(() => {
     try { return JSON.parse(localStorage.getItem('tr-sync-expandedFolders') || '[]'); } catch { return []; }
   });
@@ -580,32 +582,16 @@ const SyncHub = () => {
     setCompareModalOpen(true);
   };
 
+  // Global totals (unfiltered) — used for progress bar only
   const totalCases = testCases.length;
-  const mappedCases = testCases.filter(t => t.mapAction === 'Map').length;
-  const passedCases = testCases.filter(t => t.status === 'PASSED' && t.mapAction === 'Map').length;
-  const failedCases = testCases.filter(t => t.status === 'FAILED' && t.mapAction === 'Map').length;
-  const unmappedCases = testCases.filter(t => t.mapAction === "Don't Map").length;
-  const mappedPct = totalCases > 0 ? Math.round((mappedCases / totalCases) * 100) : 0;
+  const mappedPct = totalCases > 0 ? Math.round((testCases.filter(t => t.mapAction === 'Map').length / totalCases) * 100) : 0;
 
+  // Tag pill list always comes from ALL cases so filters don't hide tags
   const availableTags = Array.from(new Set(testCases.flatMap(tc => tc.tags ? tc.tags.split(',').map(t => t.trim()).filter(Boolean) : []))).sort();
 
-  const tagStats = {};
-  testCases.forEach(tc => {
-    if (tc.tags && tc.mapAction === 'Map') {
-      tc.tags.split(',').map(t => t.trim()).filter(Boolean).forEach(tag => {
-        if (!tagStats[tag]) tagStats[tag] = { passed: 0, failed: 0, total: 0 };
-        tagStats[tag].total++;
-        if (tc.status === 'PASSED') tagStats[tag].passed++;
-        if (tc.status === 'FAILED') tagStats[tag].failed++;
-      });
-    }
-  });
-  const tagList = Object.entries(tagStats).sort((a, b) => b[1].total - a[1].total);
-
-  // Filter lists
+  // Build filtered list first — all derived stats come from this
   const filteredCases = testCases.filter(tc => {
     if (statusFilter !== 'ALL' && tc.status !== statusFilter) return false;
-
     if (selectedTags.length > 0) {
       const tcTags = tc.tags ? tc.tags.split(',').map(t => t.trim()) : [];
       if (tagLogic === 'OR') {
@@ -614,10 +600,90 @@ const SyncHub = () => {
         if (!selectedTags.every(t => tcTags.includes(t))) return false;
       }
     }
-
     if (searchTerm && !tc.title.toLowerCase().includes(searchTerm.toLowerCase()) && !tc.id.toLowerCase().includes(searchTerm.toLowerCase())) return false;
     return true;
   });
+
+  // Optionally sort the visible list
+  const sortedFilteredCases = sortCol ? [...filteredCases].sort((a, b) => {
+    let va = (a[sortCol] || '').toString().toLowerCase();
+    let vb = (b[sortCol] || '').toString().toLowerCase();
+    if (va < vb) return sortDir === 'asc' ? -1 : 1;
+    if (va > vb) return sortDir === 'asc' ? 1 : -1;
+    return 0;
+  }) : filteredCases;
+
+  const filterActive = statusFilter !== 'ALL' || selectedTags.length > 0 || searchTerm.trim() !== '';
+
+  // Live counts derived from FILTERED (visible) cases
+  const fTotal = filteredCases.length;
+  const fPassed  = filteredCases.filter(t => t.status === 'PASSED').length;
+  const fFailed  = filteredCases.filter(t => t.status === 'FAILED').length;
+  const fBlocked = filteredCases.filter(t => t.status === 'BLOCKED').length;
+  const fUntested = filteredCases.filter(t => t.status === 'UNTESTED').length;
+  const fMapped  = filteredCases.filter(t => t.mapAction === 'Map').length;
+  const fUnmapped = filteredCases.filter(t => t.mapAction === "Don't Map").length;
+
+  // Legacy aliases used in the report modal
+  const passedCases  = fPassed;
+  const failedCases  = fFailed;
+  const mappedCases  = fMapped;
+  const unmappedCases = fUnmapped;
+
+  // Tag stats from FILTERED cases so sidebar updates with the table
+  const tagStats = {};
+  filteredCases.forEach(tc => {
+    if (tc.tags) {
+      tc.tags.split(',').map(t => t.trim()).filter(Boolean).forEach(tag => {
+        if (!tagStats[tag]) tagStats[tag] = { passed: 0, failed: 0, blocked: 0, untested: 0, total: 0 };
+        tagStats[tag].total++;
+        if (tc.status === 'PASSED')   tagStats[tag].passed++;
+        if (tc.status === 'FAILED')   tagStats[tag].failed++;
+        if (tc.status === 'BLOCKED')  tagStats[tag].blocked++;
+        if (tc.status === 'UNTESTED') tagStats[tag].untested++;
+      });
+    }
+  });
+  const tagList = Object.entries(tagStats).sort((a, b) => b[1].total - a[1].total);
+
+  const handleSort = (col) => {
+    if (sortCol === col) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    else { setSortCol(col); setSortDir('asc'); }
+  };
+
+  const clearFilters = () => {
+    setStatusFilter('ALL');
+    setSelectedTags([]);
+    setSearchTerm('');
+  };
+
+  const exportFilteredCSV = () => {
+    const headers = ['ID', 'Title', 'Tags', 'Status', 'Mapping', 'Sync Status', 'Notes'];
+    const rows = sortedFilteredCases.map(tc => [
+      tc.id || '',
+      `"${(tc.title || '').replace(/"/g, '""')}"`,
+      `"${(tc.tags || '').replace(/"/g, '""')}"`,
+      tc.status || '',
+      tc.mapAction || '',
+      tc.syncStatus || '',
+      `"${(tc.notes || '').replace(/"/g, '""')}"`
+    ].join(','));
+    const csv = [headers.join(','), ...rows].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `synchub-${filterActive ? 'filtered-' : ''}${Date.now()}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    addLog(`Exported ${sortedFilteredCases.length} cases to CSV.`, 'success');
+  };
+
+  const handleBulkStatusChange = (newStatus) => {
+    setTestCases(testCases.map(tc =>
+      selectedCaseUids.includes(tc._uid) ? { ...tc, status: newStatus } : tc
+    ));
+  };
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
@@ -1134,31 +1200,22 @@ const SyncHub = () => {
             </div>
           )}
 
-          {/* Metrics Row */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '16px' }}>
-            <div className="glass-panel" style={{ padding: '16px', borderTop: '4px solid #06b6d4' }}>
-              <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 'bold', textTransform: 'uppercase' }}>Total Mapped</div>
-              <div style={{ fontSize: '1.8rem', fontWeight: '800', margin: '4px 0' }}>{mappedCases}</div>
-              <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Passed + Failed</div>
-            </div>
-
-            <div className="glass-panel" style={{ padding: '16px', borderTop: '4px solid #10b981' }}>
-              <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 'bold', textTransform: 'uppercase' }}>Passed</div>
-              <div style={{ fontSize: '1.8rem', fontWeight: '800', color: '#10b981', margin: '4px 0' }}>{passedCases}</div>
-              <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Test cases</div>
-            </div>
-
-            <div className="glass-panel" style={{ padding: '16px', borderTop: '4px solid #f43f5e' }}>
-              <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 'bold', textTransform: 'uppercase' }}>Failed</div>
-              <div style={{ fontSize: '1.8rem', fontWeight: '800', color: '#f43f5e', margin: '4px 0' }}>{failedCases}</div>
-              <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Test cases</div>
-            </div>
-
-            <div className="glass-panel" style={{ padding: '16px', borderTop: '4px solid #f59e0b' }}>
-              <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 'bold', textTransform: 'uppercase' }}>Don't Map</div>
-              <div style={{ fontSize: '1.8rem', fontWeight: '800', color: '#f59e0b', margin: '4px 0' }}>{unmappedCases}</div>
-              <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Skipped</div>
-            </div>
+          {/* Metrics Row — live counts from visible (filtered) cases */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(115px, 1fr))', gap: '12px' }}>
+            {[
+              { label: 'Visible', value: fTotal, sub: filterActive ? `of ${totalCases} total` : 'all cases', accent: '#06b6d4', bg: 'rgba(6,182,212,0.08)' },
+              { label: 'Passed',  value: fPassed,  sub: fTotal > 0 ? `${Math.round((fPassed/fTotal)*100)}% pass rate` : '—', accent: '#10b981', bg: 'rgba(16,185,129,0.08)' },
+              { label: 'Failed',  value: fFailed,  sub: fTotal > 0 ? `${Math.round((fFailed/fTotal)*100)}% fail rate` : '—', accent: '#f43f5e', bg: 'rgba(244,63,94,0.08)' },
+              { label: 'Blocked', value: fBlocked, sub: 'blocked cases', accent: '#f59e0b', bg: 'rgba(245,158,11,0.08)' },
+              { label: 'Ignored', value: fUnmapped, sub: "don't map", accent: '#8b5cf6', bg: 'rgba(139,92,246,0.08)' },
+            ].map(card => (
+              <div key={card.label} className="glass-panel" style={{ padding: '14px', borderTop: `3px solid ${card.accent}`, background: card.bg, position: 'relative', overflow: 'hidden' }}>
+                {filterActive && <div style={{ position: 'absolute', top: '6px', right: '6px', width: '6px', height: '6px', borderRadius: '50%', background: 'var(--accent-purple)', boxShadow: '0 0 6px var(--accent-purple)' }} />}
+                <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.5px' }}>{card.label}</div>
+                <div style={{ fontSize: '1.8rem', fontWeight: '800', color: card.accent, margin: '4px 0', lineHeight: 1 }}>{card.value}</div>
+                <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>{card.sub}</div>
+              </div>
+            ))}
           </div>
 
           <div className="glass-panel" style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '20px', minHeight: '520px' }}>
@@ -1271,7 +1328,19 @@ const SyncHub = () => {
                     </label>
 
                     {selectedCaseUids.length > 0 && (
-                      <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                      <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+                        {/* Bulk status change */}
+                        <select
+                          defaultValue=""
+                          onChange={(e) => { if (e.target.value) { handleBulkStatusChange(e.target.value); e.target.value = ''; }}}
+                          style={{ background: 'var(--bg-tertiary)', border: '1px solid var(--accent-purple)', color: 'var(--text-primary)', padding: '6px 10px', borderRadius: '8px', fontSize: '0.8rem', outline: 'none', cursor: 'pointer' }}
+                        >
+                          <option value="" disabled>Set status…</option>
+                          <option value="PASSED">→ PASSED</option>
+                          <option value="FAILED">→ FAILED</option>
+                          <option value="BLOCKED">→ BLOCKED</option>
+                          <option value="UNTESTED">→ UNTESTED</option>
+                        </select>
                         <div style={{ display: 'flex', border: '1px solid var(--accent-purple)', borderRadius: '8px', overflow: 'hidden' }}>
                           <input
                             type="text"
@@ -1279,129 +1348,55 @@ const SyncHub = () => {
                             value={bulkTagInput}
                             onChange={(e) => setBulkTagInput(e.target.value)}
                             list="global-tags-list"
-                            style={{
-                              background: 'var(--bg-tertiary)',
-                              border: 'none',
-                              color: 'var(--text-primary)',
-                              padding: '6px 10px',
-                              outline: 'none',
-                              fontSize: '0.8rem',
-                              width: '120px'
-                            }}
+                            style={{ background: 'var(--bg-tertiary)', border: 'none', color: 'var(--text-primary)', padding: '6px 10px', outline: 'none', fontSize: '0.8rem', width: '110px' }}
                           />
-                          <button
-                            onClick={handleBulkAddTags}
-                            style={{
-                              background: 'var(--accent-purple)',
-                              color: '#fff',
-                              border: 'none',
-                              padding: '0 12px',
-                              cursor: 'pointer',
-                              fontWeight: 'bold',
-                              fontSize: '0.8rem'
-                            }}
-                          >
-                            + Tags
-                          </button>
+                          <button onClick={handleBulkAddTags} style={{ background: 'var(--accent-purple)', color: '#fff', border: 'none', padding: '0 10px', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.8rem' }}>+Tags</button>
                         </div>
-                        <button
-                          onClick={handleDeleteSelected}
-                          data-cy="delete-selected-btn"
-                          style={{
-                            background: 'rgba(244, 63, 94, 0.1)',
-                            border: '1px solid var(--accent-red)',
-                            color: 'var(--accent-red)',
-                            borderRadius: '8px',
-                            padding: '6px 12px',
-                            cursor: 'pointer',
-                            fontSize: '0.8rem',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '4px',
-                            fontWeight: 'bold'
-                          }}
-                        >
-                          <Trash2 size={12} />
-                          Delete Selected ({selectedCaseUids.length})
+                        <button onClick={handleDeleteSelected} data-cy="delete-selected-btn" style={{ background: 'rgba(244,63,94,0.1)', border: '1px solid var(--accent-red)', color: 'var(--accent-red)', borderRadius: '8px', padding: '6px 12px', cursor: 'pointer', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '4px', fontWeight: 'bold' }}>
+                          <Trash2 size={12} /> Delete ({selectedCaseUids.length})
                         </button>
                       </div>
                     )}
                   </div>
 
-                  {/* Tags Filter */}
-                  {availableTags.length > 0 && (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-                      <span style={{ fontSize: '0.8rem', fontWeight: 'bold', color: 'var(--text-secondary)' }}>Tags:</span>
-                      <select
-                        value={tagLogic}
-                        data-cy="tag-logic-select"
-                        onChange={(e) => setTagLogic(e.target.value)}
-                        style={{
-                          background: 'var(--bg-tertiary)',
-                          border: '1px solid var(--border-color)',
-                          color: 'var(--text-primary)',
-                          padding: '4px 8px',
-                          borderRadius: '6px',
-                          outline: 'none',
-                          fontSize: '0.75rem',
-                          cursor: 'pointer'
-                        }}
-                      >
-                        <option value="OR">OR</option>
-                        <option value="AND">AND</option>
-                      </select>
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                  {/* Tags Filter + Showing count */}
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
+                    {availableTags.length > 0 && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                        <span style={{ fontSize: '0.75rem', fontWeight: '700', color: 'var(--text-muted)' }}>TAGS</span>
+                        <select value={tagLogic} data-cy="tag-logic-select" onChange={(e) => setTagLogic(e.target.value)} style={{ background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', padding: '3px 6px', borderRadius: '6px', outline: 'none', fontSize: '0.72rem', cursor: 'pointer' }}>
+                          <option value="OR">OR</option>
+                          <option value="AND">AND</option>
+                        </select>
                         {availableTags.map(tag => (
-                          <button
-                            key={tag}
-                            onClick={() => {
-                              if (selectedTags.includes(tag)) {
-                                setSelectedTags(selectedTags.filter(t => t !== tag));
-                              } else {
-                                setSelectedTags([...selectedTags, tag]);
-                              }
-                            }}
-                            style={{
-                              background: selectedTags.includes(tag) ? 'var(--accent-purple)' : 'var(--bg-tertiary)',
-                              color: selectedTags.includes(tag) ? '#fff' : 'var(--text-primary)',
-                              border: `1px solid ${selectedTags.includes(tag) ? 'var(--accent-purple)' : 'var(--border-color)'}`,
-                              padding: '4px 8px',
-                              borderRadius: '16px',
-                              fontSize: '0.75rem',
-                              cursor: 'pointer',
-                              transition: 'all 0.2s ease'
-                            }}
-                          >
+                          <button key={tag} onClick={() => setSelectedTags(prev => prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag])}
+                            style={{ background: selectedTags.includes(tag) ? 'var(--accent-purple)' : 'var(--bg-tertiary)', color: selectedTags.includes(tag) ? '#fff' : 'var(--text-primary)', border: `1px solid ${selectedTags.includes(tag) ? 'var(--accent-purple)' : 'var(--border-color)'}`, padding: '3px 8px', borderRadius: '16px', fontSize: '0.73rem', cursor: 'pointer', transition: 'all 0.15s' }}>
                             {tag}
                           </button>
                         ))}
                       </div>
-
-                      
-                      {selectedTags.length > 0 && (
-                        <button
-                          onClick={() => setReportModalOpen(true)}
-                          style={{
-                            background: 'rgba(168,85,247,0.1)',
-                            border: '1px solid var(--accent-purple)',
-                            color: 'var(--accent-purple)',
-                            borderRadius: '8px',
-                            padding: '4px 12px',
-                            cursor: 'pointer',
-                            fontSize: '0.75rem',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '4px',
-                            fontWeight: 'bold',
-                            marginLeft: 'auto'
-                          }}
-                        >
-                          <FileText size={12} />
-                          Generate Report
+                    )}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginLeft: 'auto' }}>
+                      {filterActive && (
+                        <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', background: 'var(--bg-tertiary)', padding: '3px 10px', borderRadius: '10px', border: '1px solid var(--border-color)' }}>
+                          Showing <b style={{ color: 'var(--accent-purple)' }}>{fTotal}</b> of {totalCases}
+                        </span>
+                      )}
+                      {filterActive && (
+                        <button onClick={clearFilters} style={{ background: 'transparent', border: '1px solid var(--border-color)', color: 'var(--text-secondary)', padding: '3px 10px', borderRadius: '8px', fontSize: '0.73rem', cursor: 'pointer' }}>
+                          ✕ Clear
                         </button>
                       )}
+                      {selectedTags.length > 0 && (
+                        <button onClick={() => setReportModalOpen(true)} style={{ background: 'rgba(168,85,247,0.1)', border: '1px solid var(--accent-purple)', color: 'var(--accent-purple)', borderRadius: '8px', padding: '3px 10px', cursor: 'pointer', fontSize: '0.73rem', display: 'flex', alignItems: 'center', gap: '4px', fontWeight: 'bold' }}>
+                          <FileText size={11} /> Report
+                        </button>
+                      )}
+                      <button onClick={exportFilteredCSV} title="Export visible cases as CSV" style={{ background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.3)', color: '#10b981', borderRadius: '8px', padding: '3px 10px', cursor: 'pointer', fontSize: '0.73rem', display: 'flex', alignItems: 'center', gap: '4px', fontWeight: 'bold' }}>
+                        <Download size={11} /> Export
+                      </button>
                     </div>
-                  )}
+                  </div>
                 </div>
 
                 {/* Table ledger */}
@@ -1412,23 +1407,32 @@ const SyncHub = () => {
                         <th style={{ padding: '10px', textAlign: 'center', width: '40px' }}>
                           <input
                             type="checkbox"
-                            checked={filteredCases.length > 0 && selectedCaseUids.length === filteredCases.length}
+                            checked={sortedFilteredCases.length > 0 && selectedCaseUids.length === sortedFilteredCases.length}
                             onChange={(e) => {
-                              if (e.target.checked) setSelectedCaseUids(filteredCases.map(tc => tc._uid));
+                              if (e.target.checked) setSelectedCaseUids(sortedFilteredCases.map(tc => tc._uid));
                               else setSelectedCaseUids([]);
                             }}
                           />
                         </th>
-                        <th style={{ padding: '10px', textAlign: 'left', width: '90px' }}>Test ID</th>
-                        <th style={{ padding: '10px', textAlign: 'left' }}>Title</th>
-                        <th style={{ padding: '10px', textAlign: 'left', width: '120px' }}>Tags</th>
-                        <th style={{ padding: '10px', textAlign: 'left', width: '100px' }}>Status</th>
-                        <th style={{ padding: '10px', textAlign: 'left', width: '100px' }}>Mapping</th>
-                        <th style={{ padding: '10px', textAlign: 'left', width: '90px' }}>Sync</th>
+                        {[
+                          { key: 'id',         label: 'Test ID', width: '90px' },
+                          { key: 'title',      label: 'Title',   width: null },
+                          { key: 'tags',       label: 'Tags',    width: '120px' },
+                          { key: 'status',     label: 'Status',  width: '100px' },
+                          { key: 'mapAction',  label: 'Mapping', width: '100px' },
+                          { key: 'syncStatus', label: 'Sync',    width: '90px' },
+                        ].map(col => (
+                          <th key={col.key} onClick={() => handleSort(col.key)} style={{ padding: '10px', textAlign: 'left', width: col.width || undefined, cursor: 'pointer', userSelect: 'none', whiteSpace: 'nowrap' }}>
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                              {col.label}
+                              {sortCol === col.key ? (sortDir === 'asc' ? ' ↑' : ' ↓') : <span style={{ opacity: 0.25 }}>↕</span>}
+                            </span>
+                          </th>
+                        ))}
                       </tr>
                     </thead>
                     <tbody>
-                      {filteredCases.map((tc, index) => (
+                      {sortedFilteredCases.map((tc) => (
                         <tr key={tc._uid} style={{ borderBottom: '1px solid var(--border-color)', background: selectedCaseUids.includes(tc._uid) ? 'rgba(168,85,247,0.05)' : 'transparent' }}>
                           <td style={{ padding: '10px', textAlign: 'center' }}>
                             <input
@@ -1445,11 +1449,25 @@ const SyncHub = () => {
                           <td style={{ padding: '10px', maxWidth: '240px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={tc.title}>
                             {tc.title}
                           </td>
-                          <td style={{ padding: '10px', color: 'var(--accent-purple)', fontSize: '0.75rem' }}>
+                          <td style={{ padding: '10px', fontSize: '0.75rem' }}>
                             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
                               {tc.tags ? tc.tags.split(',').map(t => t.trim()).filter(Boolean).map((t, i) => (
-                                <span key={i} style={{ display: 'inline-block', background: 'rgba(168,85,247,0.1)', padding: '2px 6px', borderRadius: '4px' }}>{t}</span>
-                              )) : <span style={{ color: 'var(--text-muted)' }}>-</span>}
+                                <span key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: '3px', background: 'rgba(168,85,247,0.1)', border: '1px solid rgba(168,85,247,0.2)', padding: '2px 4px 2px 7px', borderRadius: '4px', color: 'var(--accent-purple)' }}>
+                                  {t}
+                                  <button
+                                    onClick={() => {
+                                      const remaining = tc.tags.split(',').map(x => x.trim()).filter(x => x && x !== t).join(', ');
+                                      setTestCases(testCases.map(c => c._uid === tc._uid ? { ...c, tags: remaining } : c));
+                                    }}
+                                    title={`Remove tag "${t}"`}
+                                    style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: 'transparent', border: 'none', color: 'var(--accent-purple)', cursor: 'pointer', padding: '0', lineHeight: 1, fontSize: '0.75rem', opacity: 0.6 }}
+                                    onMouseOver={e => e.currentTarget.style.opacity = '1'}
+                                    onMouseOut={e => e.currentTarget.style.opacity = '0.6'}
+                                  >
+                                    ×
+                                  </button>
+                                </span>
+                              )) : <span style={{ color: 'var(--text-muted)' }}>—</span>}
                             </div>
                           </td>
                           <td style={{ padding: '10px' }}>
@@ -1520,54 +1538,104 @@ const SyncHub = () => {
 
         {/* Right Column: Status Overview & Tag Counts */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-          {/* Status Overview Donut Chart */}
+          {/* Multi-segment Donut — live filtered counts */}
           <div className="glass-panel" style={{ padding: '20px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-            <h3 style={{ fontSize: '0.85rem', fontWeight: 'bold', textTransform: 'uppercase', color: 'var(--text-secondary)', alignSelf: 'flex-start', marginBottom: '20px' }}>Status Overview</h3>
-            <div style={{ position: 'relative', width: '160px', height: '160px' }}>
-              <svg viewBox="0 0 36 36" style={{ width: '100%', height: '100%', transform: 'rotate(-90deg)' }}>
-                <circle cx="18" cy="18" r="15.91549430918954" fill="transparent" stroke="var(--bg-tertiary)" strokeWidth="4"></circle>
-                {mappedCases > 0 && (
-                  <circle cx="18" cy="18" r="15.91549430918954" fill="transparent" stroke="#10b981" strokeWidth="4" strokeDasharray={`${(passedCases / mappedCases) * 100} ${100 - (passedCases / mappedCases) * 100}`} strokeDashoffset="0"></circle>
-                )}
-                {mappedCases > 0 && failedCases > 0 && (
-                  <circle cx="18" cy="18" r="15.91549430918954" fill="transparent" stroke="#f43f5e" strokeWidth="4" strokeDasharray={`${(failedCases / mappedCases) * 100} ${100 - (failedCases / mappedCases) * 100}`} strokeDashoffset={`-${(passedCases / mappedCases) * 100}`}></circle>
-                )}
-              </svg>
-              <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-                <span style={{ fontSize: '2rem', fontWeight: '800' }}>{mappedCases}</span>
-                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Total</span>
-              </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', marginBottom: '16px' }}>
+              <h3 style={{ fontSize: '0.85rem', fontWeight: 'bold', textTransform: 'uppercase', color: 'var(--text-secondary)', margin: 0 }}>Status Overview</h3>
+              {filterActive && <span style={{ fontSize: '0.65rem', background: 'rgba(168,85,247,0.15)', color: 'var(--accent-purple)', padding: '2px 8px', borderRadius: '10px', fontWeight: '700', border: '1px solid rgba(168,85,247,0.3)' }}>Filtered</span>}
             </div>
-            <div style={{ display: 'flex', gap: '16px', marginTop: '20px', fontSize: '0.8rem', fontWeight: '600' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}><div style={{ width: '20px', height: '6px', background: '#10b981', borderRadius: '3px' }}></div> Passed ({passedCases})</div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}><div style={{ width: '20px', height: '6px', background: '#f43f5e', borderRadius: '3px' }}></div> Failed ({failedCases})</div>
+            <div style={{ position: 'relative', width: '150px', height: '150px' }}>
+              {(() => {
+                const r = 15.91549430918954;
+                const base = fTotal > 0 ? fTotal : 1;
+                const rawSegs = [
+                  { pct: (fPassed   / base) * 100, color: '#10b981', label: 'Passed',   count: fPassed },
+                  { pct: (fFailed   / base) * 100, color: '#f43f5e', label: 'Failed',   count: fFailed },
+                  { pct: (fBlocked  / base) * 100, color: '#f59e0b', label: 'Blocked',  count: fBlocked },
+                  { pct: (fUntested / base) * 100, color: '#6b7280', label: 'Untested', count: fUntested },
+                  { pct: (fUnmapped / base) * 100, color: '#8b5cf6', label: 'Ignored',  count: fUnmapped },
+                ];
+                let cum = 0;
+                const segs = rawSegs.map(s => { const o = cum; cum += s.pct; return { ...s, offset: o }; }).filter(s => s.pct > 0);
+                const passRate = fTotal > 0 ? Math.round((fPassed / fTotal) * 100) : 0;
+                return (
+                  <>
+                    <svg viewBox="0 0 36 36" style={{ width: '100%', height: '100%', transform: 'rotate(-90deg)' }}>
+                      <circle cx="18" cy="18" r={r} fill="transparent" stroke="var(--bg-tertiary)" strokeWidth="4" />
+                      {fTotal === 0 && <circle cx="18" cy="18" r={r} fill="transparent" stroke="var(--bg-tertiary)" strokeWidth="4" strokeDasharray="100 0" />}
+                      {segs.map((seg, i) => (
+                        <circle key={i} cx="18" cy="18" r={r} fill="transparent" stroke={seg.color} strokeWidth="4"
+                          strokeDasharray={`${seg.pct} ${100 - seg.pct}`}
+                          strokeDashoffset={-seg.offset}
+                          style={{ transition: 'stroke-dasharray 0.5s ease, stroke-dashoffset 0.5s ease' }}
+                        />
+                      ))}
+                    </svg>
+                    <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+                      <span style={{ fontSize: '1.6rem', fontWeight: '800', lineHeight: 1 }}>{fTotal}</span>
+                      <span style={{ fontSize: '0.65rem', color: '#10b981', fontWeight: '700' }}>{passRate}% pass</span>
+                    </div>
+                  </>
+                );
+              })()}
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px 14px', marginTop: '16px', justifyContent: 'center' }}>
+              {[
+                { label: 'Passed',   count: fPassed,   color: '#10b981' },
+                { label: 'Failed',   count: fFailed,   color: '#f43f5e' },
+                { label: 'Blocked',  count: fBlocked,  color: '#f59e0b' },
+                { label: 'Untested', count: fUntested, color: '#6b7280' },
+                { label: 'Ignored',  count: fUnmapped, color: '#8b5cf6' },
+              ].map(item => (
+                <div key={item.label} style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '0.72rem', fontWeight: '600' }}>
+                  <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: item.color, flexShrink: 0 }} />
+                  <span style={{ color: 'var(--text-secondary)' }}>{item.label}</span>
+                  <span style={{ color: item.color }}>{item.count}</span>
+                </div>
+              ))}
             </div>
           </div>
 
-          {/* Tag Counts */}
-          <div className="glass-panel" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-            <h3 style={{ fontSize: '0.85rem', fontWeight: 'bold', textTransform: 'uppercase', color: 'var(--text-secondary)' }}>Tag Counts</h3>
+          {/* Tag Breakdown — from filtered cases */}
+          <div className="glass-panel" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h3 style={{ fontSize: '0.85rem', fontWeight: 'bold', textTransform: 'uppercase', color: 'var(--text-secondary)', margin: 0 }}>Tag Breakdown</h3>
+              {filterActive && <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>{fTotal} visible</span>}
+            </div>
             {tagList.length === 0 ? (
-              <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', textAlign: 'center', padding: '12px' }}>No tags available.</span>
+              <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', textAlign: 'center', padding: '12px' }}>No tags in current view.</span>
             ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', maxHeight: '400px', overflowY: 'auto' }}>
-                {tagList.map(([tag, stats]) => (
-                  <div key={tag} style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span style={{ background: 'rgba(168,85,247,0.1)', color: 'var(--accent-purple)', padding: '2px 8px', borderRadius: '12px', fontSize: '0.7rem', fontWeight: 'bold' }}>#{tag}</span>
-                      <span style={{ fontSize: '0.9rem', fontWeight: 'bold' }}>{stats.total}</span>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', maxHeight: '380px', overflowY: 'auto' }} className="custom-scrollbar">
+                {tagList.map(([tag, stats]) => {
+                  const passedPct = (stats.passed  / stats.total) * 100;
+                  const failedPct = (stats.failed  / stats.total) * 100;
+                  const blockedPct = (stats.blocked / stats.total) * 100;
+                  const untestedPct = Math.max(0, 100 - passedPct - failedPct - blockedPct);
+                  return (
+                    <div key={tag} style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <button
+                          onClick={() => setSelectedTags(prev => prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag])}
+                          style={{ background: selectedTags.includes(tag) ? 'rgba(168,85,247,0.25)' : 'rgba(168,85,247,0.08)', color: 'var(--accent-purple)', padding: '2px 8px', borderRadius: '12px', fontSize: '0.7rem', fontWeight: 'bold', border: `1px solid ${selectedTags.includes(tag) ? 'var(--accent-purple)' : 'transparent'}`, cursor: 'pointer' }}>
+                          #{tag}
+                        </button>
+                        <span style={{ fontSize: '0.85rem', fontWeight: '800' }}>{stats.total}</span>
+                      </div>
+                      <div style={{ display: 'flex', width: '100%', height: '5px', borderRadius: '3px', overflow: 'hidden', background: 'var(--bg-tertiary)' }}>
+                        <div style={{ width: `${passedPct}%`, background: '#10b981', transition: 'width 0.4s' }} />
+                        <div style={{ width: `${failedPct}%`, background: '#f43f5e', transition: 'width 0.4s' }} />
+                        <div style={{ width: `${blockedPct}%`, background: '#f59e0b', transition: 'width 0.4s' }} />
+                        <div style={{ width: `${untestedPct}%`, background: '#6b7280', transition: 'width 0.4s' }} />
+                      </div>
+                      <div style={{ display: 'flex', gap: '10px', fontSize: '0.62rem', fontWeight: '600' }}>
+                        {stats.passed  > 0 && <span style={{ color: '#10b981' }}>✓{stats.passed}</span>}
+                        {stats.failed  > 0 && <span style={{ color: '#f43f5e' }}>✗{stats.failed}</span>}
+                        {stats.blocked > 0 && <span style={{ color: '#f59e0b' }}>⊘{stats.blocked}</span>}
+                        {stats.untested > 0 && <span style={{ color: '#6b7280' }}>?{stats.untested}</span>}
+                      </div>
                     </div>
-                    <div style={{ display: 'flex', width: '100%', height: '4px', borderRadius: '2px', overflow: 'hidden' }}>
-                      <div style={{ width: `${(stats.passed / stats.total) * 100}%`, background: '#10b981' }}></div>
-                      <div style={{ width: `${(stats.failed / stats.total) * 100}%`, background: '#f43f5e' }}></div>
-                      <div style={{ flexGrow: 1, background: 'var(--bg-tertiary)' }}></div>
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.65rem', fontWeight: '600' }}>
-                      <span style={{ color: '#10b981' }}>Pass: {stats.passed}</span>
-                      <span style={{ color: '#f43f5e' }}>Fail: {stats.failed}</span>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
