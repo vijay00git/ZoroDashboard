@@ -17,6 +17,7 @@ import {
   ChevronRight
 } from 'lucide-react';
 import { showAlert, showConfirm } from '../utils/Alerts';
+import { getAIConfig, noKeyMessage } from '../utils/ai';
 
 const LearnSkills = () => {
   // --- State ---
@@ -124,17 +125,13 @@ const LearnSkills = () => {
 
   // --- API Call helper ---
   const callAI = async (prompt, system) => {
-    const key = localStorage.getItem('zoro-ai-key');
-    const model = localStorage.getItem('zoro-ai-model') || 'gemini-1.5-flash-8b';
-
-    if (!key) {
-      throw new Error("Please set your Gemini API key in Settings first!");
-    }
+    const { provider, key, model } = getAIConfig();
+    if (!key) throw new Error(noKeyMessage(provider));
 
     const res = await fetch('http://localhost:3000/api/ai/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ key, model, system, prompt })
+      body: JSON.stringify({ key, model, provider, system, prompt })
     });
 
     if (!res.ok) {

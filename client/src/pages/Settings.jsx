@@ -22,11 +22,22 @@ import { showAlert, showConfirm } from '../utils/Alerts';
 const Settings = () => {
   const [activeTab, setActiveTab] = useState('profile');
 
+  const [aiProvider, setAiProvider] = useState('gemini');
   const [apiKey, setApiKey] = useState('');
   const [showKey, setShowKey] = useState(false);
   const [model, setModel] = useState('gemini-1.5-flash-8b');
+  const [groqKey, setGroqKey] = useState('');
+  const [showGroqKey, setShowGroqKey] = useState(false);
+  const [groqModel, setGroqModel] = useState('llama-3.3-70b-versatile');
   const [theme, setTheme] = useState('dark');
-  
+
+  const GROQ_MODELS = [
+    { id: 'llama-3.3-70b-versatile', label: 'Llama 3.3 70B Versatile (Best Quality)' },
+    { id: 'llama-3.1-8b-instant',    label: 'Llama 3.1 8B Instant (Fastest)' },
+    { id: 'gemma2-9b-it',            label: 'Gemma 2 9B — Google (Free)' },
+    { id: 'llama3-8b-8192',          label: 'Llama 3 8B 8192' },
+  ];
+
   const [availableModels, setAvailableModels] = useState(() => {
     try { return JSON.parse(localStorage.getItem('zoro-ai-models-list')) || null; } catch { return null; }
   });
@@ -34,12 +45,12 @@ const Settings = () => {
 
   const handleFetchModels = async () => {
     if (!apiKey) {
-      showAlert('Please enter an API key first to pull models.');
+      showAlert('Please enter a Gemini API key first to pull models.');
       return;
     }
     setFetchingModels(true);
     try {
-      const res = await fetch(`http://localhost:3000/api/ai/models?key=${apiKey}`);
+      const res = await fetch(`http://localhost:3000/api/ai/models?key=${apiKey}&provider=gemini`);
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to fetch models');
       setAvailableModels(data.models);
@@ -125,8 +136,11 @@ const Settings = () => {
   };
 
   useEffect(() => {
+    setAiProvider(localStorage.getItem('zoro-ai-provider') || 'gemini');
     setApiKey(localStorage.getItem('zoro-ai-key') || '');
     setModel(localStorage.getItem('zoro-ai-model') || 'gemini-1.5-flash-8b');
+    setGroqKey(localStorage.getItem('zoro-groq-key') || '');
+    setGroqModel(localStorage.getItem('zoro-groq-model') || 'llama-3.3-70b-versatile');
     setTheme(localStorage.getItem('tr-theme') || 'dark');
     setDisplayName(localStorage.getItem('tr-display-name') || 'Zoro User');
     setAvatarUrl(localStorage.getItem('tr-avatar-url') || '');
@@ -134,8 +148,11 @@ const Settings = () => {
 
   const handleSaveAIConfig = (e) => {
     e.preventDefault();
+    localStorage.setItem('zoro-ai-provider', aiProvider);
     localStorage.setItem('zoro-ai-key', apiKey);
     localStorage.setItem('zoro-ai-model', model);
+    localStorage.setItem('zoro-groq-key', groqKey);
+    localStorage.setItem('zoro-groq-model', groqModel);
     setSaveStatus('AI configuration saved successfully!');
     setTimeout(() => setSaveStatus(''), 3000);
   };
@@ -493,64 +510,139 @@ const Settings = () => {
                 <Cpu size={24} style={{ color: '#fbbf24' }} />
                 <h3 style={{ fontSize: '1.3rem', fontWeight: 'bold' }}>AI Configuration</h3>
               </div>
-              
+
+              {/* Provider switcher */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxWidth: '500px' }}>
+                <label style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', fontWeight: '600' }}>AI Provider</label>
+                <div style={{ display: 'flex', background: 'var(--bg-tertiary)', borderRadius: '10px', padding: '4px', border: '1px solid var(--border-color)', gap: '4px' }}>
+                  {[
+                    { id: 'gemini', label: '✦ Google Gemini', sub: 'Paid / limited free tier' },
+                    { id: 'groq',   label: '⚡ Groq',          sub: 'Free — 14,400 req/day' },
+                  ].map(p => (
+                    <button
+                      key={p.id}
+                      type="button"
+                      onClick={() => setAiProvider(p.id)}
+                      style={{
+                        flex: 1, padding: '10px 16px', borderRadius: '8px', border: 'none', cursor: 'pointer',
+                        background: aiProvider === p.id ? (p.id === 'groq' ? 'linear-gradient(135deg,#f97316,#ef4444)' : 'linear-gradient(135deg,var(--accent-purple),var(--accent-pink))') : 'transparent',
+                        color: aiProvider === p.id ? '#fff' : 'var(--text-secondary)',
+                        fontWeight: aiProvider === p.id ? '700' : '500',
+                        fontSize: '0.9rem', transition: 'all 0.2s ease',
+                        display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px'
+                      }}
+                    >
+                      <span>{p.label}</span>
+                      <span style={{ fontSize: '0.65rem', opacity: 0.8 }}>{p.sub}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
               <form onSubmit={handleSaveAIConfig} style={{ display: 'flex', flexDirection: 'column', gap: '24px', maxWidth: '500px' }}>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  <label style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', fontWeight: '600' }}>Gemini API Key</label>
-                  <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
-                    <input
-                      type={showKey ? 'text' : 'password'}
-                      value={apiKey}
-                      onChange={(e) => setApiKey(e.target.value)}
-                      placeholder="AIzaSy..."
-                      style={{ width: '100%', background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', padding: '14px 45px 14px 16px', borderRadius: '10px', outline: 'none', fontSize: '0.95rem', fontFamily: showKey ? 'var(--font-mono)' : 'inherit' }}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowKey(!showKey)}
-                      style={{ position: 'absolute', right: '16px', background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}
-                    >
-                      {showKey ? <EyeOff size={18} /> : <Eye size={18} />}
-                    </button>
-                  </div>
-                </div>
 
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <label style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', fontWeight: '600' }}>Default Model Engine</label>
-                    <button
-                      type="button"
-                      onClick={handleFetchModels}
-                      disabled={fetchingModels}
-                      style={{ background: 'var(--bg-primary)', border: '1px solid var(--border-glow)', color: 'var(--accent-cyan)', padding: '4px 12px', borderRadius: '6px', cursor: 'pointer', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '6px' }}
-                    >
-                      {fetchingModels ? <RefreshCw size={14} className="spinner" /> : <Download size={14} />}
-                      Pull Models
-                    </button>
-                  </div>
-                  <select
-                    value={model}
-                    onChange={(e) => setModel(e.target.value)}
-                    style={{ background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', padding: '14px 16px', borderRadius: '10px', outline: 'none', fontSize: '0.95rem', fontWeight: '500' }}
-                  >
-                    {availableModels ? (
-                      availableModels.map(m => (
-                        <option key={m.id} value={m.id}>{m.displayName || m.id}</option>
-                      ))
-                    ) : (
-                      <>
-                        <option value="gemini-2.5-flash">gemini-2.5-flash (Next-Gen Fast)</option>
-                        <option value="gemini-2.0-flash-exp">gemini-2.0-flash-exp (Experimental Fast)</option>
-                        <option value="gemini-2.0-pro-exp">gemini-2.0-pro-exp (Experimental Pro)</option>
-                        <option value="gemini-1.5-pro">gemini-1.5-pro (Standard Pro)</option>
-                        <option value="gemini-1.5-flash">gemini-1.5-flash (Standard Fast)</option>
-                        <option value="gemini-1.5-flash-8b">gemini-1.5-flash-8b (Ultra Fast / Cheap)</option>
-                      </>
-                    )}
-                  </select>
-                </div>
+                {/* ── Gemini fields ── */}
+                {aiProvider === 'gemini' && (
+                  <>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      <label style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', fontWeight: '600' }}>Gemini API Key</label>
+                      <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                        <input
+                          type={showKey ? 'text' : 'password'}
+                          value={apiKey}
+                          onChange={(e) => setApiKey(e.target.value)}
+                          placeholder="AIzaSy..."
+                          style={{ width: '100%', background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', padding: '14px 45px 14px 16px', borderRadius: '10px', outline: 'none', fontSize: '0.95rem', fontFamily: showKey ? 'var(--font-mono)' : 'inherit' }}
+                        />
+                        <button type="button" onClick={() => setShowKey(!showKey)} style={{ position: 'absolute', right: '16px', background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}>
+                          {showKey ? <EyeOff size={18} /> : <Eye size={18} />}
+                        </button>
+                      </div>
+                      <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', margin: 0 }}>
+                        Get your key at <span style={{ color: 'var(--accent-purple)' }}>aistudio.google.com</span>
+                      </p>
+                    </div>
 
-                <button type="submit" className="glow-btn" style={{ justifyContent: 'center', padding: '14px' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <label style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', fontWeight: '600' }}>Default Model</label>
+                        <button
+                          type="button"
+                          onClick={handleFetchModels}
+                          disabled={fetchingModels}
+                          style={{ background: 'var(--bg-primary)', border: '1px solid var(--border-glow)', color: 'var(--accent-cyan)', padding: '4px 12px', borderRadius: '6px', cursor: 'pointer', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '6px' }}
+                        >
+                          {fetchingModels ? <RefreshCw size={14} className="spinner" /> : <Download size={14} />}
+                          Pull Models
+                        </button>
+                      </div>
+                      <select
+                        value={model}
+                        onChange={(e) => setModel(e.target.value)}
+                        style={{ background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', padding: '14px 16px', borderRadius: '10px', outline: 'none', fontSize: '0.95rem', fontWeight: '500' }}
+                      >
+                        {availableModels ? (
+                          availableModels.map(m => (
+                            <option key={m.id} value={m.id}>{m.displayName || m.id}</option>
+                          ))
+                        ) : (
+                          <>
+                            <option value="gemini-2.0-flash-lite">gemini-2.0-flash-lite (Free — Recommended)</option>
+                            <option value="gemini-1.5-flash-8b">gemini-1.5-flash-8b (Ultra Fast / Free)</option>
+                            <option value="gemini-1.5-flash">gemini-1.5-flash (Standard Fast)</option>
+                            <option value="gemini-1.5-pro">gemini-1.5-pro (Standard Pro)</option>
+                            <option value="gemini-2.0-flash-exp">gemini-2.0-flash-exp (Experimental)</option>
+                            <option value="gemini-2.5-flash">gemini-2.5-flash (Next-Gen, needs quota)</option>
+                          </>
+                        )}
+                      </select>
+                    </div>
+                  </>
+                )}
+
+                {/* ── Groq fields ── */}
+                {aiProvider === 'groq' && (
+                  <>
+                    <div style={{ background: 'rgba(249,115,22,0.06)', border: '1px solid rgba(249,115,22,0.2)', borderRadius: '10px', padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                      <span style={{ fontSize: '0.85rem', fontWeight: '700', color: '#f97316' }}>⚡ Groq Free Tier</span>
+                      <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>14,400 requests/day · 30 req/min · No credit card needed · Never "busy"</span>
+                      <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                        Get a free key at <span style={{ color: '#f97316' }}>console.groq.com</span>
+                      </span>
+                    </div>
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      <label style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', fontWeight: '600' }}>Groq API Key</label>
+                      <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                        <input
+                          type={showGroqKey ? 'text' : 'password'}
+                          value={groqKey}
+                          onChange={(e) => setGroqKey(e.target.value)}
+                          placeholder="gsk_..."
+                          style={{ width: '100%', background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', padding: '14px 45px 14px 16px', borderRadius: '10px', outline: 'none', fontSize: '0.95rem', fontFamily: showGroqKey ? 'var(--font-mono)' : 'inherit' }}
+                        />
+                        <button type="button" onClick={() => setShowGroqKey(!showGroqKey)} style={{ position: 'absolute', right: '16px', background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}>
+                          {showGroqKey ? <EyeOff size={18} /> : <Eye size={18} />}
+                        </button>
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      <label style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', fontWeight: '600' }}>Model</label>
+                      <select
+                        value={groqModel}
+                        onChange={(e) => setGroqModel(e.target.value)}
+                        style={{ background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', padding: '14px 16px', borderRadius: '10px', outline: 'none', fontSize: '0.95rem', fontWeight: '500' }}
+                      >
+                        {GROQ_MODELS.map(m => (
+                          <option key={m.id} value={m.id}>{m.label}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </>
+                )}
+
+                <button type="submit" className="glow-btn" style={{ justifyContent: 'center', padding: '14px', background: aiProvider === 'groq' ? 'linear-gradient(135deg,#f97316,#ef4444)' : undefined }}>
                   <Check size={18} /> Save AI Settings
                 </button>
               </form>

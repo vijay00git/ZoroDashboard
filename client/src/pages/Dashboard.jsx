@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { useToast } from '../contexts/ToastContext';
 import PomodoroTimer from '../components/PomodoroTimer';
+import { getAIConfig } from '../utils/ai';
 
 /* ─────────────────────────────────────────────────────────────
    WORLD CLOCK (sub-component)
@@ -148,15 +149,14 @@ const Dashboard = () => {
 
       setQuoteLoading(true);
       try {
-        const key   = localStorage.getItem('zoro-ai-key');
-        const model = localStorage.getItem('zoro-ai-model') || 'gemini-1.5-flash-8b';
-        if (!key) { setQuote('Set your Gemini API key in Settings to get daily AI insights!'); return; }
+        const { provider, key, model } = getAIConfig();
+        if (!key) { setQuote('Set your AI key in Settings → AI to get daily insights!'); return; }
 
         const res = await fetch('http://localhost:3000/api/ai/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            key, model,
+            key, model, provider,
             system: 'You are a highly motivating senior engineering mentor. Generate one very short (max 2 sentences), inspiring quote or insightful tip about programming, software engineering, or focus. No markdown or quotation marks.',
             prompt: 'Give me today\'s insight.'
           })

@@ -7,6 +7,7 @@ import {
   ChevronUp, Target, Send, Wand2
 } from 'lucide-react';
 import html2pdf from 'html2pdf.js';
+import { getAIConfig, noKeyMessage } from '../utils/ai';
 
 /* ─── helpers ─────────────────────────────────────────────── */
 const GithubIcon = ({ size = 24, ...props }) => (
@@ -222,13 +223,12 @@ const ResumeUp = () => {
 
   /* ── AI helpers ── */
   const callAI = async (prompt, system) => {
-    const key = localStorage.getItem('zoro-ai-key');
-    const model = localStorage.getItem('zoro-ai-model') || 'gemini-1.5-flash-8b';
-    if (!key) throw new Error('No Gemini API key. Set it in Settings.');
+    const { provider, key, model } = getAIConfig();
+    if (!key) throw new Error(noKeyMessage(provider));
     const res = await fetch('http://localhost:3000/api/ai/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ key, model, system: system || 'You are an expert career coach and resume writer.', prompt })
+      body: JSON.stringify({ key, model, provider, system: system || 'You are an expert career coach and resume writer.', prompt })
     });
     if (!res.ok) throw new Error(await res.text());
     const data = await res.json();
@@ -1193,7 +1193,7 @@ const ResumeUp = () => {
   const renderAiTools = () => (
     <div>
       <h2 style={{ fontSize: '1.1rem', fontWeight: '700', marginBottom: '4px' }}>AI Tools</h2>
-      <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '20px' }}>Powered by Gemini — set your API key in Settings.</p>
+      <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '20px' }}>Powered by AI — set your provider &amp; key in Settings → AI.</p>
 
       {/* Enhance Summary */}
       <button onClick={fixGrammarAndTone} disabled={isAiLoading} style={{ width:'100%', marginBottom:'12px', padding:'14px', background:'rgba(99,102,241,0.08)', border:'1px solid var(--accent-purple)', borderRadius:'10px', cursor:'pointer', textAlign:'left', color:'var(--text-primary)', display:'flex', alignItems:'center', gap:'10px' }}>

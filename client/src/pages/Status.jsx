@@ -6,6 +6,7 @@ import {
   Eye, Edit3, Settings, CheckCircle2, Clock, Check, ListTodo, Droplets, Mail, DatabaseBackup, X
 } from 'lucide-react';
 import { showAlert, showConfirm } from '../utils/Alerts';
+import { getAIConfig, noKeyMessage } from '../utils/ai';
 
 const Status = () => {
   // Templates
@@ -14,18 +15,19 @@ const Status = () => {
   const [templateContent, setTemplateContent] = useState('');
   const [templatePreviewOpen, setTemplatePreviewOpen] = useState(false);
 
-  // Input notes
-  const [rawNotes, setRawNotes] = useState('');
-  const [report, setReport] = useState('');
-  const [viewMode, setViewMode] = useState('preview'); // 'preview' or 'source'
+  // Input notes — persisted to localStorage so navigation/refresh keeps them
+  const [rawNotes, setRawNotes] = useState(() => localStorage.getItem('tr-status-raw-notes') || '');
+  const [report, setReport] = useState(() => localStorage.getItem('tr-status-report') || '');
+  const [viewMode, setViewMode] = useState(() => localStorage.getItem('tr-status-view-mode') || 'preview');
   const [loading, setLoading] = useState(false);
   const [loadingImport, setLoadingImport] = useState(false);
 
   // Features config
-  const [importConfig, setImportConfig] = useState({
-    tasks: true,
-    timesheet: true,
-    health: false
+  const [importConfig, setImportConfig] = useState(() => {
+    try {
+      const saved = localStorage.getItem('tr-status-import-config');
+      return saved ? JSON.parse(saved) : { tasks: true, timesheet: true, health: false };
+    } catch { return { tasks: true, timesheet: true, health: false }; }
   });
   const [isCopied, setIsCopied] = useState(false);
   const [isHtmlCopied, setIsHtmlCopied] = useState(false);
@@ -113,6 +115,19 @@ const Status = () => {
     fetchTemplates();
   }, []);
 
+  useEffect(() => { localStorage.setItem('tr-status-raw-notes', rawNotes); }, [rawNotes]);
+  useEffect(() => { localStorage.setItem('tr-status-report', report); }, [report]);
+  useEffect(() => { localStorage.setItem('tr-status-view-mode', viewMode); }, [viewMode]);
+  useEffect(() => { localStorage.setItem('tr-status-import-config', JSON.stringify(importConfig)); }, [importConfig]);
+
+  const handleClear = async () => {
+    if (!(await showConfirm('Clear all input notes and the generated report?'))) return;
+    setRawNotes('');
+    setReport('');
+    localStorage.removeItem('tr-status-raw-notes');
+    localStorage.removeItem('tr-status-report');
+  };
+
   const handleTemplateChange = (id) => {
     setSelectedTemplateId(id);
     const t = templates.find(x => x.id === id);
@@ -173,10 +188,8 @@ const Status = () => {
   const handleGenerateReport = async () => {
     setLoading(true);
     try {
-      const key = localStorage.getItem('zoro-ai-key');
-      const model = localStorage.getItem('zoro-ai-model') || 'gemini-1.5-flash-8b';
-
-      if (!key) throw new Error("Please connect your Gemini API key in Settings first!");
+      const { provider, key, model } = getAIConfig();
+      if (!key) throw new Error(noKeyMessage(provider));
 
       const dateStr = new Date().toLocaleDateString();
       const tasksSaved = localStorage.getItem('tr-run-tasks') || '[]';
@@ -197,7 +210,7 @@ const Status = () => {
       const res = await fetch('http://localhost:3000/api/ai/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ key, model, system, prompt })
+        body: JSON.stringify({ key, model, provider, system, prompt })
       });
 
       if (!res.ok) {
@@ -375,6 +388,15 @@ const Status = () => {
                 <DatabaseBackup size={18} color="#3b82f6" />
                 Data Aggregator
               </h3>
+              {rawNotes && (
+                <button
+                  onClick={() => { setRawNotes(''); localStorage.removeItem('tr-status-raw-notes'); }}
+                  title="Clear input notes"
+                  style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', color: 'var(--accent-red)', borderRadius: '7px', padding: '4px 10px', cursor: 'pointer', fontSize: '0.75rem', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '4px' }}
+                >
+                  <X size={13} /> Clear Notes
+                </button>
+              )}
             </div>
 
             {/* Smart Toggles */}
@@ -461,24 +483,38 @@ const Status = () => {
             />
           </div>
 
-          <button
-            onClick={handleGenerateReport}
-            disabled={loading || !rawNotes.trim()}
-            className="glow-btn"
-            style={{ 
-              justifyContent: 'center', 
-              padding: '16px', 
-              fontSize: '1rem', 
-              fontWeight: 'bold',
-              background: loading ? 'rgba(168, 85, 247, 0.4)' : undefined
-            }}
-          >
-            {loading ? (
-              <><div className="spinner" style={{ width: '18px', height: '18px', marginRight: '8px' }} /> AI Processing...</>
-            ) : (
-              <><Sparkles size={18} /> Generate Perfect Standup</>
+          <div style={{ display: 'flex', gap: '10px' }}>
+            <button
+              onClick={handleGenerateReport}
+              disabled={loading || !rawNotes.trim()}
+              className="glow-btn"
+              style={{
+                flex: 1,
+                justifyContent: 'center',
+                padding: '16px',
+                fontSize: '1rem',
+                fontWeight: 'bold',
+                background: loading ? 'rgba(168, 85, 247, 0.4)' : undefined
+              }}
+            >
+              {loading ? (
+                <><div className="spinner" style={{ width: '18px', height: '18px', marginRight: '8px' }} /> AI Processing...</>
+              ) : (
+                <><Sparkles size={18} /> Generate Perfect Standup</>
+              )}
+            </button>
+            {(rawNotes || report) && (
+              <button
+                onClick={handleClear}
+                title="Clear all notes and report"
+                style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', color: 'var(--accent-red)', borderRadius: '12px', padding: '0 18px', cursor: 'pointer', fontWeight: '700', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0, transition: 'all 0.2s ease' }}
+                onMouseOver={(e) => { e.currentTarget.style.background = 'rgba(239,68,68,0.18)'; }}
+                onMouseOut={(e) => { e.currentTarget.style.background = 'rgba(239,68,68,0.08)'; }}
+              >
+                <Trash2 size={16} /> Clear All
+              </button>
             )}
-          </button>
+          </div>
         </div>
 
         {/* Right Column: Output / Preview */}
@@ -546,6 +582,15 @@ const Status = () => {
 
               <button onClick={handleExportMarkdown} style={{ background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', padding: '12px', borderRadius: '10px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }} className="nav-item-hover" title="Download .md file">
                 <Download size={18} />
+              </button>
+
+              <button
+                onClick={() => { setReport(''); localStorage.removeItem('tr-status-report'); }}
+                title="Clear report"
+                style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', color: 'var(--accent-red)', padding: '12px', borderRadius: '10px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                className="nav-item-hover"
+              >
+                <Trash2 size={18} />
               </button>
             </div>
           )}
