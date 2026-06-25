@@ -62,6 +62,7 @@ const SyncHub = () => {
   });
   const [bulkTagInput, setBulkTagInput] = useState('');
   const [fileName, setFileName] = useState(() => sessionStorage.getItem('tr-sync-filename') || '');
+  const [loadedFiles, setLoadedFiles] = useState([]);
   const [dragActive, setDragActive] = useState(false);
 
   // Filters
@@ -177,23 +178,16 @@ const SyncHub = () => {
     return result;
   };
 
-  const handleFileUpload = async (files) => {
-    if (!files || files.length === 0) return;
-
-    const file = files[0];
-    setFileName(file.name);
-    addLog(`Loading CSV file: ${file.name}...`, 'info');
-
+  const parseSingleCSV = async (file) => {
     const text = await file.text();
     const lines = text.split(/[\r\n]+/);
     if (lines.length < 2) {
-      addLog('Empty or invalid CSV file.', 'error');
-      return;
+      addLog(`Empty or invalid CSV file: ${file.name}`, 'error');
+      return [];
     }
 
     const headerCols = parseCSVLine(lines[0]).map(h => h.trim().toLowerCase());
 
-    // All columns optional — missing ones get safe defaults
     const idIdx      = headerCols.findIndex(h => h.includes('id') || h === 'test case');
     const titleIdx   = headerCols.findIndex(h => h.includes('title') || h === 'name');
     const tagsIdx    = headerCols.findIndex(h => h.includes('tag'));
@@ -210,52 +204,53 @@ const SyncHub = () => {
       if (!line) continue;
 
       const cols = parseCSVLine(line);
-      // Accept rows with at least 1 column (every column is optional)
       if (cols.length < 1) continue;
 
       const col = (idx) => (idx !== -1 && cols[idx] !== undefined) ? cols[idx] : '';
 
-      const rawId     = col(idIdx);
-      const title     = col(titleIdx);
-      const tags      = col(tagsIdx);
-      const notes     = col(notesIdx);
-      const status    = statusIdx !== -1 && col(statusIdx) ? col(statusIdx).toUpperCase() : 'UNTESTED';
+      const rawId      = col(idIdx);
+      const title      = col(titleIdx);
+      const tags       = col(tagsIdx);
+      const notes      = col(notesIdx);
+      const status     = statusIdx !== -1 && col(statusIdx) ? col(statusIdx).toUpperCase() : 'UNTESTED';
       const syncStatus = col(syncIdx) || 'Unsynced';
-      const reason    = col(reasonIdx);
+      const reason     = col(reasonIdx);
       const mappingRaw = col(mappingIdx);
 
-      // Support multi-id delimited by semicolon
       const ids = rawId.split(';').map(id => id.trim()).filter(id => id);
 
       if (ids.length === 0) {
-        parsedCases.push({
-          id: '',
-          title,
-          tags,
-          notes,
-          status,
-          mapAction: mappingRaw || "Don't Map",
-          syncStatus,
-          reason
-        });
+        parsedCases.push({ id: '', title, tags, notes, status, mapAction: mappingRaw || "Don't Map", syncStatus, reason });
       } else {
         ids.forEach(id => {
-          parsedCases.push({
-            id,
-            title,
-            tags,
-            notes,
-            status,
-            mapAction: mappingRaw || 'Map',
-            syncStatus,
-            reason
-          });
+          parsedCases.push({ id, title, tags, notes, status, mapAction: mappingRaw || 'Map', syncStatus, reason });
         });
       }
     }
 
-    setTestCases(parsedCases.map((tc, idx) => ({ ...tc, _uid: Date.now() + '_' + idx })));
-    addLog(`Parsed ${parsedCases.length} test cases from CSV.`, 'success');
+    return parsedCases;
+  };
+
+  const handleFileUpload = async (files) => {
+    if (!files || files.length === 0) return;
+
+    const fileArray = Array.from(files);
+    addLog(`Loading ${fileArray.length} CSV file${fileArray.length > 1 ? 's' : ''}...`, 'info');
+
+    const allParsed = [];
+    const fileInfos = [];
+
+    for (const file of fileArray) {
+      const cases = await parseSingleCSV(file);
+      allParsed.push(...cases);
+      fileInfos.push({ name: file.name, count: cases.length });
+      addLog(`  • ${file.name}: ${cases.length} cases`, 'info');
+    }
+
+    setTestCases(allParsed.map((tc, idx) => ({ ...tc, _uid: Date.now() + '_' + idx })));
+    setLoadedFiles(fileInfos);
+    setFileName(fileArray.map(f => f.name).join(', '));
+    addLog(`Merged ${allParsed.length} total test cases from ${fileArray.length} file${fileArray.length > 1 ? 's' : ''}.`, 'success');
   };
 
   // Drag-and-drop triggers
@@ -333,9 +328,10 @@ const SyncHub = () => {
       } catch (e) { console.error(e); }
     }
     const newCases = allCases.map((tc, idx) => ({ ...tc, _uid: Date.now() + '_' + idx }));
-    setTestCases([...testCases, ...newCases]);
-    setFileName(`Loaded Multiple: ${names.join(', ')}`);
-    addLog(`Loaded ${newCases.length} test cases from multiple states.`, 'success');
+    setTestCases(newCases);
+    setLoadedFiles([]);
+    setFileName(`Merged: ${names.join(', ')}`);
+    addLog(`Merged ${newCases.length} test cases from ${names.length} state${names.length > 1 ? 's' : ''}: ${names.join(', ')}.`, 'success');
     setSelectedStateIds(new Set());
   };
 
@@ -885,20 +881,36 @@ const SyncHub = () => {
                 type="file"
                 data-cy="file-upload-input"
                 accept=".csv"
+                multiple
                 onChange={(e) => handleFileUpload(e.target.files)}
                 style={{ position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, opacity: 0, cursor: 'pointer' }}
               />
               <Upload size={18} style={{ color: 'var(--accent-purple)' }} />
               <div style={{ textAlign: 'left' }}>
-                <h4 style={{ fontWeight: 'bold', fontSize: '0.8rem', margin: 0 }}>Drop CSV Here</h4>
-                <p style={{ fontSize: '0.65rem', color: 'var(--text-muted)', margin: 0 }}>Or click to browse</p>
+                <h4 style={{ fontWeight: 'bold', fontSize: '0.8rem', margin: 0 }}>Drop CSV(s) Here</h4>
+                <p style={{ fontSize: '0.65rem', color: 'var(--text-muted)', margin: 0 }}>Select one or multiple files to merge</p>
               </div>
             </div>
 
-            <button onClick={() => setTestCases([])} data-cy="start-empty-state-btn" style={{ width: '100%', background: 'transparent', border: '1px solid var(--border-color)', borderRadius: '6px', padding: '4px', fontSize: '0.75rem', color: 'var(--text-primary)', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '6px', cursor: 'pointer', transition: 'all 0.2s ease' }} onMouseOver={(e) => e.target.style.background = 'rgba(255,255,255,0.05)'} onMouseOut={(e) => e.target.style.background = 'transparent'}>
+            <button onClick={() => { setTestCases([]); setLoadedFiles([]); setFileName(''); }} data-cy="start-empty-state-btn" style={{ width: '100%', background: 'transparent', border: '1px solid var(--border-color)', borderRadius: '6px', padding: '4px', fontSize: '0.75rem', color: 'var(--text-primary)', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '6px', cursor: 'pointer', transition: 'all 0.2s ease' }} onMouseOver={(e) => e.target.style.background = 'rgba(255,255,255,0.05)'} onMouseOut={(e) => e.target.style.background = 'transparent'}>
               📝 Start Empty State
             </button>
-            {fileName && (
+            {loadedFiles.length > 0 && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '8px' }}>
+                {loadedFiles.map((f, i) => (
+                  <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'rgba(16, 185, 129, 0.08)', border: '1px solid rgba(16, 185, 129, 0.25)', borderRadius: '6px', padding: '4px 8px' }}>
+                    <span style={{ fontSize: '0.7rem', color: '#10b981', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>📄 {f.name}</span>
+                    <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', marginLeft: '6px', flexShrink: 0 }}>{f.count} cases</span>
+                  </div>
+                ))}
+                {loadedFiles.length > 1 && (
+                  <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', textAlign: 'center', paddingTop: '2px' }}>
+                    {loadedFiles.reduce((s, f) => s + f.count, 0)} total merged
+                  </div>
+                )}
+              </div>
+            )}
+            {!loadedFiles.length && fileName && (
               <div style={{ background: 'rgba(16, 185, 129, 0.1)', color: '#10b981', border: '1px solid rgba(16, 185, 129, 0.3)', borderRadius: '6px', padding: '4px', fontSize: '0.7rem', marginTop: '8px', textAlign: 'center', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 📄 {fileName}
               </div>
@@ -1004,19 +1016,34 @@ const SyncHub = () => {
             </div>
 
             {selectedStateIds.size > 0 && (
-              <button
-                onClick={handleLoadMultipleStates}
-                className="glow-btn"
-                style={{
-                  background: 'rgba(168,85,247,0.15)', border: '1px solid var(--accent-purple)', color: 'var(--accent-purple)',
-                  borderRadius: '8px', padding: '10px', cursor: 'pointer', fontSize: '0.85rem', fontWeight: 'bold', width: '100%',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', transition: 'all 0.2s ease'
-                }}
-                onMouseOver={(e) => { e.target.style.background = 'var(--accent-purple)'; e.target.style.color = '#fff'; }}
-                onMouseOut={(e) => { e.target.style.background = 'rgba(168,85,247,0.15)'; e.target.style.color = 'var(--accent-purple)'; }}
-              >
-                <Database size={16} /> Load Selected ({selectedStateIds.size})
-              </button>
+              <div style={{ display: 'flex', gap: '6px' }}>
+                <button
+                  onClick={handleLoadMultipleStates}
+                  className="glow-btn"
+                  style={{
+                    flexGrow: 1, background: 'rgba(168,85,247,0.15)', border: '1px solid var(--accent-purple)', color: 'var(--accent-purple)',
+                    borderRadius: '8px', padding: '10px', cursor: 'pointer', fontSize: '0.85rem', fontWeight: 'bold',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', transition: 'background 0.2s ease, color 0.2s ease'
+                  }}
+                  onMouseOver={(e) => { e.currentTarget.style.background = 'var(--accent-purple)'; e.currentTarget.style.color = '#fff'; }}
+                  onMouseOut={(e) => { e.currentTarget.style.background = 'rgba(168,85,247,0.15)'; e.currentTarget.style.color = 'var(--accent-purple)'; }}
+                >
+                  <Database size={16} /> Merge &amp; Load ({selectedStateIds.size})
+                </button>
+                <button
+                  onClick={() => setSelectedStateIds(new Set())}
+                  title="Clear selection"
+                  style={{
+                    background: 'transparent', border: '1px solid var(--border-color)', color: 'var(--text-muted)',
+                    borderRadius: '8px', padding: '0 12px', cursor: 'pointer', fontSize: '0.8rem', flexShrink: 0,
+                    transition: 'all 0.2s ease'
+                  }}
+                  onMouseOver={(e) => { e.currentTarget.style.borderColor = 'var(--accent-red)'; e.currentTarget.style.color = 'var(--accent-red)'; }}
+                  onMouseOut={(e) => { e.currentTarget.style.borderColor = 'var(--border-color)'; e.currentTarget.style.color = 'var(--text-muted)'; }}
+                >
+                  ✕
+                </button>
+              </div>
             )}
 
             {/* Folder List */}
@@ -1037,6 +1064,9 @@ const SyncHub = () => {
                 if (folderStates.length === 0 && !customFolders.includes(folderName)) return null;
 
                 const isExpanded = expandedFolders.includes(folderName);
+
+                const allFolderSelected = folderStates.length > 0 && folderStates.every(s => selectedStateIds.has(s.id));
+                const someFolderSelected = folderStates.some(s => selectedStateIds.has(s.id));
 
                 return (
                   <div key={folderName} style={{ display: 'flex', flexDirection: 'column' }}>
@@ -1096,6 +1126,25 @@ const SyncHub = () => {
                     >
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexGrow: 1, overflow: 'hidden' }}>
                         <GripVertical size={12} style={{ cursor: 'grab', opacity: 0.3 }} />
+                        {folderStates.length > 0 && (
+                          <input
+                            type="checkbox"
+                            checked={allFolderSelected}
+                            ref={(el) => { if (el) el.indeterminate = someFolderSelected && !allFolderSelected; }}
+                            onClick={(e) => e.stopPropagation()}
+                            onChange={(e) => {
+                              e.stopPropagation();
+                              const newSet = new Set(selectedStateIds);
+                              if (allFolderSelected) {
+                                folderStates.forEach(s => newSet.delete(s.id));
+                              } else {
+                                folderStates.forEach(s => newSet.add(s.id));
+                              }
+                              setSelectedStateIds(newSet);
+                            }}
+                            style={{ cursor: 'pointer', accentColor: 'var(--accent-purple)', flexShrink: 0 }}
+                          />
+                        )}
                         <div style={{ display: 'flex', alignItems: 'center' }}>
                           {isExpanded ? <ChevronDown size={14} style={{ color: 'var(--accent-purple)' }} /> : <ChevronRight size={14} />}
                           {isExpanded ? <FolderOpen size={14} style={{ color: 'var(--accent-purple)', marginLeft: '4px' }} /> : <Folder size={14} style={{ marginLeft: '4px' }} />}
@@ -1158,6 +1207,19 @@ const SyncHub = () => {
                               className="nav-item-hover"
                             >
                               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexGrow: 1, overflow: 'hidden' }}>
+                                <input
+                                  type="checkbox"
+                                  checked={isSelected}
+                                  onClick={(e) => e.stopPropagation()}
+                                  onChange={(e) => {
+                                    e.stopPropagation();
+                                    const newSet = new Set(selectedStateIds);
+                                    if (newSet.has(state.id)) newSet.delete(state.id);
+                                    else newSet.add(state.id);
+                                    setSelectedStateIds(newSet);
+                                  }}
+                                  style={{ cursor: 'pointer', accentColor: 'var(--accent-purple)', flexShrink: 0 }}
+                                />
                                 <GripVertical size={12} style={{ cursor: 'grab', opacity: 0.3 }} />
                                 <Database size={14} style={{ color: isSelected ? 'var(--accent-purple)' : (isPinned ? 'var(--accent-pink)' : 'var(--text-muted)') }} />
                                 <div style={{ display: 'flex', flexDirection: 'column' }}>
