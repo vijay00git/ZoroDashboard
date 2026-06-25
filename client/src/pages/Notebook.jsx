@@ -448,8 +448,8 @@ const Notebook = () => {
   const rootItems = items.filter(i => i.parentId === null);
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
-      <div className="glass-panel" style={{ display: 'flex', minHeight: 'calc(100vh - 120px)', minWidth: 0, overflow: 'hidden' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 120px)', overflow: 'hidden' }}>
+      <div className="glass-panel" style={{ display: 'flex', height: '100%', minWidth: 0, overflow: 'hidden' }}>
 
         {/* Sidebar */}
         <div style={{ width: '280px', flexShrink: 0, borderRight: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', background: 'rgba(0,0,0,0.2)' }}>
@@ -558,7 +558,8 @@ const Notebook = () => {
                         fontSize: '0.9rem',
                         lineHeight: '1.6',
                         resize: 'none',
-                        width: '100%'
+                        width: '100%',
+                        overflowY: 'auto'
                       }}
                     />
                   </div>
