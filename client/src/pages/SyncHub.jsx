@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import {
   Database,
@@ -117,6 +117,15 @@ const SyncHub = () => {
   // Live Run Compare
   const [isLiveFetching, setIsLiveFetching] = useState(false);
 
+  // Missing Remote selection (for delete)
+  const [missingTrSelected, setMissingTrSelected] = useState(new Set());
+
+  // Send to Matrix
+  const [sendToModalOpen, setSendToModalOpen] = useState(false);
+  const [sendToDestId, setSendToDestId] = useState('');
+  const [isSendingTo, setIsSendingTo] = useState(false);
+  const [sendToSearch, setSendToSearch] = useState('');
+
   // Duplicates Modal
   const [duplicatesModalOpen, setDuplicatesModalOpen] = useState(false);
 
@@ -124,6 +133,41 @@ const SyncHub = () => {
   const [reportModalOpen, setReportModalOpen] = useState(false);
   const [syncLogs, setSyncLogs] = useState([]);
   const [isSyncing, setIsSyncing] = useState(false);
+
+  // Sync success animation
+  const [syncSuccessAnim, setSyncSuccessAnim] = useState(null);
+  const [syncAnimCounts, setSyncAnimCounts] = useState({ total: 0, PASSED: 0, FAILED: 0, BLOCKED: 0, UNTESTED: 0, RETEST: 0 });
+  const syncAnimRef = useRef(null);
+
+  useEffect(() => {
+    if (syncAnimRef.current) {
+      clearInterval(syncAnimRef.current.tick);
+      clearTimeout(syncAnimRef.current.dismiss);
+    }
+    if (!syncSuccessAnim) {
+      setSyncAnimCounts({ total: 0, PASSED: 0, FAILED: 0, BLOCKED: 0, UNTESTED: 0, RETEST: 0 });
+      return;
+    }
+    let frame = 0;
+    const FRAMES = 55;
+    const t = syncSuccessAnim;
+    const tick = setInterval(() => {
+      frame++;
+      const p = frame / FRAMES;
+      const e = 1 - Math.pow(1 - p, 3);
+      setSyncAnimCounts({
+        total:    Math.round(t.total    * e),
+        PASSED:   Math.round((t.PASSED   || 0) * e),
+        FAILED:   Math.round((t.FAILED   || 0) * e),
+        BLOCKED:  Math.round((t.BLOCKED  || 0) * e),
+        UNTESTED: Math.round((t.UNTESTED || 0) * e),
+        RETEST:   Math.round((t.RETEST   || 0) * e),
+      });
+      if (frame >= FRAMES) clearInterval(tick);
+    }, 28);
+    syncAnimRef.current = { tick };
+    return () => { clearInterval(tick); };
+  }, [syncSuccessAnim]);
 
   // Load credential defaults
   useEffect(() => {
@@ -462,9 +506,11 @@ const SyncHub = () => {
 
       if (response.ok) {
         addLog(`Synchronized ${payload.length} test cases onto TestRail!`, 'success');
-        // Only mark the synced subset — don't touch cases outside the filter
         const syncedUids = new Set(toSync.map(tc => tc._uid));
         setTestCases(prev => prev.map(tc => syncedUids.has(tc._uid) ? { ...tc, syncStatus: 'Synced' } : tc));
+        const byStatus = { PASSED: 0, FAILED: 0, BLOCKED: 0, UNTESTED: 0, RETEST: 0 };
+        toSync.forEach(tc => { const k = (tc.status || 'UNTESTED').toUpperCase(); if (k in byStatus) byStatus[k]++; });
+        setSyncSuccessAnim({ total: payload.length, ...byStatus, runId, time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) });
       } else {
         const err = await response.text();
         addLog(`Sync rejected: ${err}`, 'error');
@@ -601,10 +647,69 @@ const SyncHub = () => {
 
   const handleCompareSourceChange = (newSource) => {
     setCompareSource(newSource);
+    setMissingTrSelected(new Set());
     if (compareRemoteData) {
       const localCases = newSource === 'filtered' ? filteredCases : testCases;
       const result = runComparison(localCases, compareRemoteData);
       setCompareData(result);
+    }
+  };
+
+  const handleDeleteMissingFromLocal = (uids) => {
+    const uidSet = new Set(uids);
+    setTestCases(prev => prev.filter(tc => !uidSet.has(tc._uid)));
+    setCompareData(prev => ({
+      ...prev,
+      missingTr: prev.missingTr.filter(c => !uidSet.has(c._uid))
+    }));
+    setMissingTrSelected(new Set());
+    addLog(`Deleted ${uids.length} local-only case(s) from matrix.`, 'info');
+  };
+
+  const handleSendToMatrix = async () => {
+    if (!sendToDestId) return;
+    const dest = states.find(s => s.id === sendToDestId);
+    if (!dest) return;
+
+    setIsSendingTo(true);
+    try {
+      const res = await fetch(`http://localhost:3000/api/matrix/${sendToDestId}`);
+      if (!res.ok) throw new Error('Failed to load destination matrix');
+      const data = await res.json();
+      const existingCases = data.testCases || [];
+      const existingIds = new Set(
+        existingCases.map(tc => (tc.id || '').replace(/\D/g, '')).filter(Boolean)
+      );
+
+      const casesToSend = testCases.filter(tc => selectedCaseUids.includes(tc._uid));
+      const toAdd = casesToSend.filter(tc => {
+        const numId = (tc.id || '').replace(/\D/g, '');
+        return numId && !existingIds.has(numId);
+      });
+      const skipped = casesToSend.length - toAdd.length;
+
+      const withNewUids = toAdd.map((tc, i) => ({
+        ...tc,
+        _uid: `sent_${Date.now()}_${i}_${Math.random().toString(36).slice(2)}`
+      }));
+
+      const saveRes = await fetch(`http://localhost:3000/api/matrix/${sendToDestId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ testCases: [...existingCases, ...withNewUids] })
+      });
+      if (!saveRes.ok) throw new Error('Failed to save destination matrix');
+
+      const skipNote = skipped > 0 ? ` (${skipped} duplicate ID${skipped > 1 ? 's' : ''} skipped)` : '';
+      addLog(`Sent ${toAdd.length} case(s) to "${dest.name}"${skipNote}.`, 'success');
+      fetchSavedStates();
+      setSendToModalOpen(false);
+      setSendToDestId('');
+      setSelectedCaseUids([]);
+    } catch (e) {
+      showAlert(`Send failed: ${e.message}`);
+    } finally {
+      setIsSendingTo(false);
     }
   };
 
@@ -1657,6 +1762,14 @@ const SyncHub = () => {
                         <button onClick={handleDeleteSelected} data-cy="delete-selected-btn" style={{ background: 'rgba(244,63,94,0.1)', border: '1px solid var(--accent-red)', color: 'var(--accent-red)', borderRadius: '8px', padding: '6px 12px', cursor: 'pointer', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '4px', fontWeight: 'bold' }}>
                           <Trash2 size={12} /> Delete ({selectedCaseUids.length})
                         </button>
+                        <button
+                          onClick={() => { setSendToDestId(''); setSendToSearch(''); setSendToModalOpen(true); }}
+                          disabled={states.length === 0}
+                          style={{ background: 'rgba(139,92,246,0.12)', border: '1px solid rgba(139,92,246,0.45)', color: '#a78bfa', borderRadius: '8px', padding: '6px 12px', cursor: states.length === 0 ? 'not-allowed' : 'pointer', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '4px', fontWeight: 'bold', opacity: states.length === 0 ? 0.5 : 1 }}
+                        >
+                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+                          Send to Matrix
+                        </button>
                       </div>
                     )}
                   </div>
@@ -2091,7 +2204,7 @@ const SyncHub = () => {
                   <button key={opt.key} onClick={() => handleCompareSourceChange(opt.key)} style={{ background: compareSource === opt.key ? 'linear-gradient(135deg, var(--accent-purple), var(--accent-pink))' : 'transparent', border: 'none', color: compareSource === opt.key ? '#fff' : 'var(--text-secondary)', padding: '5px 10px', borderRadius: '6px', cursor: 'pointer', fontSize: '0.75rem', fontWeight: '600', transition: 'all 0.2s ease' }}>{opt.label}</button>
                 ))}
               </div>
-              <button onClick={() => setCompareModalOpen(false)} style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border-color)', color: 'var(--text-muted)', cursor: 'pointer', borderRadius: '8px', width: '32px', height: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: '1rem' }}>✕</button>
+              <button onClick={() => { setCompareModalOpen(false); setMissingTrSelected(new Set()); }} style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border-color)', color: 'var(--text-muted)', cursor: 'pointer', borderRadius: '8px', width: '32px', height: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: '1rem' }}>✕</button>
             </div>
 
             {/* Summary Cards — clickable tab selectors */}
@@ -2139,6 +2252,14 @@ const SyncHub = () => {
               {activeCompareTab === 'needsSync' && compareData.needsSync.length > 0 && (
                 <button onClick={() => { [...compareData.needsSync].forEach(c => handleAddToLocalFromRemote(c)); }} style={{ background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.35)', color: '#f59e0b', borderRadius: '8px', padding: '7px 12px', cursor: 'pointer', fontSize: '0.78rem', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '5px', flexShrink: 0, whiteSpace: 'nowrap' }}>↓ Import All</button>
               )}
+              {activeCompareTab === 'missingTr' && missingTrSelected.size > 0 && (
+                <button onClick={() => handleDeleteMissingFromLocal([...missingTrSelected])} style={{ background: 'rgba(244,63,94,0.12)', border: '1px solid rgba(244,63,94,0.4)', color: '#f43f5e', borderRadius: '8px', padding: '7px 12px', cursor: 'pointer', fontSize: '0.78rem', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '5px', flexShrink: 0, whiteSpace: 'nowrap' }}>
+                  🗑 Delete Selected ({missingTrSelected.size})
+                </button>
+              )}
+              {activeCompareTab === 'missingTr' && compareData.missingTr.length > 0 && missingTrSelected.size === 0 && (
+                <button onClick={() => setMissingTrSelected(new Set(compareData.missingTr.map(c => c._uid)))} style={{ background: 'rgba(107,114,128,0.1)', border: '1px solid rgba(107,114,128,0.35)', color: '#9ca3af', borderRadius: '8px', padding: '7px 12px', cursor: 'pointer', fontSize: '0.78rem', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '5px', flexShrink: 0, whiteSpace: 'nowrap' }}>☐ Select All</button>
+              )}
               <button onClick={exportComparisonCSV} style={{ background: 'transparent', border: '1px solid var(--border-color)', color: 'var(--text-secondary)', borderRadius: '8px', padding: '7px 12px', cursor: 'pointer', fontSize: '0.78rem', display: 'flex', alignItems: 'center', gap: '5px', flexShrink: 0 }}><Download size={13} /> Export</button>
             </div>
 
@@ -2175,7 +2296,48 @@ const SyncHub = () => {
                   {activeCompareTab === 'missingTr' && (() => {
                     const rows = compareData.missingTr.filter(c => !s || c.id.includes(s) || (c.title||'').toLowerCase().includes(s));
                     if (!rows.length) return emptyState('?', s ? 'No matches for your search.' : 'All local cases are present in the remote.');
-                    return <>{banner('#6b7280','rgba(107,114,128,0.06)', 'Cases in your <strong>local matrix only</strong> — not in the remote CSV. May be unmapped or deleted remotely.')}<table style={{ width: '100%', borderCollapse: 'collapse' }}><thead><tr><th style={thSt}>Case ID</th><th style={thSt}>Title</th><th style={thSt}>Local Status</th></tr></thead><tbody>{rows.map((c,i)=><tr key={i} style={{ background: i%2?'rgba(255,255,255,0.01)':'transparent' }}><td style={{ ...tdSt, fontWeight:'700', color:'var(--text-secondary)', width:'90px' }}>C{c.id}</td><td style={tdSt}><span style={{ overflow:'hidden', textOverflow:'ellipsis', display:'block', whiteSpace:'nowrap', maxWidth:'500px' }}>{c.title}</span></td><td style={tdSt}>{statusBadge(c.status)}</td></tr>)}</tbody></table></>;
+                    const allRowsSelected = rows.length > 0 && rows.every(c => missingTrSelected.has(c._uid));
+                    const someSelected = rows.some(c => missingTrSelected.has(c._uid));
+                    const toggleAll = () => {
+                      if (allRowsSelected) {
+                        setMissingTrSelected(prev => { const n = new Set(prev); rows.forEach(c => n.delete(c._uid)); return n; });
+                      } else {
+                        setMissingTrSelected(prev => { const n = new Set(prev); rows.forEach(c => n.add(c._uid)); return n; });
+                      }
+                    };
+                    const toggleRow = (uid) => setMissingTrSelected(prev => { const n = new Set(prev); n.has(uid) ? n.delete(uid) : n.add(uid); return n; });
+                    return (
+                      <>
+                        {banner('#6b7280','rgba(107,114,128,0.06)', 'Cases in your <strong>local matrix only</strong> — not found in the remote. Select rows and delete any that are no longer needed.')}
+                        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                          <thead>
+                            <tr>
+                              <th style={{ ...thSt, width: '36px', textAlign: 'center' }}>
+                                <input type="checkbox" checked={allRowsSelected} ref={el => { if (el) el.indeterminate = someSelected && !allRowsSelected; }} onChange={toggleAll} style={{ cursor: 'pointer', accentColor: '#f43f5e' }} />
+                              </th>
+                              <th style={thSt}>Case ID</th>
+                              <th style={thSt}>Title</th>
+                              <th style={thSt}>Local Status</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {rows.map((c, i) => {
+                              const sel = missingTrSelected.has(c._uid);
+                              return (
+                                <tr key={i} onClick={() => toggleRow(c._uid)} style={{ background: sel ? 'rgba(244,63,94,0.07)' : i%2 ? 'rgba(255,255,255,0.01)' : 'transparent', cursor: 'pointer', transition: 'background 0.1s' }}>
+                                  <td style={{ ...tdSt, width: '36px', textAlign: 'center' }} onClick={e => e.stopPropagation()}>
+                                    <input type="checkbox" checked={sel} onChange={() => toggleRow(c._uid)} style={{ cursor: 'pointer', accentColor: '#f43f5e' }} />
+                                  </td>
+                                  <td style={{ ...tdSt, fontWeight: '700', color: 'var(--text-secondary)', width: '90px' }}>C{c.id}</td>
+                                  <td style={tdSt}><span style={{ overflow: 'hidden', textOverflow: 'ellipsis', display: 'block', whiteSpace: 'nowrap', maxWidth: '420px' }}>{c.title}</span></td>
+                                  <td style={tdSt}>{statusBadge(c.status)}</td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </>
+                    );
                   })()}
                 </div>
               );
@@ -2193,9 +2355,121 @@ const SyncHub = () => {
                   return `Showing ${shown.length} of ${all.length} ${labels[activeCompareTab] || ''} cases`;
                 })()}
               </span>
-              <button onClick={() => setCompareModalOpen(false)} className="glow-btn" style={{ background: 'linear-gradient(135deg, var(--accent-purple), var(--accent-pink))', border: 'none', color: '#fff', padding: '8px 20px', borderRadius: '8px', cursor: 'pointer', fontWeight: '600', fontSize: '0.85rem' }}>Done</button>
+              <button onClick={() => { setCompareModalOpen(false); setMissingTrSelected(new Set()); }} className="glow-btn" style={{ background: 'linear-gradient(135deg, var(--accent-purple), var(--accent-pink))', border: 'none', color: '#fff', padding: '8px 20px', borderRadius: '8px', cursor: 'pointer', fontWeight: '600', fontSize: '0.85rem' }}>Done</button>
             </div>
 
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* Send to Matrix Modal */}
+      {sendToModalOpen && createPortal(
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.65)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 110, backdropFilter: 'blur(4px)' }}
+          onClick={(e) => { if (e.target === e.currentTarget) { setSendToModalOpen(false); } }}>
+          <div className="glass-panel" style={{ width: '460px', maxWidth: '96vw', maxHeight: '80vh', display: 'flex', flexDirection: 'column', overflow: 'hidden', padding: 0, borderRadius: '16px' }}>
+
+            {/* Header */}
+            <div style={{ padding: '18px 22px', borderBottom: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <h3 style={{ fontSize: '1.05rem', fontWeight: '800', marginBottom: '2px' }}>
+                  Send to <span className="gradient-text">Matrix</span>
+                </h3>
+                <p style={{ fontSize: '0.72rem', color: 'var(--text-muted)', margin: 0 }}>
+                  {selectedCaseUids.length} case{selectedCaseUids.length !== 1 ? 's' : ''} selected · duplicate IDs will be skipped automatically
+                </p>
+              </div>
+              <button onClick={() => setSendToModalOpen(false)} style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border-color)', color: 'var(--text-muted)', cursor: 'pointer', borderRadius: '8px', width: '30px', height: '30px', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: '1rem' }}>✕</button>
+            </div>
+
+            {/* Search */}
+            <div style={{ padding: '10px 16px', borderBottom: '1px solid var(--border-color)' }}>
+              <div style={{ position: 'relative' }}>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }}><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+                <input
+                  type="text"
+                  placeholder="Search matrices…"
+                  value={sendToSearch}
+                  onChange={e => setSendToSearch(e.target.value)}
+                  autoFocus
+                  style={{ width: '100%', boxSizing: 'border-box', background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', padding: '7px 10px 7px 32px', borderRadius: '8px', outline: 'none', fontSize: '0.8rem' }}
+                />
+              </div>
+            </div>
+
+            {/* Matrix list */}
+            <div style={{ flex: 1, overflowY: 'auto', padding: '8px 0' }}>
+              {(() => {
+                const q = sendToSearch.trim().toLowerCase();
+                const filtered = states.filter(m => !q || m.name.toLowerCase().includes(q) || (m.folder || '').toLowerCase().includes(q));
+                if (filtered.length === 0) return (
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '120px', color: 'var(--text-muted)', gap: '6px' }}>
+                    <span style={{ fontSize: '1.5rem' }}>🗂</span>
+                    <span style={{ fontSize: '0.8rem' }}>{q ? 'No matrices match your search.' : 'No saved matrices found.'}</span>
+                  </div>
+                );
+
+                // Group by folder
+                const folders = {};
+                filtered.forEach(m => {
+                  const f = m.folder || 'Uncategorized';
+                  if (!folders[f]) folders[f] = [];
+                  folders[f].push(m);
+                });
+
+                return Object.entries(folders).map(([folder, mats]) => (
+                  <div key={folder}>
+                    <div style={{ padding: '6px 18px 3px', fontSize: '0.65rem', fontWeight: '800', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.6px' }}>{folder}</div>
+                    {mats.map(m => {
+                      const selected = sendToDestId === m.id;
+                      return (
+                        <div
+                          key={m.id}
+                          onClick={() => setSendToDestId(m.id)}
+                          style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '9px 18px', cursor: 'pointer', background: selected ? 'rgba(139,92,246,0.12)' : 'transparent', borderLeft: selected ? '3px solid var(--accent-purple)' : '3px solid transparent', transition: 'all 0.15s' }}
+                        >
+                          <div style={{ width: '16px', height: '16px', borderRadius: '50%', border: `2px solid ${selected ? 'var(--accent-purple)' : 'var(--border-color)'}`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, transition: 'all 0.15s' }}>
+                            {selected && <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: 'var(--accent-purple)' }} />}
+                          </div>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontSize: '0.82rem', fontWeight: '600', color: selected ? '#c4b5fd' : 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.name}</div>
+                            <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>{m.testCaseCount} case{m.testCaseCount !== 1 ? 's' : ''}</div>
+                          </div>
+                          {selected && (
+                            <div style={{ display: 'flex', gap: '4px', flexShrink: 0 }}>
+                              {[['PASSED', '#10b981'], ['FAILED', '#f43f5e'], ['UNTESTED', '#6b7280']].map(([st, col]) => m.statusCounts[st] > 0 && (
+                                <span key={st} style={{ fontSize: '0.65rem', padding: '1px 6px', borderRadius: '4px', background: col + '20', color: col, fontWeight: '700' }}>{m.statusCounts[st]}</span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                ));
+              })()}
+            </div>
+
+            {/* Footer */}
+            <div style={{ padding: '12px 18px', borderTop: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px' }}>
+              <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                {sendToDestId ? `→ ${states.find(s => s.id === sendToDestId)?.name}` : 'Select a destination above'}
+              </span>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button onClick={() => setSendToModalOpen(false)} style={{ background: 'transparent', border: '1px solid var(--border-color)', color: 'var(--text-secondary)', borderRadius: '8px', padding: '7px 16px', cursor: 'pointer', fontSize: '0.82rem' }}>Cancel</button>
+                <button
+                  onClick={handleSendToMatrix}
+                  disabled={!sendToDestId || isSendingTo}
+                  style={{ background: sendToDestId && !isSendingTo ? 'linear-gradient(135deg, var(--accent-purple), var(--accent-pink))' : 'var(--bg-tertiary)', border: 'none', color: sendToDestId && !isSendingTo ? '#fff' : 'var(--text-muted)', borderRadius: '8px', padding: '7px 18px', cursor: sendToDestId && !isSendingTo ? 'pointer' : 'not-allowed', fontSize: '0.82rem', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '6px', transition: 'all 0.2s' }}
+                >
+                  {isSendingTo ? (
+                    <><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ animation: 'spin 1s linear infinite' }}><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg> Sending…</>
+                  ) : (
+                    <><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg> Send {selectedCaseUids.length} Case{selectedCaseUids.length !== 1 ? 's' : ''}</>
+                  )}
+                </button>
+              </div>
+            </div>
           </div>
         </div>,
         document.body
@@ -2514,6 +2788,222 @@ const SyncHub = () => {
           <option key={idx} value={tag} />
         ))}
       </datalist>
+
+      {/* ── Sync Success Animation Overlay ── */}
+      {syncSuccessAnim && createPortal(
+        <div
+          onClick={() => setSyncSuccessAnim(null)}
+          style={{
+            position: 'fixed', inset: 0, zIndex: 9999,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            background: 'rgba(0,0,0,0.93)',
+            backgroundImage: [
+              'linear-gradient(rgba(16,185,129,0.035) 1px, transparent 1px)',
+              'linear-gradient(90deg, rgba(16,185,129,0.035) 1px, transparent 1px)'
+            ].join(','),
+            backgroundSize: '48px 48px',
+            backdropFilter: 'blur(6px)',
+            cursor: 'pointer',
+          }}
+        >
+          <style>{`
+            @keyframes syncRingPulse {
+              0%   { transform: scale(1);   opacity: 0.7; }
+              100% { transform: scale(2.8); opacity: 0; }
+            }
+            @keyframes syncCircleDraw {
+              to { stroke-dashoffset: 0; }
+            }
+            @keyframes syncFadeSlideUp {
+              from { opacity: 0; transform: translateY(28px); }
+              to   { opacity: 1; transform: translateY(0); }
+            }
+            @keyframes syncCardPop {
+              from { opacity: 0; transform: translateY(22px) scale(0.92); }
+              to   { opacity: 1; transform: translateY(0) scale(1); }
+            }
+            @keyframes syncOrbFloat {
+              0%, 100% { transform: translateY(0px) scale(1); }
+              50%       { transform: translateY(-18px) scale(1.04); }
+            }
+            @keyframes syncParticleRise {
+              0%   { transform: translateY(0px);   opacity: var(--p-opacity); }
+              100% { transform: translateY(-120px); opacity: 0; }
+            }
+            @keyframes syncShimmer {
+              0%   { background-position: -400px 0; }
+              100% { background-position: 400px 0; }
+            }
+          `}</style>
+
+          {/* Background glow orbs */}
+          <div style={{ position: 'absolute', top: '-80px', right: '-80px', width: '500px', height: '500px', borderRadius: '50%', background: 'radial-gradient(circle, rgba(16,185,129,0.09) 0%, transparent 70%)', animation: 'syncOrbFloat 6s ease-in-out infinite', pointerEvents: 'none' }} />
+          <div style={{ position: 'absolute', bottom: '-100px', left: '-100px', width: '420px', height: '420px', borderRadius: '50%', background: 'radial-gradient(circle, rgba(139,92,246,0.07) 0%, transparent 70%)', animation: 'syncOrbFloat 8s 2s ease-in-out infinite', pointerEvents: 'none' }} />
+
+          {/* Floating particles */}
+          {Array.from({ length: 18 }, (_, i) => {
+            const left = ((i * 61.8033) % 100).toFixed(1);
+            const top  = ((i * 97.463) % 100).toFixed(1);
+            const size = (i % 3) + 1;
+            const opacity = (0.18 + (i % 5) * 0.06).toFixed(2);
+            const dur  = (3.5 + (i % 6) * 0.7).toFixed(1);
+            const delay = (-(i * 0.85)).toFixed(1);
+            const color = i % 3 === 0 ? '#10b981' : i % 3 === 1 ? '#a78bfa' : '#6ee7b7';
+            return (
+              <div key={i} style={{
+                position: 'absolute',
+                left: `${left}%`, top: `${top}%`,
+                width: `${size}px`, height: `${size}px`,
+                borderRadius: '50%',
+                background: color,
+                '--p-opacity': opacity,
+                opacity,
+                animation: `syncParticleRise ${dur}s ${delay}s linear infinite`,
+                pointerEvents: 'none',
+              }} />
+            );
+          })}
+
+          {/* Center content */}
+          <div style={{ position: 'relative', zIndex: 1, textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0', maxWidth: '600px', width: '100%', padding: '0 24px' }}>
+
+            {/* Pulsing rings + SVG check */}
+            <div style={{ position: 'relative', width: '148px', height: '148px', marginBottom: '28px' }}>
+              {[0, 1, 2].map(i => (
+                <div key={i} style={{
+                  position: 'absolute', inset: 0, borderRadius: '50%',
+                  border: '1.5px solid rgba(16,185,129,0.55)',
+                  animation: `syncRingPulse 2.4s ${i * 0.8}s ease-out infinite`,
+                }} />
+              ))}
+              <svg viewBox="0 0 120 120" width="148" height="148" style={{ position: 'absolute', inset: 0 }}>
+                {/* Outer track */}
+                <circle cx="60" cy="60" r="54" fill="none" stroke="rgba(16,185,129,0.1)" strokeWidth="2" />
+                {/* Animated stroke circle */}
+                <circle
+                  cx="60" cy="60" r="54"
+                  fill="none"
+                  stroke="#10b981"
+                  strokeWidth="2.5"
+                  strokeLinecap="round"
+                  strokeDasharray="339.3"
+                  strokeDashoffset="339.3"
+                  transform="rotate(-90 60 60)"
+                  style={{ animation: 'syncCircleDraw 1.1s cubic-bezier(0.4,0,0.2,1) 0.1s forwards' }}
+                />
+                {/* Inner glow fill */}
+                <circle cx="60" cy="60" r="48" fill="rgba(16,185,129,0.06)" />
+                {/* Checkmark */}
+                <path
+                  d="M32 62 L50 82 L88 40"
+                  fill="none"
+                  stroke="#10b981"
+                  strokeWidth="4"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeDasharray="90"
+                  strokeDashoffset="90"
+                  style={{ animation: 'syncCircleDraw 0.55s cubic-bezier(0.4,0,0.2,1) 1s forwards' }}
+                />
+              </svg>
+            </div>
+
+            {/* Counter */}
+            <div style={{
+              fontSize: '5.5rem', fontWeight: '900', lineHeight: 1,
+              background: 'linear-gradient(135deg, #10b981 0%, #6ee7b7 50%, #34d399 100%)',
+              backgroundClip: 'text', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
+              animation: 'syncFadeSlideUp 0.5s 0.3s ease both',
+              letterSpacing: '-2px',
+              fontVariantNumeric: 'tabular-nums',
+            }}>
+              {syncAnimCounts.total}
+            </div>
+
+            <div style={{
+              fontSize: '0.75rem', fontWeight: '800', letterSpacing: '3px', color: 'rgba(255,255,255,0.45)',
+              textTransform: 'uppercase', marginTop: '6px', marginBottom: '28px',
+              animation: 'syncFadeSlideUp 0.5s 0.45s ease both',
+            }}>
+              Cases Synced to TestRail
+            </div>
+
+            {/* Status breakdown cards */}
+            {(() => {
+              const STATUSES = [
+                { key: 'PASSED',   label: 'Passed',   color: '#10b981', glow: 'rgba(16,185,129,0.25)',  icon: '✓' },
+                { key: 'FAILED',   label: 'Failed',   color: '#f43f5e', glow: 'rgba(244,63,94,0.25)',  icon: '✕' },
+                { key: 'BLOCKED',  label: 'Blocked',  color: '#f59e0b', glow: 'rgba(245,158,11,0.25)', icon: '⊘' },
+                { key: 'RETEST',   label: 'Retest',   color: '#8b5cf6', glow: 'rgba(139,92,246,0.25)', icon: '↺' },
+                { key: 'UNTESTED', label: 'Untested', color: '#6b7280', glow: 'rgba(107,114,128,0.2)',  icon: '–' },
+              ];
+              const active = STATUSES.filter(s => syncSuccessAnim[s.key] > 0);
+              if (active.length === 0) return null;
+              return (
+                <div style={{ display: 'flex', gap: '12px', justifyContent: 'center', flexWrap: 'wrap', marginBottom: '24px' }}>
+                  {active.map((s, i) => (
+                    <div key={s.key} style={{
+                      display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px',
+                      background: 'rgba(255,255,255,0.04)',
+                      border: `1px solid ${s.color}40`,
+                      borderRadius: '14px',
+                      padding: '14px 20px',
+                      minWidth: '80px',
+                      boxShadow: `0 0 20px ${s.glow}`,
+                      animation: `syncCardPop 0.45s ${0.6 + i * 0.1}s cubic-bezier(0.34,1.56,0.64,1) both`,
+                    }}>
+                      <span style={{ fontSize: '1.1rem', color: s.color, fontWeight: '900', lineHeight: 1 }}>{s.icon}</span>
+                      <span style={{ fontSize: '1.9rem', fontWeight: '900', color: s.color, lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>
+                        {syncAnimCounts[s.key]}
+                      </span>
+                      <span style={{ fontSize: '0.62rem', fontWeight: '700', color: 'rgba(255,255,255,0.38)', textTransform: 'uppercase', letterSpacing: '1.5px' }}>
+                        {s.label}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
+
+            {/* Proportional stacked bar */}
+            {syncSuccessAnim.total > 0 && (() => {
+              const BARS = [
+                { key: 'PASSED', color: '#10b981' }, { key: 'FAILED', color: '#f43f5e' },
+                { key: 'BLOCKED', color: '#f59e0b' }, { key: 'RETEST', color: '#8b5cf6' },
+                { key: 'UNTESTED', color: '#4b5563' },
+              ];
+              return (
+                <div style={{ width: '100%', maxWidth: '440px', height: '5px', borderRadius: '3px', overflow: 'hidden', display: 'flex', marginBottom: '22px', gap: '1px', animation: 'syncFadeSlideUp 0.5s 1.1s ease both' }}>
+                  {BARS.map(b => {
+                    const pct = ((syncSuccessAnim[b.key] || 0) / syncSuccessAnim.total) * 100;
+                    if (pct === 0) return null;
+                    return <div key={b.key} style={{ flex: `0 0 ${pct}%`, height: '100%', background: b.color, borderRadius: '2px' }} />;
+                  })}
+                </div>
+              );
+            })()}
+
+            {/* Run info */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', animation: 'syncFadeSlideUp 0.5s 1.2s ease both' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', padding: '5px 12px' }}>
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ color: '#10b981' }}><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+                <span style={{ fontSize: '0.72rem', fontWeight: '700', color: 'rgba(255,255,255,0.6)' }}>Run #{syncSuccessAnim.runId}</span>
+              </div>
+              <span style={{ fontSize: '0.7rem', color: 'rgba(255,255,255,0.3)' }}>·</span>
+              <span style={{ fontSize: '0.72rem', color: 'rgba(255,255,255,0.38)' }}>{syncSuccessAnim.time}</span>
+            </div>
+
+            {/* Dismiss hint */}
+            <div style={{ marginTop: '26px', animation: 'syncFadeSlideUp 0.5s 1.4s ease both' }}>
+              <div style={{ display: 'inline-flex', alignItems: 'center', gap: '7px', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '20px', padding: '7px 16px', cursor: 'pointer' }}>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ color: 'rgba(255,255,255,0.4)' }}><path d="M18 6L6 18M6 6l12 12"/></svg>
+                <span style={{ fontSize: '0.72rem', fontWeight: '600', color: 'rgba(255,255,255,0.4)', letterSpacing: '0.3px' }}>Click anywhere to dismiss</span>
+              </div>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
 
     </div>
   );
