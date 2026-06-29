@@ -287,6 +287,56 @@ app.post('/api/testrail/sync', async (req, res) => {
     }
 });
 
+// --- TestRail: Fetch all tests in a run ---
+app.post('/api/testrail/fetch-run', async (req, res) => {
+    const { runId, auth } = req.body;
+
+    if (!runId || !auth) {
+        return res.status(400).json({ error: 'Missing runId or auth.' });
+    }
+
+    const STATUS_MAP = { 1: 'PASSED', 2: 'BLOCKED', 3: 'UNTESTED', 4: 'RETEST', 5: 'FAILED' };
+    const BASE = 'https://elosystemsteam.testrail.com/index.php?/api/v2';
+    let allTests = [];
+    let offset = 0;
+    const LIMIT = 250;
+
+    try {
+        while (true) {
+            const url = `${BASE}/get_tests/${runId}&limit=${LIMIT}&offset=${offset}`;
+            const response = await fetch(url, {
+                headers: {
+                    'Authorization': `Basic ${auth}`,
+                    'Content-Type': 'application/json'
+                }
+            });
+
+            if (!response.ok) {
+                const errText = await response.text();
+                return res.status(response.status).json({ error: errText });
+            }
+
+            const data = await response.json();
+            const tests = Array.isArray(data) ? data : (data.tests || []);
+            allTests.push(...tests);
+            if (tests.length < LIMIT) break;
+            offset += LIMIT;
+        }
+
+        const normalized = allTests.map(t => ({
+            id: String(t.case_id),
+            title: t.title || '',
+            status: STATUS_MAP[t.status_id] || 'UNTESTED',
+            status_id: t.status_id
+        }));
+
+        res.json({ tests: normalized, total: normalized.length });
+    } catch (error) {
+        console.error("Fetch-run proxy error:", error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
 // --- Timesheet API ---
 app.get('/api/timesheets', (req, res) => {
     try {

@@ -105,7 +105,17 @@ const SyncHub = () => {
   // Compare Modal
   const [compareModalOpen, setCompareModalOpen] = useState(false);
   const [compareData, setCompareData] = useState(null);
-  const [activeCompareTab, setActiveCompareTab] = useState('needsSync');
+  const [activeCompareTab, setActiveCompareTab] = useState('conflicts');
+  const [compareFileName, setCompareFileName] = useState('');
+  const [compareSource, setCompareSource] = useState('filtered');
+  const [compareRemoteData, setCompareRemoteData] = useState(null);
+  const [compareSearch, setCompareSearch] = useState('');
+
+  // Sync Preview Modal
+  const [syncPreviewOpen, setSyncPreviewOpen] = useState(false);
+
+  // Live Run Compare
+  const [isLiveFetching, setIsLiveFetching] = useState(false);
 
   // Duplicates Modal
   const [duplicatesModalOpen, setDuplicatesModalOpen] = useState(false);
@@ -407,61 +417,54 @@ const SyncHub = () => {
     }
   };
 
-  // Sync test execution results to TestRail proxy API
+  // Sync test execution results to TestRail proxy API — operates on filtered cases only
   const handleStartSync = async () => {
     if (!runId || !username || !password) {
       alert("Missing TestRail credentials or Run ID.");
       return;
     }
 
-    const payload = testCases
-      .filter(tc => tc.mapAction === 'Map' && tc.id)
-      .map(tc => {
-        let status_id = 5; // Default failed
-        const s = (tc.status || '').toUpperCase();
-        if (s === 'PASSED') status_id = 1;
-        else if (s === 'BLOCKED') status_id = 2;
-        else if (s === 'UNTESTED') status_id = 3;
-        else if (s === 'RETEST') status_id = 4;
-        else if (s === 'FAILED') status_id = 5;
+    const toSync = filteredCases.filter(tc => tc.mapAction === 'Map' && tc.id);
 
-        return {
-          case_id: parseInt(tc.id.replace(/\D/g, '')),
-          status_id,
-          comment: tc.notes || 'Synced live from Zoro Portal.'
-        };
-      });
+    const payload = toSync.map(tc => {
+      let status_id = 5;
+      const s = (tc.status || '').toUpperCase();
+      if (s === 'PASSED') status_id = 1;
+      else if (s === 'BLOCKED') status_id = 2;
+      else if (s === 'UNTESTED') status_id = 3;
+      else if (s === 'RETEST') status_id = 4;
+      else if (s === 'FAILED') status_id = 5;
+      return {
+        case_id: parseInt(tc.id.replace(/\D/g, '')),
+        status_id,
+        comment: tc.notes || 'Synced live from Zoro Portal.'
+      };
+    });
 
     if (payload.length === 0) {
-      showAlert("No test cases marked as 'Map' with valid IDs.");
+      showAlert("No test cases marked as 'Map' with valid IDs in the current view.");
       return;
     }
 
+    setSyncPreviewOpen(false);
     setIsSyncing(true);
-    addLog(`Initiating synchronization run on Run ID: ${runId} (${payload.length} cases)...`, 'info');
+    const filterDesc = filterActive
+      ? ` [filtered: ${statusFilter !== 'ALL' ? statusFilter : ''}${selectedTags.length > 0 ? ` tags:${selectedTags.join('+')}` : ''}${searchTerm ? ` search:"${searchTerm}"` : ''}]`
+      : '';
+    addLog(`Initiating sync on Run ID: ${runId} — ${payload.length} cases${filterDesc}`, 'info');
 
     try {
       const response = await fetch('http://localhost:3000/api/testrail/sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          runId,
-          auth: btoa(`${username}:${password}`),
-          payload
-        })
+        body: JSON.stringify({ runId, auth: btoa(`${username}:${password}`), payload })
       });
 
       if (response.ok) {
         addLog(`Synchronized ${payload.length} test cases onto TestRail!`, 'success');
-
-        // Mark synced in local list
-        const updated = testCases.map(tc => {
-          if (tc.mapAction === 'Map' && tc.id) {
-            return { ...tc, syncStatus: 'Synced' };
-          }
-          return tc;
-        });
-        setTestCases(updated);
+        // Only mark the synced subset — don't touch cases outside the filter
+        const syncedUids = new Set(toSync.map(tc => tc._uid));
+        setTestCases(prev => prev.map(tc => syncedUids.has(tc._uid) ? { ...tc, syncStatus: 'Synced' } : tc));
       } else {
         const err = await response.text();
         addLog(`Sync rejected: ${err}`, 'error');
@@ -523,6 +526,34 @@ const SyncHub = () => {
   };
 
   // Compare file logic
+  const runComparison = (localCases, remoteArray) => {
+    const trCases = new Map(remoteArray.map(r => [r.id, { title: r.title, status: r.status }]));
+    const strictConflicts = [], needsSync = [], missingTr = [], matched = [];
+
+    localCases.forEach(tc => {
+      const numId = (tc.id || '').replace(/\D/g, '');
+      if (!numId) return;
+      if (trCases.has(numId)) {
+        const trVal = trCases.get(numId);
+        if (tc.status !== trVal.status) {
+          strictConflicts.push({ id: numId, title: tc.title, local: tc.status, remote: trVal.status, _uid: tc._uid });
+        } else {
+          matched.push({ id: numId, title: tc.title, status: tc.status, _uid: tc._uid });
+        }
+      } else {
+        missingTr.push({ id: numId, title: tc.title, status: tc.status, _uid: tc._uid });
+      }
+    });
+
+    trCases.forEach((val, id) => {
+      if (!localCases.some(tc => (tc.id || '').replace(/\D/g, '') === id)) {
+        needsSync.push({ id, title: val.title, status: val.status });
+      }
+    });
+
+    return { strictConflicts, needsSync, missingTr, matched };
+  };
+
   const handleCompareFile = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -531,9 +562,8 @@ const SyncHub = () => {
     const lines = text.split(/[\r\n]+/);
     if (lines.length < 2) return;
 
-    addLog(`Comparing local matrix against ${file.name}...`, 'info');
+    addLog(`Comparing against ${file.name}...`, 'info');
 
-    // Simple comparison metrics compiler
     const headerCols = parseCSVLine(lines[0]).map(h => h.trim().toLowerCase());
     const idIdx     = headerCols.findIndex(h => h.includes('id') || h === 'test case');
     const statusIdx = headerCols.findIndex(h => h.includes('status'));
@@ -544,50 +574,127 @@ const SyncHub = () => {
       return;
     }
 
-    const trCases = new Map();
+    const remoteArray = [];
     for (let i = 1; i < lines.length; i++) {
       const cols = parseCSVLine(lines[i]);
       if (cols.length <= idIdx || cols.length <= statusIdx) continue;
       const numId = cols[idIdx].replace(/\D/g, '');
       if (numId) {
-        trCases.set(numId, {
+        remoteArray.push({
+          id: numId,
           title: (titleIdx !== -1 ? cols[titleIdx] : cols[1]) || '',
           status: cols[statusIdx].toUpperCase()
         });
       }
     }
 
-    // Process sets
-    const strictConflicts = [];
-    const needsSync = [];
-    const missingTr = [];
-    const matched = [];
-
-    testCases.forEach(tc => {
-      const numId = tc.id.replace(/\D/g, '');
-      if (!numId) return;
-
-      if (trCases.has(numId)) {
-        const trVal = trCases.get(numId);
-        if (tc.status !== trVal.status) {
-          strictConflicts.push({ id: numId, title: tc.title, local: tc.status, remote: trVal.status });
-        } else {
-          matched.push({ id: numId, title: tc.title, status: tc.status });
-        }
-      } else {
-        missingTr.push({ id: numId, title: tc.title, status: tc.status });
-      }
-    });
-
-    trCases.forEach((val, id) => {
-      const existsLocally = testCases.some(tc => tc.id.replace(/\D/g, '') === id);
-      if (!existsLocally) {
-        needsSync.push({ id, title: val.title, status: val.status });
-      }
-    });
-
-    setCompareData({ strictConflicts, needsSync, missingTr, matched });
+    setCompareFileName(file.name);
+    setCompareRemoteData(remoteArray);
+    const localCases = compareSource === 'filtered' ? filteredCases : testCases;
+    const result = runComparison(localCases, remoteArray);
+    setCompareData(result);
+    setActiveCompareTab(result.strictConflicts.length > 0 ? 'conflicts' : result.needsSync.length > 0 ? 'needsSync' : 'matched');
+    setCompareSearch('');
     setCompareModalOpen(true);
+    e.target.value = '';
+  };
+
+  const handleCompareSourceChange = (newSource) => {
+    setCompareSource(newSource);
+    if (compareRemoteData) {
+      const localCases = newSource === 'filtered' ? filteredCases : testCases;
+      const result = runComparison(localCases, compareRemoteData);
+      setCompareData(result);
+    }
+  };
+
+  const handleLiveRunCompare = async () => {
+    if (!runId) { showAlert('Please enter a TestRail Run ID first.'); return; }
+    if (!username || !password) { showAlert('Please enter TestRail credentials first.'); return; }
+    if (testCases.length === 0) { showAlert('Load a matrix first before comparing.'); return; }
+
+    setIsLiveFetching(true);
+    addLog(`Fetching tests from TestRail Run #${runId}…`, 'info');
+
+    try {
+      const auth = btoa(`${username}:${password}`);
+      const response = await fetch('http://localhost:3000/api/testrail/fetch-run', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ runId, auth })
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        showAlert(`TestRail API error: ${data.error || response.statusText}`);
+        addLog(`Live compare failed: ${data.error}`, 'error');
+        return;
+      }
+
+      const remoteArray = data.tests || [];
+      addLog(`Fetched ${data.total} tests from Run #${runId}. Running comparison…`, 'success');
+
+      setCompareFileName(`TestRail Run #${runId} (live)`);
+      setCompareRemoteData(remoteArray);
+      const localCases = compareSource === 'filtered' ? filteredCases : testCases;
+      const result = runComparison(localCases, remoteArray);
+      setCompareData(result);
+      setActiveCompareTab(result.strictConflicts.length > 0 ? 'conflicts' : result.needsSync.length > 0 ? 'needsSync' : 'matched');
+      setCompareSearch('');
+      setCompareModalOpen(true);
+    } catch (err) {
+      showAlert(`Network error: ${err.message}`);
+      addLog(`Live compare error: ${err.message}`, 'error');
+    } finally {
+      setIsLiveFetching(false);
+    }
+  };
+
+  const handleApplyRemoteStatus = (caseId, remoteStatus) => {
+    setTestCases(prev => prev.map(tc =>
+      (tc.id || '').replace(/\D/g, '') === caseId ? { ...tc, status: remoteStatus } : tc
+    ));
+    setCompareData(prev => {
+      const conflict = prev.strictConflicts.find(c => c.id === caseId);
+      return {
+        ...prev,
+        strictConflicts: prev.strictConflicts.filter(c => c.id !== caseId),
+        matched: conflict ? [...prev.matched, { id: caseId, title: conflict.title, status: remoteStatus }] : prev.matched
+      };
+    });
+    addLog(`Applied remote status "${remoteStatus}" to case C${caseId}.`, 'success');
+  };
+
+  const handleAddToLocalFromRemote = (remoteCase) => {
+    const newCase = {
+      id: `C${remoteCase.id}`,
+      title: remoteCase.title,
+      tags: '', notes: '', status: remoteCase.status,
+      mapAction: 'Map', syncStatus: 'Unsynced', reason: '',
+      _uid: Date.now() + '_' + Math.random().toString(36).substr(2, 5)
+    };
+    setTestCases(prev => [...prev, newCase]);
+    setCompareData(prev => ({ ...prev, needsSync: prev.needsSync.filter(c => c.id !== remoteCase.id) }));
+    addLog(`Added C${remoteCase.id} from remote to local matrix.`, 'success');
+  };
+
+  const exportComparisonCSV = () => {
+    if (!compareData) return;
+    const q = v => `"${(v || '').replace(/"/g, '""')}"`;
+    const rows = [
+      ['Category', 'Case ID', 'Title', 'Local Status', 'Remote Status'],
+      ...compareData.matched.map(c => ['Matched', c.id, q(c.title), c.status, c.status]),
+      ...compareData.strictConflicts.map(c => ['Conflict', c.id, q(c.title), c.local, c.remote]),
+      ...compareData.needsSync.map(c => ['Needs Sync', c.id, q(c.title), '', c.status]),
+      ...compareData.missingTr.map(c => ['Missing Remote', c.id, q(c.title), c.status, '']),
+    ];
+    const csv = rows.map(r => r.join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = `comparison-${Date.now()}.csv`; a.click();
+    URL.revokeObjectURL(url);
+    addLog('Exported comparison report as CSV.', 'success');
   };
 
   // Global totals (unfiltered) — used for progress bar only
@@ -733,9 +840,9 @@ const SyncHub = () => {
         </div>
 
         <button
-          onClick={handleStartSync}
+          onClick={() => setSyncPreviewOpen(true)}
           data-cy="start-sync-btn"
-          disabled={isSyncing || testCases.length === 0}
+          disabled={isSyncing || filteredCases.length === 0}
           className="glow-btn"
           style={{
             background: 'linear-gradient(135deg, var(--accent-purple), var(--accent-pink))',
@@ -764,7 +871,7 @@ const SyncHub = () => {
       }}>
 
         {/* Left Column: API parameters & saved states */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', minWidth: 0 }}>
 
           {/* Credentials Card */}
           <div className="glass-panel" style={{ padding: '20px' }}>
@@ -772,7 +879,7 @@ const SyncHub = () => {
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
               <div style={{ display: 'flex', gap: '10px' }}>
-                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '4px' }}>
                   <label style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: '600' }}>Run ID</label>
                   <input
                     type="text"
@@ -781,18 +888,20 @@ const SyncHub = () => {
                     onChange={(e) => setRunId(e.target.value)}
                     placeholder="e.g. 8181"
                     style={{
+                      width: '100%', minWidth: 0,
                       background: 'var(--bg-tertiary)',
                       border: '1px solid var(--border-color)',
                       color: 'var(--text-primary)',
                       padding: '8px 12px',
                       borderRadius: '8px',
                       outline: 'none',
-                      fontSize: '0.85rem'
+                      fontSize: '0.85rem',
+                      boxSizing: 'border-box'
                     }}
                   />
                 </div>
 
-                <div style={{ flex: 1.5, display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                <div style={{ flex: 1.5, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '4px' }}>
                   <label style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: '600' }}>Username</label>
                   <input
                     type="email"
@@ -801,13 +910,15 @@ const SyncHub = () => {
                     onChange={(e) => setUsername(e.target.value)}
                     placeholder="zoro@dev.com"
                     style={{
+                      width: '100%', minWidth: 0,
                       background: 'var(--bg-tertiary)',
                       border: '1px solid var(--border-color)',
                       color: 'var(--text-primary)',
                       padding: '8px 12px',
                       borderRadius: '8px',
                       outline: 'none',
-                      fontSize: '0.85rem'
+                      fontSize: '0.85rem',
+                      boxSizing: 'border-box'
                     }}
                   />
                 </div>
@@ -822,6 +933,7 @@ const SyncHub = () => {
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••"
                   style={{
+                    width: '100%', minWidth: 0, boxSizing: 'border-box',
                     background: 'var(--bg-tertiary)',
                     border: '1px solid var(--border-color)',
                     color: 'var(--text-primary)',
@@ -896,10 +1008,10 @@ const SyncHub = () => {
               📝 Start Empty State
             </button>
             {loadedFiles.length > 0 && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '8px' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '8px', maxHeight: '130px', overflowY: 'auto' }}>
                 {loadedFiles.map((f, i) => (
                   <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'rgba(16, 185, 129, 0.08)', border: '1px solid rgba(16, 185, 129, 0.25)', borderRadius: '6px', padding: '4px 8px' }}>
-                    <span style={{ fontSize: '0.7rem', color: '#10b981', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>📄 {f.name}</span>
+                    <span style={{ fontSize: '0.7rem', color: '#10b981', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, minWidth: 0 }}>📄 {f.name}</span>
                     <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', marginLeft: '6px', flexShrink: 0 }}>{f.count} cases</span>
                   </div>
                 ))}
@@ -932,55 +1044,57 @@ const SyncHub = () => {
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', background: 'rgba(0,0,0,0.2)', padding: '16px', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.05)' }}>
 
               {/* Save State */}
-              <div style={{ display: 'flex', gap: '8px' }}>
-                <div style={{ position: 'relative', flexGrow: 1 }}>
-                  <input
-                    type="text"
-                    data-cy="save-state-name-input"
-                    placeholder="Save current state as..."
-                    value={saveName}
-                    onChange={(e) => setSaveName(e.target.value)}
-                    style={{
-                      width: '100%', background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)',
-                      padding: '10px 14px', borderRadius: '8px', outline: 'none', fontSize: '0.85rem', transition: 'border-color 0.2s ease'
-                    }}
-                    onFocus={(e) => e.target.style.borderColor = 'var(--accent-purple)'}
-                    onBlur={(e) => e.target.style.borderColor = 'var(--border-color)'}
-                  />
-                </div>
-                <div style={{ position: 'relative', width: '140px' }}>
-                  <Folder style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} size={14} />
-                  <input
-                    type="text"
-                    data-cy="save-state-folder-input"
-                    placeholder="Folder..."
-                    value={saveFolder}
-                    onChange={(e) => setSaveFolder(e.target.value)}
-                    style={{
-                      width: '100%', background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)',
-                      padding: '10px 10px 10px 30px', borderRadius: '8px', outline: 'none', fontSize: '0.85rem', transition: 'border-color 0.2s ease'
-                    }}
-                    onFocus={(e) => e.target.style.borderColor = 'var(--accent-purple)'}
-                    onBlur={(e) => e.target.style.borderColor = 'var(--border-color)'}
-                  />
-                </div>
-                <button
-                  onClick={handleSaveState}
-                  data-cy="save-state-btn"
-                  className="glow-btn"
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <input
+                  type="text"
+                  data-cy="save-state-name-input"
+                  placeholder="Save current state as..."
+                  value={saveName}
+                  onChange={(e) => setSaveName(e.target.value)}
                   style={{
-                    background: 'linear-gradient(135deg, var(--accent-purple), var(--accent-pink))',
-                    border: 'none', color: '#fff', borderRadius: '8px', padding: '0 16px', cursor: 'pointer', fontSize: '0.85rem', fontWeight: 'bold',
-                    display: 'flex', alignItems: 'center', gap: '6px'
+                    width: '100%', minWidth: 0, boxSizing: 'border-box',
+                    background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)',
+                    padding: '9px 12px', borderRadius: '8px', outline: 'none', fontSize: '0.82rem', transition: 'border-color 0.2s ease'
                   }}
-                >
-                  <Save size={16} /> Save
-                </button>
+                  onFocus={(e) => e.target.style.borderColor = 'var(--accent-purple)'}
+                  onBlur={(e) => e.target.style.borderColor = 'var(--border-color)'}
+                />
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <div style={{ position: 'relative', flex: 1, minWidth: 0 }}>
+                    <Folder style={{ position: 'absolute', left: '8px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} size={13} />
+                    <input
+                      type="text"
+                      data-cy="save-state-folder-input"
+                      placeholder="Folder..."
+                      value={saveFolder}
+                      onChange={(e) => setSaveFolder(e.target.value)}
+                      style={{
+                        width: '100%', minWidth: 0, boxSizing: 'border-box',
+                        background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)',
+                        padding: '9px 8px 9px 26px', borderRadius: '8px', outline: 'none', fontSize: '0.82rem', transition: 'border-color 0.2s ease'
+                      }}
+                      onFocus={(e) => e.target.style.borderColor = 'var(--accent-purple)'}
+                      onBlur={(e) => e.target.style.borderColor = 'var(--border-color)'}
+                    />
+                  </div>
+                  <button
+                    onClick={handleSaveState}
+                    data-cy="save-state-btn"
+                    className="glow-btn"
+                    style={{
+                      background: 'linear-gradient(135deg, var(--accent-purple), var(--accent-pink))',
+                      border: 'none', color: '#fff', borderRadius: '8px', padding: '0 14px', cursor: 'pointer', fontSize: '0.82rem', fontWeight: 'bold',
+                      display: 'flex', alignItems: 'center', gap: '5px', flexShrink: 0
+                    }}
+                  >
+                    <Save size={14} /> Save
+                  </button>
+                </div>
               </div>
 
               {/* Add Folder */}
               <div style={{ display: 'flex', gap: '8px', borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '12px' }}>
-                <div style={{ position: 'relative', flexGrow: 1 }}>
+                <div style={{ position: 'relative', flexGrow: 1, minWidth: 0 }}>
                   <FolderPlus style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} size={14} />
                   <input
                     type="text"
@@ -989,7 +1103,8 @@ const SyncHub = () => {
                     value={newFolderName}
                     onChange={(e) => setNewFolderName(e.target.value)}
                     style={{
-                      width: '100%', background: 'rgba(255,255,255,0.03)', border: '1px dashed var(--border-color)', color: 'var(--text-primary)',
+                      width: '100%', minWidth: 0, boxSizing: 'border-box',
+                      background: 'rgba(255,255,255,0.03)', border: '1px dashed var(--border-color)', color: 'var(--text-primary)',
                       padding: '8px 10px 8px 30px', borderRadius: '8px', outline: 'none', fontSize: '0.8rem', transition: 'all 0.2s ease'
                     }}
                     onFocus={(e) => { e.target.style.borderColor = 'var(--accent-purple)'; e.target.style.background = 'var(--bg-tertiary)'; }}
@@ -1125,7 +1240,7 @@ const SyncHub = () => {
                       }}
                     >
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexGrow: 1, overflow: 'hidden' }}>
-                        <GripVertical size={12} style={{ cursor: 'grab', opacity: 0.3 }} />
+                        <GripVertical size={12} className="vault-grip" style={{ cursor: 'grab' }} />
                         {folderStates.length > 0 && (
                           <input
                             type="checkbox"
@@ -1149,7 +1264,7 @@ const SyncHub = () => {
                           {isExpanded ? <ChevronDown size={14} style={{ color: 'var(--accent-purple)' }} /> : <ChevronRight size={14} />}
                           {isExpanded ? <FolderOpen size={14} style={{ color: 'var(--accent-purple)', marginLeft: '4px' }} /> : <Folder size={14} style={{ marginLeft: '4px' }} />}
                         </div>
-                        <span style={{ fontSize: '0.85rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', userSelect: 'none' }}>
+                        <span style={{ fontSize: '0.85rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', userSelect: 'none', minWidth: 0 }}>
                           {folderName.toUpperCase()}
                         </span>
                         <span style={{ marginLeft: 'auto', fontSize: '0.65rem', color: 'var(--text-muted)' }}>
@@ -1220,9 +1335,9 @@ const SyncHub = () => {
                                   }}
                                   style={{ cursor: 'pointer', accentColor: 'var(--accent-purple)', flexShrink: 0 }}
                                 />
-                                <GripVertical size={12} style={{ cursor: 'grab', opacity: 0.3 }} />
+                                <GripVertical size={12} className="vault-grip" style={{ cursor: 'grab' }} />
                                 <Database size={14} style={{ color: isSelected ? 'var(--accent-purple)' : (isPinned ? 'var(--accent-pink)' : 'var(--text-muted)') }} />
-                                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
                                   <span style={{ fontSize: '0.85rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', userSelect: 'none' }}>
                                     {state.name}
                                   </span>
@@ -1251,14 +1366,27 @@ const SyncHub = () => {
             {/* Embedded CSS for hover effects */}
             <style dangerouslySetInnerHTML={{
               __html: `
+              .nav-item-hover .vault-grip {
+                opacity: 0;
+                max-width: 0;
+                overflow: hidden;
+                flex-shrink: 0;
+                transition: opacity 0.2s ease, max-width 0.2s ease;
+              }
+              .nav-item-hover:hover .vault-grip {
+                opacity: 0.4;
+                max-width: 18px;
+              }
               .nav-item-hover .hover-actions {
                 opacity: 0;
-                transform: translateX(10px);
-                transition: all 0.2s ease;
+                max-width: 0;
+                overflow: hidden;
+                flex-shrink: 0;
+                transition: opacity 0.2s ease, max-width 0.2s ease;
               }
               .nav-item-hover:hover .hover-actions {
                 opacity: 1;
-                transform: translateX(0);
+                max-width: 120px;
               }
               .nav-item-hover:hover {
                 background: rgba(255,255,255,0.05) !important;
@@ -1279,6 +1407,10 @@ const SyncHub = () => {
               }
               .custom-scrollbar::-webkit-scrollbar-thumb:hover {
                 background: rgba(255,255,255,0.2);
+              }
+              @keyframes spin {
+                from { transform: rotate(0deg); }
+                to { transform: rotate(360deg); }
               }
             `}} />
           </div>
@@ -1457,6 +1589,45 @@ const SyncHub = () => {
                       <AlertTriangle size={12} />
                       Compare CSV
                     </label>
+
+                    {/* Compare with live TestRail run */}
+                    <button
+                      onClick={handleLiveRunCompare}
+                      disabled={isLiveFetching || testCases.length === 0}
+                      title="Fetch live test statuses from TestRail and compare against the current matrix"
+                      style={{
+                        background: isLiveFetching
+                          ? 'var(--bg-tertiary)'
+                          : 'linear-gradient(135deg, #1a6b4a 0%, #0f4d36 100%)',
+                        border: '1px solid ' + (isLiveFetching ? 'var(--border-color)' : '#2a8a5e'),
+                        color: isLiveFetching ? 'var(--text-muted)' : '#7effc4',
+                        borderRadius: '8px',
+                        padding: '6px 12px',
+                        cursor: isLiveFetching || testCases.length === 0 ? 'not-allowed' : 'pointer',
+                        fontSize: '0.8rem',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                        opacity: testCases.length === 0 ? 0.45 : 1,
+                        transition: 'all 0.2s ease'
+                      }}
+                    >
+                      {isLiveFetching ? (
+                        <>
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ animation: 'spin 1s linear infinite' }}>
+                            <path d="M21 12a9 9 0 1 1-6.219-8.56"/>
+                          </svg>
+                          Fetching…
+                        </>
+                      ) : (
+                        <>
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
+                          </svg>
+                          Compare Live Run
+                        </>
+                      )}
+                    </button>
 
                     {selectedCaseUids.length > 0 && (
                       <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
@@ -1897,166 +2068,251 @@ const SyncHub = () => {
 
       {/* Comparison Matrix Modal */}
       {compareModalOpen && compareData && createPortal(
-        <div style={{
-          position: 'fixed',
-          top: 0, left: 0, right: 0, bottom: 0,
-          background: 'rgba(0,0,0,0.5)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          zIndex: 100
-        }}>
-          <div className="glass-panel" style={{ padding: '24px', width: '640px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-            <h3 style={{ fontSize: '1.1rem', fontWeight: 'bold' }}>Compare Matrix Diagnostics</h3>
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.65)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, backdropFilter: 'blur(4px)' }}>
+          <div className="glass-panel" style={{ width: '900px', maxWidth: '96vw', maxHeight: '90vh', display: 'flex', flexDirection: 'column', overflow: 'hidden', padding: 0, borderRadius: '16px' }}>
 
-            {/* Summary strip */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px' }}>
-              {[
-                { label: 'Matched',        count: compareData.matched.length,        color: '#10b981', bg: 'rgba(16,185,129,0.08)'  },
-                { label: 'Conflicts',      count: compareData.strictConflicts.length, color: '#f43f5e', bg: 'rgba(244,63,94,0.08)'   },
-                { label: 'Needs Sync',     count: compareData.needsSync.length,       color: '#f59e0b', bg: 'rgba(245,158,11,0.08)'  },
-                { label: 'Missing Remote', count: compareData.missingTr.length,       color: '#6b7280', bg: 'rgba(107,114,128,0.08)' },
-              ].map(s => (
-                <div key={s.label} style={{ background: s.bg, border: `1px solid ${s.color}30`, borderRadius: '8px', padding: '10px', textAlign: 'center' }}>
-                  <div style={{ fontSize: '1.5rem', fontWeight: '800', color: s.color }}>{s.count}</div>
-                  <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', fontWeight: '600', textTransform: 'uppercase' }}>{s.label}</div>
+            {/* Header */}
+            <div style={{ padding: '20px 24px', borderBottom: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', gap: '16px' }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <h3 style={{ fontSize: '1.15rem', fontWeight: '800', marginBottom: '3px' }}>
+                  Compare <span className="gradient-text">Matrix Diagnostics</span>
+                </h3>
+                <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                  <span>{compareFileName.startsWith('TestRail Run #') ? '🟢' : '📄'} {compareFileName}</span>
+                  <span style={{ opacity: 0.4 }}>·</span>
+                  <span>{compareData.matched.length + compareData.strictConflicts.length + compareData.missingTr.length} local cases compared</span>
+                  <span style={{ opacity: 0.4 }}>·</span>
+                  <span>{compareData.needsSync.length} remote-only cases</span>
                 </div>
-              ))}
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'var(--bg-tertiary)', padding: '3px', borderRadius: '8px', flexShrink: 0 }}>
+                <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', paddingLeft: '8px', fontWeight: '600' }}>Compare:</span>
+                {[{ key: 'filtered', label: `Filtered (${filteredCases.length})` }, { key: 'all', label: `All (${testCases.length})` }].map(opt => (
+                  <button key={opt.key} onClick={() => handleCompareSourceChange(opt.key)} style={{ background: compareSource === opt.key ? 'linear-gradient(135deg, var(--accent-purple), var(--accent-pink))' : 'transparent', border: 'none', color: compareSource === opt.key ? '#fff' : 'var(--text-secondary)', padding: '5px 10px', borderRadius: '6px', cursor: 'pointer', fontSize: '0.75rem', fontWeight: '600', transition: 'all 0.2s ease' }}>{opt.label}</button>
+                ))}
+              </div>
+              <button onClick={() => setCompareModalOpen(false)} style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border-color)', color: 'var(--text-muted)', cursor: 'pointer', borderRadius: '8px', width: '32px', height: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: '1rem' }}>✕</button>
             </div>
 
-            {/* Tabs */}
-            <div style={{ display: 'flex', gap: '4px', background: 'var(--bg-tertiary)', padding: '2px', borderRadius: '8px' }}>
-              {[
-                { id: 'matched',   label: `✓ Matched (${compareData.matched.length})` },
-                { id: 'needsSync', label: `Needs Sync (${compareData.needsSync.length})` },
-                { id: 'conflicts', label: `Conflicts (${compareData.strictConflicts.length})` },
-                { id: 'missingTr', label: `Missing (${compareData.missingTr.length})` }
-              ].map(tab => (
-                <button
-                  key={tab.id}
-                  onClick={() => setActiveCompareTab(tab.id)}
-                  style={{
-                    flex: 1,
-                    background: activeCompareTab === tab.id ? 'var(--bg-primary)' : 'transparent',
-                    border: 'none',
-                    color: activeCompareTab === tab.id ? 'var(--accent-purple)' : 'var(--text-secondary)',
-                    padding: '8px',
-                    borderRadius: '6px',
-                    cursor: 'pointer',
-                    fontSize: '0.8rem',
-                    fontWeight: '600'
-                  }}
-                >
-                  {tab.label}
-                </button>
-              ))}
+            {/* Summary Cards — clickable tab selectors */}
+            {(() => {
+              const total = compareData.matched.length + compareData.strictConflicts.length + compareData.needsSync.length + compareData.missingTr.length || 1;
+              const cards = [
+                { key: 'matched',   label: 'Matched',       count: compareData.matched.length,         color: '#10b981', bg: 'rgba(16,185,129,0.09)',  icon: '✓', hint: 'Same status in both' },
+                { key: 'conflicts', label: 'Conflicts',      count: compareData.strictConflicts.length, color: '#f43f5e', bg: 'rgba(244,63,94,0.09)',   icon: '⚡', hint: 'Status mismatch' },
+                { key: 'needsSync', label: 'Needs Sync',     count: compareData.needsSync.length,       color: '#f59e0b', bg: 'rgba(245,158,11,0.09)',  icon: '↓', hint: 'Remote only' },
+                { key: 'missingTr', label: 'Missing Remote', count: compareData.missingTr.length,       color: '#6b7280', bg: 'rgba(107,114,128,0.09)', icon: '?', hint: 'Local only' },
+              ];
+              return (
+                <div style={{ padding: '14px 24px', borderBottom: '1px solid var(--border-color)', display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: '10px' }}>
+                  {cards.map(s => {
+                    const pct = Math.round((s.count / total) * 100);
+                    const active = activeCompareTab === s.key;
+                    return (
+                      <button key={s.key} onClick={() => { setActiveCompareTab(s.key); setCompareSearch(''); }} style={{ background: active ? s.bg : 'rgba(255,255,255,0.02)', border: `1.5px solid ${active ? s.color + '70' : 'var(--border-color)'}`, borderRadius: '10px', padding: '12px 14px', textAlign: 'left', cursor: 'pointer', transition: 'all 0.2s ease', transform: active ? 'translateY(-1px)' : 'none', boxShadow: active ? `0 4px 16px ${s.color}20` : 'none' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
+                          <span style={{ fontSize: '1rem' }}>{s.icon}</span>
+                          <span style={{ fontSize: '0.65rem', color: s.color, fontWeight: '700', background: s.bg, padding: '2px 6px', borderRadius: '4px' }}>{pct}%</span>
+                        </div>
+                        <div style={{ fontSize: '1.6rem', fontWeight: '800', color: s.color, lineHeight: 1 }}>{s.count}</div>
+                        <div style={{ fontSize: '0.7rem', fontWeight: '700', color: 'var(--text-secondary)', marginTop: '2px' }}>{s.label}</div>
+                        <div style={{ fontSize: '0.62rem', color: 'var(--text-muted)', marginTop: '1px' }}>{s.hint}</div>
+                        <div style={{ marginTop: '8px', height: '3px', background: 'var(--bg-tertiary)', borderRadius: '2px', overflow: 'hidden' }}>
+                          <div style={{ width: `${pct}%`, height: '100%', background: s.color, borderRadius: '2px', transition: 'width 0.6s ease' }} />
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              );
+            })()}
+
+            {/* Toolbar */}
+            <div style={{ padding: '10px 24px', borderBottom: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <div style={{ position: 'relative', flex: 1 }}>
+                <Search size={13} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
+                <input type="text" placeholder="Search by case ID or title…" value={compareSearch} onChange={e => setCompareSearch(e.target.value)} style={{ width: '100%', boxSizing: 'border-box', background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', padding: '7px 10px 7px 32px', borderRadius: '8px', outline: 'none', fontSize: '0.8rem' }} />
+              </div>
+              {activeCompareTab === 'conflicts' && compareData.strictConflicts.length > 0 && (
+                <button onClick={() => { [...compareData.strictConflicts].forEach(c => handleApplyRemoteStatus(c.id, c.remote)); }} style={{ background: 'rgba(244,63,94,0.1)', border: '1px solid rgba(244,63,94,0.35)', color: '#f43f5e', borderRadius: '8px', padding: '7px 12px', cursor: 'pointer', fontSize: '0.78rem', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '5px', flexShrink: 0, whiteSpace: 'nowrap' }}>⚡ Apply All Remote</button>
+              )}
+              {activeCompareTab === 'needsSync' && compareData.needsSync.length > 0 && (
+                <button onClick={() => { [...compareData.needsSync].forEach(c => handleAddToLocalFromRemote(c)); }} style={{ background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.35)', color: '#f59e0b', borderRadius: '8px', padding: '7px 12px', cursor: 'pointer', fontSize: '0.78rem', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '5px', flexShrink: 0, whiteSpace: 'nowrap' }}>↓ Import All</button>
+              )}
+              <button onClick={exportComparisonCSV} style={{ background: 'transparent', border: '1px solid var(--border-color)', color: 'var(--text-secondary)', borderRadius: '8px', padding: '7px 12px', cursor: 'pointer', fontSize: '0.78rem', display: 'flex', alignItems: 'center', gap: '5px', flexShrink: 0 }}><Download size={13} /> Export</button>
             </div>
 
-            <div style={{ height: '250px', overflowY: 'auto', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '10px' }}>
+            {/* Table */}
+            {(() => {
+              const statusBadge = (status) => {
+                const map = { PASSED: '#10b981', FAILED: '#f43f5e', BLOCKED: '#f59e0b', UNTESTED: '#6b7280', RETEST: '#8b5cf6' };
+                const c = map[status] || '#6b7280';
+                return <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: '4px', fontSize: '0.68rem', fontWeight: '700', background: c + '20', color: c, border: `1px solid ${c}40` }}>{status || '—'}</span>;
+              };
+              const s = compareSearch.trim().toLowerCase();
+              const thSt = { textAlign: 'left', padding: '8px 12px', fontSize: '0.68rem', fontWeight: '700', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px', borderBottom: '1px solid var(--border-color)', background: 'var(--bg-tertiary)', position: 'sticky', top: 0, zIndex: 1 };
+              const tdSt = { padding: '9px 12px', fontSize: '0.78rem', borderBottom: '1px solid var(--border-color)', verticalAlign: 'middle' };
+              const emptyState = (icon, msg) => <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '160px', gap: '8px', color: 'var(--text-muted)' }}><span style={{ fontSize: '2rem' }}>{icon}</span><span style={{ fontSize: '0.85rem' }}>{msg}</span></div>;
+              const banner = (color, bg, msg) => <div style={{ padding: '9px 16px', fontSize: '0.72rem', color, background: bg, borderBottom: `1px solid ${color}25` }} dangerouslySetInnerHTML={{ __html: msg }} />;
 
-              {activeCompareTab === 'matched' && (
-                compareData.matched.length === 0
-                  ? <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--text-muted)', fontSize: '0.8rem' }}>No perfectly matched cases found.</div>
-                  : <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.75rem' }}>
-                      <thead>
-                        <tr style={{ borderBottom: '1px solid var(--border-color)', color: 'var(--text-muted)' }}>
-                          <th style={{ textAlign: 'left', padding: '4px' }}>Case ID</th>
-                          <th style={{ textAlign: 'left', padding: '4px' }}>Title</th>
-                          <th style={{ textAlign: 'left', padding: '4px' }}>Status</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {compareData.matched.map((c, i) => (
-                          <tr key={i} style={{ borderBottom: '1px solid var(--border-color)' }}>
-                            <td style={{ padding: '6px 4px', fontWeight: 'bold' }}>{c.id}</td>
-                            <td style={{ padding: '6px 4px' }}>{c.title}</td>
-                            <td style={{ padding: '6px 4px' }}>
-                              <span style={{ color: '#10b981', fontWeight: 'bold', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                                ✓ {c.status}
-                              </span>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-              )}
+              return (
+                <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
+                  {activeCompareTab === 'matched' && (() => {
+                    const rows = compareData.matched.filter(c => !s || c.id.includes(s) || (c.title||'').toLowerCase().includes(s));
+                    if (!rows.length) return emptyState('✓', s ? 'No matches for your search.' : 'No matched cases found.');
+                    return <>{banner('#10b981','rgba(16,185,129,0.06)', 'Cases in <strong>both sources with the same status</strong> — fully in sync, no action needed.')}<table style={{ width: '100%', borderCollapse: 'collapse' }}><thead><tr><th style={thSt}>Case ID</th><th style={thSt}>Title</th><th style={thSt}>Status</th></tr></thead><tbody>{rows.map((c,i)=><tr key={i} style={{ background: i%2?'rgba(255,255,255,0.01)':'transparent' }}><td style={{ ...tdSt, fontWeight:'700', color:'var(--text-secondary)', width:'90px' }}>C{c.id}</td><td style={{ ...tdSt }}><span style={{ overflow:'hidden', textOverflow:'ellipsis', display:'block', whiteSpace:'nowrap', maxWidth:'500px' }}>{c.title}</span></td><td style={tdSt}>{statusBadge(c.status)}</td></tr>)}</tbody></table></>;
+                  })()}
+                  {activeCompareTab === 'conflicts' && (() => {
+                    const rows = compareData.strictConflicts.filter(c => !s || c.id.includes(s) || (c.title||'').toLowerCase().includes(s));
+                    if (!rows.length) return emptyState('⚡', s ? 'No matches for your search.' : 'No conflicts — all shared cases match!');
+                    return <>{banner('#f43f5e','rgba(244,63,94,0.06)', 'Cases in <strong>both sources with different statuses</strong>. Use "Use Remote ↗" per row or bulk-apply all above.')}<table style={{ width: '100%', borderCollapse: 'collapse' }}><thead><tr><th style={thSt}>Case ID</th><th style={thSt}>Title</th><th style={thSt}>Local</th><th style={thSt}>Remote</th><th style={thSt}>Action</th></tr></thead><tbody>{rows.map((c,i)=><tr key={i} style={{ background: i%2?'rgba(255,255,255,0.01)':'transparent' }}><td style={{ ...tdSt, fontWeight:'700', color:'var(--text-secondary)', width:'90px' }}>C{c.id}</td><td style={tdSt}><span style={{ overflow:'hidden', textOverflow:'ellipsis', display:'block', whiteSpace:'nowrap', maxWidth:'340px' }}>{c.title}</span></td><td style={tdSt}>{statusBadge(c.local)}</td><td style={tdSt}>{statusBadge(c.remote)}</td><td style={{ ...tdSt, width:'130px' }}><button onClick={()=>handleApplyRemoteStatus(c.id,c.remote)} style={{ background:'rgba(244,63,94,0.1)', border:'1px solid rgba(244,63,94,0.3)', color:'#f43f5e', borderRadius:'6px', padding:'4px 10px', cursor:'pointer', fontSize:'0.72rem', fontWeight:'600', whiteSpace:'nowrap' }}>Use Remote ↗</button></td></tr>)}</tbody></table></>;
+                  })()}
+                  {activeCompareTab === 'needsSync' && (() => {
+                    const rows = compareData.needsSync.filter(c => !s || c.id.includes(s) || (c.title||'').toLowerCase().includes(s));
+                    if (!rows.length) return emptyState('↓', s ? 'No matches for your search.' : 'No remote-only cases found.');
+                    return <>{banner('#f59e0b','rgba(245,158,11,0.06)', 'Cases in the <strong>remote CSV only</strong>. Import them into your local matrix to track them.')}<table style={{ width: '100%', borderCollapse: 'collapse' }}><thead><tr><th style={thSt}>Case ID</th><th style={thSt}>Title</th><th style={thSt}>Remote Status</th><th style={thSt}>Action</th></tr></thead><tbody>{rows.map((c,i)=><tr key={i} style={{ background: i%2?'rgba(255,255,255,0.01)':'transparent' }}><td style={{ ...tdSt, fontWeight:'700', color:'var(--text-secondary)', width:'90px' }}>C{c.id}</td><td style={tdSt}><span style={{ overflow:'hidden', textOverflow:'ellipsis', display:'block', whiteSpace:'nowrap', maxWidth:'400px' }}>{c.title}</span></td><td style={tdSt}>{statusBadge(c.status)}</td><td style={{ ...tdSt, width:'145px' }}><button onClick={()=>handleAddToLocalFromRemote(c)} style={{ background:'rgba(245,158,11,0.1)', border:'1px solid rgba(245,158,11,0.3)', color:'#f59e0b', borderRadius:'6px', padding:'4px 10px', cursor:'pointer', fontSize:'0.72rem', fontWeight:'600', whiteSpace:'nowrap' }}>+ Add to Matrix</button></td></tr>)}</tbody></table></>;
+                  })()}
+                  {activeCompareTab === 'missingTr' && (() => {
+                    const rows = compareData.missingTr.filter(c => !s || c.id.includes(s) || (c.title||'').toLowerCase().includes(s));
+                    if (!rows.length) return emptyState('?', s ? 'No matches for your search.' : 'All local cases are present in the remote.');
+                    return <>{banner('#6b7280','rgba(107,114,128,0.06)', 'Cases in your <strong>local matrix only</strong> — not in the remote CSV. May be unmapped or deleted remotely.')}<table style={{ width: '100%', borderCollapse: 'collapse' }}><thead><tr><th style={thSt}>Case ID</th><th style={thSt}>Title</th><th style={thSt}>Local Status</th></tr></thead><tbody>{rows.map((c,i)=><tr key={i} style={{ background: i%2?'rgba(255,255,255,0.01)':'transparent' }}><td style={{ ...tdSt, fontWeight:'700', color:'var(--text-secondary)', width:'90px' }}>C{c.id}</td><td style={tdSt}><span style={{ overflow:'hidden', textOverflow:'ellipsis', display:'block', whiteSpace:'nowrap', maxWidth:'500px' }}>{c.title}</span></td><td style={tdSt}>{statusBadge(c.status)}</td></tr>)}</tbody></table></>;
+                  })()}
+                </div>
+              );
+            })()}
 
-              {activeCompareTab === 'needsSync' && (
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.75rem' }}>
-                  <thead>
-                    <tr style={{ borderBottom: '1px solid var(--border-color)', color: 'var(--text-muted)' }}>
-                      <th style={{ textAlign: 'left', padding: '4px' }}>Case ID</th>
-                      <th style={{ textAlign: 'left', padding: '4px' }}>Remote Title</th>
-                      <th style={{ textAlign: 'left', padding: '4px' }}>Remote Status</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {compareData.needsSync.map((c, i) => (
-                      <tr key={i} style={{ borderBottom: '1px solid var(--border-color)' }}>
-                        <td style={{ padding: '6px 4px', fontWeight: 'bold' }}>{c.id}</td>
-                        <td style={{ padding: '6px 4px' }}>{c.title}</td>
-                        <td style={{ padding: '6px 4px', color: 'var(--accent-pink)', fontWeight: 'bold' }}>{c.status}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-
-              {activeCompareTab === 'conflicts' && (
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.75rem' }}>
-                  <thead>
-                    <tr style={{ borderBottom: '1px solid var(--border-color)', color: 'var(--text-muted)' }}>
-                      <th style={{ textAlign: 'left', padding: '4px' }}>Case ID</th>
-                      <th style={{ textAlign: 'left', padding: '4px' }}>Title</th>
-                      <th style={{ textAlign: 'left', padding: '4px' }}>Local</th>
-                      <th style={{ textAlign: 'left', padding: '4px' }}>Remote</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {compareData.strictConflicts.map((c, i) => (
-                      <tr key={i} style={{ borderBottom: '1px solid var(--border-color)' }}>
-                        <td style={{ padding: '6px 4px', fontWeight: 'bold' }}>{c.id}</td>
-                        <td style={{ padding: '6px 4px' }}>{c.title}</td>
-                        <td style={{ padding: '6px 4px', color: 'var(--accent-green)', fontWeight: 'bold' }}>{c.local}</td>
-                        <td style={{ padding: '6px 4px', color: 'var(--accent-red)', fontWeight: 'bold' }}>{c.remote}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-
-              {activeCompareTab === 'missingTr' && (
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.75rem' }}>
-                  <thead>
-                    <tr style={{ borderBottom: '1px solid var(--border-color)', color: 'var(--text-muted)' }}>
-                      <th style={{ textAlign: 'left', padding: '4px' }}>Case ID</th>
-                      <th style={{ textAlign: 'left', padding: '4px' }}>Title</th>
-                      <th style={{ textAlign: 'left', padding: '4px' }}>Local Status</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {compareData.missingTr.map((c, i) => (
-                      <tr key={i} style={{ borderBottom: '1px solid var(--border-color)' }}>
-                        <td style={{ padding: '6px 4px', fontWeight: 'bold' }}>{c.id}</td>
-                        <td style={{ padding: '6px 4px' }}>{c.title}</td>
-                        <td style={{ padding: '6px 4px' }}>{c.status}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-
+            {/* Footer */}
+            <div style={{ padding: '12px 24px', borderTop: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                {(() => {
+                  const s = compareSearch.trim().toLowerCase();
+                  const map = { matched: compareData.matched, conflicts: compareData.strictConflicts, needsSync: compareData.needsSync, missingTr: compareData.missingTr };
+                  const all = map[activeCompareTab] || [];
+                  const shown = s ? all.filter(c => c.id.includes(s) || (c.title||'').toLowerCase().includes(s)) : all;
+                  const labels = { matched: 'matched', conflicts: 'conflict', needsSync: 'remote-only', missingTr: 'local-only' };
+                  return `Showing ${shown.length} of ${all.length} ${labels[activeCompareTab] || ''} cases`;
+                })()}
+              </span>
+              <button onClick={() => setCompareModalOpen(false)} className="glow-btn" style={{ background: 'linear-gradient(135deg, var(--accent-purple), var(--accent-pink))', border: 'none', color: '#fff', padding: '8px 20px', borderRadius: '8px', cursor: 'pointer', fontWeight: '600', fontSize: '0.85rem' }}>Done</button>
             </div>
 
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
-              <button
-                onClick={() => setCompareModalOpen(false)}
-                className="glow-btn"
-                style={{ padding: '8px 16px' }}
-              >
-                Done
-              </button>
-            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* Sync Preview Modal */}
+      {syncPreviewOpen && createPortal(
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.65)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, backdropFilter: 'blur(4px)' }}>
+          <div className="glass-panel" style={{ width: '580px', maxWidth: '95vw', maxHeight: '90vh', display: 'flex', flexDirection: 'column', overflow: 'hidden', padding: 0, borderRadius: '16px' }}>
+            {(() => {
+              const toSync    = filteredCases.filter(tc => tc.mapAction === 'Map' && tc.id);
+              const skipped   = filteredCases.filter(tc => tc.mapAction !== 'Map' || !tc.id);
+              const outside   = testCases.length - filteredCases.length;
+              const byStatus  = { PASSED: 0, FAILED: 0, BLOCKED: 0, UNTESTED: 0, RETEST: 0 };
+              toSync.forEach(tc => { const k = (tc.status || 'UNTESTED').toUpperCase(); if (byStatus[k] !== undefined) byStatus[k]++; });
+              const statusColor = { PASSED: '#10b981', FAILED: '#f43f5e', BLOCKED: '#f59e0b', UNTESTED: '#6b7280', RETEST: '#8b5cf6' };
+
+              const activeFilters = [];
+              if (statusFilter !== 'ALL') activeFilters.push({ label: 'Status', value: statusFilter });
+              if (selectedTags.length > 0) activeFilters.push({ label: 'Tags', value: selectedTags.join(', ') });
+              if (searchTerm.trim()) activeFilters.push({ label: 'Search', value: `"${searchTerm}"` });
+
+              return (
+                <>
+                  {/* Header */}
+                  <div style={{ padding: '20px 24px', borderBottom: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <div>
+                      <h3 style={{ fontSize: '1.1rem', fontWeight: '800', marginBottom: '3px' }}>
+                        Sync <span className="gradient-text">Preview</span>
+                      </h3>
+                      <p style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Review what will be pushed to TestRail Run <strong style={{ color: 'var(--text-primary)' }}>#{runId}</strong></p>
+                    </div>
+                    <button onClick={() => setSyncPreviewOpen(false)} style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border-color)', color: 'var(--text-muted)', cursor: 'pointer', borderRadius: '8px', width: '32px', height: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1rem' }}>✕</button>
+                  </div>
+
+                  <div style={{ overflowY: 'auto', padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+
+                    {/* Active filter banner */}
+                    {filterActive && (
+                      <div style={{ background: 'rgba(168,85,247,0.08)', border: '1px solid rgba(168,85,247,0.25)', borderRadius: '10px', padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                        <div style={{ fontSize: '0.72rem', fontWeight: '700', color: 'var(--accent-purple)', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <span>⚡</span> Filter Active — syncing visible cases only
+                        </div>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                          {activeFilters.map((f, i) => (
+                            <span key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '0.72rem', background: 'rgba(168,85,247,0.12)', border: '1px solid rgba(168,85,247,0.3)', borderRadius: '6px', padding: '3px 8px', color: 'var(--text-secondary)' }}>
+                              <span style={{ color: 'var(--accent-purple)', fontWeight: '600' }}>{f.label}:</span> {f.value}
+                            </span>
+                          ))}
+                        </div>
+                        {outside > 0 && (
+                          <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                            ⚠ {outside} case{outside !== 1 ? 's' : ''} outside this filter will <strong>not</strong> be synced.
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Cases to sync count */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-color)', borderRadius: '10px', padding: '14px 18px' }}>
+                      <div style={{ fontSize: '2.4rem', fontWeight: '800', background: 'linear-gradient(135deg, var(--accent-purple), var(--accent-pink))', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', lineHeight: 1 }}>{toSync.length}</div>
+                      <div>
+                        <div style={{ fontSize: '0.9rem', fontWeight: '700', color: 'var(--text-primary)' }}>cases will be synced</div>
+                        <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                          {skipped.length > 0 && `${skipped.length} skipped (unmapped or no ID)`}
+                          {skipped.length === 0 && 'all mapped cases in the current view'}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Status breakdown */}
+                    {toSync.length > 0 && (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        <div style={{ fontSize: '0.72rem', fontWeight: '700', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Status Breakdown</div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                          {Object.entries(byStatus).filter(([, v]) => v > 0).map(([status, count]) => {
+                            const pct = Math.round((count / toSync.length) * 100);
+                            const c = statusColor[status];
+                            return (
+                              <div key={status} style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                <span style={{ width: '72px', fontSize: '0.72rem', fontWeight: '700', color: c }}>{status}</span>
+                                <div style={{ flex: 1, height: '8px', background: 'var(--bg-tertiary)', borderRadius: '4px', overflow: 'hidden' }}>
+                                  <div style={{ width: `${pct}%`, height: '100%', background: c, borderRadius: '4px', transition: 'width 0.4s ease' }} />
+                                </div>
+                                <span style={{ fontSize: '0.8rem', fontWeight: '700', color: c, width: '28px', textAlign: 'right' }}>{count}</span>
+                                <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', width: '36px' }}>{pct}%</span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Empty state */}
+                    {toSync.length === 0 && (
+                      <div style={{ textAlign: 'center', padding: '24px', color: 'var(--text-muted)', fontSize: '0.85rem', background: 'rgba(255,255,255,0.02)', borderRadius: '10px', border: '1px dashed var(--border-color)' }}>
+                        No mapped cases with valid IDs in the current view.<br />
+                        <span style={{ fontSize: '0.72rem' }}>Set cases to "Map" and ensure they have a Case ID.</span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Footer */}
+                  <div style={{ padding: '14px 24px', borderTop: '1px solid var(--border-color)', display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+                    <button onClick={() => setSyncPreviewOpen(false)} style={{ background: 'transparent', border: '1px solid var(--border-color)', color: 'var(--text-secondary)', borderRadius: '8px', padding: '8px 18px', cursor: 'pointer', fontSize: '0.85rem' }}>Cancel</button>
+                    <button
+                      onClick={handleStartSync}
+                      disabled={toSync.length === 0 || isSyncing}
+                      className="glow-btn"
+                      style={{ background: toSync.length === 0 ? 'var(--bg-tertiary)' : 'linear-gradient(135deg, var(--accent-purple), var(--accent-pink))', border: 'none', color: '#fff', borderRadius: '8px', padding: '8px 20px', cursor: toSync.length === 0 ? 'not-allowed' : 'pointer', fontSize: '0.85rem', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '6px' }}
+                    >
+                      <Play size={14} /> Confirm &amp; Sync {toSync.length > 0 ? `(${toSync.length})` : ''}
+                    </button>
+                  </div>
+                </>
+              );
+            })()}
           </div>
         </div>,
         document.body
