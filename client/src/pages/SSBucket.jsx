@@ -1,10 +1,10 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import {
   Trash2, Copy, Edit2, Check, X,
   Clipboard, ZoomIn, Search, Download,
   ImageOff, Plus, Move, Loader, MessageSquare,
-  ChevronLeft, ChevronRight,
+  ChevronLeft, ChevronRight, FolderPlus, GripVertical,
 } from 'lucide-react';
 import { showConfirm, showPrompt } from '../utils/Alerts';
 
@@ -30,6 +30,13 @@ const SSBucket = () => {
   const [isPasting,  setIsPasting]  = useState(false);
   const [isLoading,  setIsLoading]  = useState(true);
   const [isSaving,   setIsSaving]   = useState(false);
+  // folder reorder drag
+  const [dragGrpId,  setDragGrpId]  = useState(null);
+  const [dropBefore, setDropBefore] = useState(null);
+  // screenshot drag
+  const [dragSsId,    setDragSsId]    = useState(null);
+  const [dragFromGrp, setDragFromGrp] = useState(null);
+  const [dropOnGrpId, setDropOnGrpId] = useState(null);
   const ssRenameRef  = useRef(null);
   const grpRenameRef = useRef(null);
   const saveTimer    = useRef(null);
@@ -40,7 +47,14 @@ const SSBucket = () => {
     fetch(`${API}/api/screenshots/meta`)
       .then(r => r.json())
       .then(data => {
-        const loaded = Array.isArray(data.groups) ? data.groups : [];
+        const raw = Array.isArray(data.groups) ? data.groups : [];
+        // Sanitize: parentId must be a string group-id or null — never an event object
+        const loaded = raw.map(g => ({
+          ...g,
+          parentId: typeof g.parentId === 'string' ? g.parentId : null,
+        }));
+        // Set flag BEFORE setGroups so the saveMeta effect can fire on next render
+        hasLoadedRef.current = true;
         setGroups(loaded);
         setSelectedId(loaded[0]?.id ?? null);
       })
@@ -63,10 +77,12 @@ const SSBucket = () => {
     }, 600);
   }, []);
 
-  // Sync groups → server whenever they change (after initial load)
-  const isFirstRender = useRef(true);
+  // Sync groups → server only after the initial fetch has completed.
+  // isFirstRender breaks under React StrictMode (double-invoke) — use a
+  // hasLoaded ref that is only set to true inside the fetch .then() callback.
+  const hasLoadedRef = useRef(false);
   useEffect(() => {
-    if (isFirstRender.current) { isFirstRender.current = false; return; }
+    if (!hasLoadedRef.current) return;
     saveMeta(groups);
   }, [groups, saveMeta]);
 
@@ -137,30 +153,33 @@ const SSBucket = () => {
   }, [handlePaste]);
 
   // ── Group actions ──
-  const addGroup = async () => {
-    const name = await showPrompt('Group name:', 'New Group');
+  const addGroup = async (parentId = null) => {
+    const name = await showPrompt('Group name:', parentId ? 'New Sub-folder' : 'New Group');
     if (!name?.trim()) return;
     const id    = makeId('grp');
     const color = GROUP_COLORS[groups.length % GROUP_COLORS.length];
-    setGroups(prev => [...prev, { id, name: name.trim(), color, screenshots: [] }]);
+    setGroups(prev => [...prev, { id, name: name.trim(), color, parentId: parentId ?? null, screenshots: [] }]);
     setSelectedId(id);
   };
 
   const deleteGroup = async (gId) => {
     const group = groups.find(g => g.id === gId);
     if (!group) return;
-    const msg = group.screenshots.length
-      ? `Delete "${group.name}" and all ${group.screenshots.length} screenshot(s)?`
-      : `Delete group "${group.name}"?`;
+    const children = groups.filter(g => g.parentId === gId);
+    const allCount = group.screenshots.length + children.reduce((s, c) => s + c.screenshots.length, 0);
+    const msg = allCount > 0
+      ? `Delete "${group.name}" (${allCount} screenshot(s) including sub-folders)?`
+      : `Delete "${group.name}"?`;
     if (!await showConfirm(msg)) return;
-
-    group.screenshots.forEach(s => {
-      fetch(`${API}/api/screenshots/img/${encodeURIComponent(s.filename)}`, { method: 'DELETE' }).catch(() => {});
-    });
-
+    [group, ...children].forEach(g =>
+      g.screenshots.forEach(s =>
+        fetch(`${API}/api/screenshots/img/${encodeURIComponent(s.filename)}`, { method: 'DELETE' }).catch(() => {})
+      )
+    );
     setGroups(prev => {
-      const next = prev.filter(g => g.id !== gId);
-      if (selectedId === gId) setSelectedId(next[0]?.id ?? null);
+      const ids = new Set([gId, ...children.map(c => c.id)]);
+      const next = prev.filter(g => !ids.has(g.id));
+      if (ids.has(selectedId)) setSelectedId(next[0]?.id ?? null);
       return next;
     });
   };
@@ -215,11 +234,12 @@ const SSBucket = () => {
     a.click();
   };
 
-  const moveToGroup = (ssId, toGroupId) => {
+  const moveToGroup = (ssId, toGroupId, fromGroupId = null) => {
+    const srcId = fromGroupId ?? effectiveSelectedId;
     let shot;
     setGroups(prev => {
       const next = prev.map(g => {
-        if (g.id === effectiveSelectedId) {
+        if (g.id === srcId) {
           shot = g.screenshots.find(s => s.id === ssId);
           return { ...g, screenshots: g.screenshots.filter(s => s.id !== ssId) };
         }
@@ -227,6 +247,47 @@ const SSBucket = () => {
       });
       return next.map(g => g.id === toGroupId && shot ? { ...g, screenshots: [shot, ...g.screenshots] } : g);
     });
+  };
+
+  const copyToGroup = (ssId, fromGroupId, toGroupId) => {
+    const shot = groups.find(g => g.id === fromGroupId)?.screenshots.find(s => s.id === ssId);
+    if (!shot) return;
+    const newShot = { ...shot, id: makeId('ss') };
+    setGroups(prev => prev.map(g => g.id === toGroupId ? { ...g, screenshots: [newShot, ...g.screenshots] } : g));
+  };
+
+  // ── Folder drag-reorder handlers ──
+  const handleGrpDragStart = (e, gId) => {
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('ssb-drag-type', 'group');
+    e.dataTransfer.setData('ssb-grp-id', gId);
+    setDragGrpId(gId);
+  };
+
+  const handleGrpDragEnd = () => {
+    setDragGrpId(null);
+    setDropBefore(null);
+  };
+
+  const handleGrpReorderDrop = (e, beforeId) => {
+    e.preventDefault();
+    const id = e.dataTransfer.getData('ssb-grp-id');
+    if (!id || id === beforeId) { setDragGrpId(null); setDropBefore(null); return; }
+    const dragged = groups.find(g => g.id === id);
+    const target  = beforeId ? groups.find(g => g.id === beforeId) : null;
+    // only reorder within same level
+    if (dragged && target && (dragged.parentId ?? null) !== (target.parentId ?? null)) {
+      setDragGrpId(null); setDropBefore(null); return;
+    }
+    setGroups(prev => {
+      const without = prev.filter(g => g.id !== id);
+      if (!beforeId) return [...without, dragged];
+      const idx = without.findIndex(g => g.id === beforeId);
+      if (idx === -1) return [...without, dragged];
+      return [...without.slice(0, idx), dragged, ...without.slice(idx)];
+    });
+    setDragGrpId(null);
+    setDropBefore(null);
   };
 
   const updateNote = (ssId, note) => {
@@ -288,6 +349,8 @@ const SSBucket = () => {
         .ssb-action-btn:hover { background: rgba(192,132,252,0.12) !important; border-color: rgba(192,132,252,0.35) !important; color: #c084fc !important; }
         .ssb-del-btn:hover    { background: rgba(240,80,80,0.16) !important; border-color: rgba(240,80,80,0.5) !important; color: #f05050 !important; }
         .ssb-search-input:focus { border-color: rgba(192,132,252,0.6) !important; box-shadow: 0 0 0 2px rgba(192,132,252,0.12) !important; }
+        .ssb-grp-item[draggable]:active { cursor: grabbing; }
+        .ssb-drop-active { background: rgba(91,196,245,0.12) !important; border-color: #5bc4f5 !important; box-shadow: 0 0 0 1px rgba(91,196,245,0.3) !important; }
       `}</style>
 
       <div style={{ display: 'flex', gap: '16px', height: 'calc(100vh - var(--header-h) - 48px)', minHeight: 0 }}>
@@ -298,75 +361,149 @@ const SSBucket = () => {
             Groups
           </div>
 
-          <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '3px' }}>
-            {groups.map(g => {
-              const isActive = effectiveSelectedId === g.id;
-              return (
-                <div
-                  key={g.id}
-                  className="ssb-grp-item"
-                  onClick={() => { if (renamingGroupId !== g.id) setSelectedId(g.id); }}
-                  onMouseEnter={() => setHoveredGroupId(g.id)}
-                  onMouseLeave={() => setHoveredGroupId(null)}
-                  style={{
-                    display: 'flex', alignItems: 'center', gap: '8px',
-                    padding: '8px 10px 8px 7px', borderRadius: 'var(--radius-md)', cursor: 'pointer',
-                    background: isActive ? 'var(--bg-tertiary)' : 'transparent',
-                    border: `1px solid ${isActive ? 'var(--border-hover)' : 'transparent'}`,
-                    borderLeft: `3px solid ${isActive ? g.color : 'transparent'}`,
-                    boxShadow: isActive ? `inset 0 0 20px ${g.color}10` : 'none',
-                    transition: 'all var(--transition-fast)',
-                    position: 'relative', userSelect: 'none',
-                  }}
-                >
-                  {/* Color dot */}
+          <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '1px' }}>
+            {(() => {
+              // build flat display tree: roots then their children
+              const roots = groups.filter(g => typeof g.parentId !== 'string' || !g.parentId);
+              const tree = [];
+              roots.forEach(root => {
+                tree.push({ g: root, depth: 0 });
+                groups.filter(c => c.parentId === root.id)
+                  .forEach(child => tree.push({ g: child, depth: 1 }));
+              });
+              return tree.map(({ g, depth }, treeIdx) => {
+                const isActive   = effectiveSelectedId === g.id;
+                const isSsDrop   = dropOnGrpId === g.id && dragSsId;
+                const dotSize    = depth === 1 ? '9px' : '12px';
+                const itemContent = (
                   <div
-                    onClick={e => { e.stopPropagation(); setColorPickerId(colorPickerId === g.id ? null : g.id); }}
-                    title="Change color"
-                    style={{ width: '12px', height: '12px', borderRadius: '50%', background: g.color, flexShrink: 0, cursor: 'pointer', boxShadow: `0 0 6px ${g.color}80` }}
-                  />
+                    key={g.id}
+                    className={`ssb-grp-item${isSsDrop ? ' ssb-drop-active' : ''}`}
+                    draggable={true}
+                    onClick={() => { if (renamingGroupId !== g.id) setSelectedId(g.id); }}
+                    onMouseEnter={() => setHoveredGroupId(g.id)}
+                    onMouseLeave={() => setHoveredGroupId(null)}
+                    onDragStart={e => handleGrpDragStart(e, g.id)}
+                    onDragEnd={handleGrpDragEnd}
+                    onDragOver={e => {
+                      // screenshot drop target
+                      if (e.dataTransfer.types.includes('ssb-drag-type')) {
+                        e.preventDefault();
+                        setDropOnGrpId(g.id);
+                      }
+                    }}
+                    onDragLeave={() => setDropOnGrpId(null)}
+                    onDrop={e => {
+                      e.preventDefault();
+                      const type = e.dataTransfer.getData('ssb-drag-type');
+                      if (type === 'screenshot' && dragSsId && dragFromGrp && g.id !== dragFromGrp) {
+                        if (e.ctrlKey || e.metaKey) {
+                          copyToGroup(dragSsId, dragFromGrp, g.id);
+                        } else {
+                          moveToGroup(dragSsId, g.id, dragFromGrp);
+                        }
+                      }
+                      setDropOnGrpId(null);
+                      setDragSsId(null);
+                      setDragFromGrp(null);
+                    }}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: '6px',
+                      padding: `7px 8px 7px ${depth === 1 ? '6px' : '5px'}`,
+                      borderRadius: 'var(--radius-md)', cursor: 'pointer',
+                      background: isSsDrop ? 'rgba(91,196,245,0.12)' : isActive ? 'var(--bg-tertiary)' : 'transparent',
+                      border: `1px solid ${isSsDrop ? '#5bc4f5' : isActive ? 'var(--border-hover)' : 'transparent'}`,
+                      borderLeft: `3px solid ${isSsDrop ? '#5bc4f5' : isActive ? g.color : 'transparent'}`,
+                      boxShadow: isSsDrop ? '0 0 0 1px rgba(91,196,245,0.3)' : isActive ? `inset 0 0 20px ${g.color}10` : 'none',
+                      transition: 'all 0.15s ease',
+                      position: 'relative', userSelect: 'none',
+                      opacity: dragGrpId === g.id ? 0.4 : 1,
+                    }}
+                  >
+                    {/* Drag handle */}
+                    <GripVertical size={11} style={{ color: 'var(--text-muted)', cursor: 'grab', flexShrink: 0, opacity: hoveredGroupId === g.id ? 0.65 : 0, transition: 'opacity 0.15s' }} />
 
-                  {/* Color picker portal */}
-                  {colorPickerId === g.id && createPortal(
-                    <div onClick={() => setColorPickerId(null)} style={{ position: 'fixed', inset: 0, zIndex: 9000 }}>
-                      <div onClick={e => e.stopPropagation()} style={{ position: 'fixed', left: '230px', top: '50%', transform: 'translateY(-50%)', background: 'var(--bg-secondary)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', padding: '10px', boxShadow: 'var(--card-shadow)', zIndex: 9001, display: 'flex', gap: '6px', flexWrap: 'wrap', width: '132px' }}>
-                        {GROUP_COLORS.map(c => (
-                          <div key={c} onClick={() => setGroupColor(g.id, c)} style={{ width: '24px', height: '24px', borderRadius: '50%', background: c, cursor: 'pointer', border: g.color === c ? '2px solid white' : '2px solid transparent', transition: 'transform var(--transition-fast)' }} onMouseEnter={e => e.currentTarget.style.transform = 'scale(1.2)'} onMouseLeave={e => e.currentTarget.style.transform = 'scale(1)'} />
-                        ))}
-                      </div>
-                    </div>,
-                    document.body
-                  )}
+                    {/* Color dot */}
+                    <div
+                      onClick={e => { e.stopPropagation(); setColorPickerId(colorPickerId === g.id ? null : g.id); }}
+                      title="Change color"
+                      style={{ width: dotSize, height: dotSize, borderRadius: '50%', background: g.color, flexShrink: 0, cursor: 'pointer', boxShadow: `0 0 6px ${g.color}80` }}
+                    />
 
-                  {/* Name */}
-                  {renamingGroupId === g.id ? (
-                    <input ref={grpRenameRef} value={renameGroupVal} onChange={e => setRenameGroupVal(e.target.value)} onBlur={commitRenameGroup} onKeyDown={e => { if (e.key === 'Enter') commitRenameGroup(); if (e.key === 'Escape') setRenamingGroupId(null); }} onClick={e => e.stopPropagation()} style={{ flex: 1, background: 'transparent', border: 'none', borderBottom: '1px solid var(--accent-purple)', outline: 'none', color: 'var(--text-primary)', fontSize: '0.83rem', fontFamily: 'var(--font-sans)', padding: '1px 0' }} />
-                  ) : (
-                    <span style={{ flex: 1, fontSize: '0.83rem', fontWeight: isActive ? 700 : 400, color: isActive ? 'var(--text-primary)' : 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {g.name}
-                    </span>
-                  )}
+                    {/* Color picker portal */}
+                    {colorPickerId === g.id && createPortal(
+                      <div onClick={() => setColorPickerId(null)} style={{ position: 'fixed', inset: 0, zIndex: 9000 }}>
+                        <div onClick={e => e.stopPropagation()} style={{ position: 'fixed', left: '230px', top: '50%', transform: 'translateY(-50%)', background: 'var(--bg-secondary)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', padding: '10px', boxShadow: 'var(--card-shadow)', zIndex: 9001, display: 'flex', gap: '6px', flexWrap: 'wrap', width: '132px' }}>
+                          {GROUP_COLORS.map(c => (
+                            <div key={c} onClick={() => setGroupColor(g.id, c)} style={{ width: '24px', height: '24px', borderRadius: '50%', background: c, cursor: 'pointer', border: g.color === c ? '2px solid white' : '2px solid transparent', transition: 'transform var(--transition-fast)' }} onMouseEnter={e => e.currentTarget.style.transform = 'scale(1.2)'} onMouseLeave={e => e.currentTarget.style.transform = 'scale(1)'} />
+                          ))}
+                        </div>
+                      </div>,
+                      document.body
+                    )}
 
-                  {/* Count badge */}
-                  {hoveredGroupId !== g.id && (
-                    <span style={{ fontSize: '0.68rem', color: g.color, background: `${g.color}18`, border: `1px solid ${g.color}40`, borderRadius: '10px', padding: '1px 6px', flexShrink: 0, fontWeight: 600 }}>
-                      {g.screenshots.length}
-                    </span>
-                  )}
+                    {/* Name */}
+                    {renamingGroupId === g.id ? (
+                      <input ref={grpRenameRef} value={renameGroupVal} onChange={e => setRenameGroupVal(e.target.value)} onBlur={commitRenameGroup} onKeyDown={e => { if (e.key === 'Enter') commitRenameGroup(); if (e.key === 'Escape') setRenamingGroupId(null); }} onClick={e => e.stopPropagation()} style={{ flex: 1, background: 'transparent', border: 'none', borderBottom: '1px solid var(--accent-purple)', outline: 'none', color: 'var(--text-primary)', fontSize: '0.82rem', fontFamily: 'var(--font-sans)', padding: '1px 0' }} />
+                    ) : (
+                      <span style={{ flex: 1, fontSize: depth === 1 ? '0.79rem' : '0.83rem', fontWeight: isActive ? 700 : 400, color: isActive ? 'var(--text-primary)' : 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {g.name}
+                      </span>
+                    )}
 
-                  {/* Hover actions */}
-                  <div className="ssb-grp-actions" onClick={e => e.stopPropagation()} style={{ display: 'flex', gap: '2px', opacity: 0, transition: 'opacity var(--transition-fast)', flexShrink: 0 }}>
-                    <button onClick={() => startRenameGroup(g)} title="Rename" style={iconBtnStyle}><Edit2 size={11} /></button>
-                    <button onClick={() => deleteGroup(g.id)} title="Delete" style={{ ...iconBtnStyle, color: 'var(--accent-red)' }}><Trash2 size={11} /></button>
+                    {/* Count badge */}
+                    {hoveredGroupId !== g.id && (
+                      <span style={{ fontSize: '0.65rem', color: g.color, background: `${g.color}18`, border: `1px solid ${g.color}40`, borderRadius: '10px', padding: '1px 5px', flexShrink: 0, fontWeight: 600 }}>
+                        {g.screenshots.length}
+                      </span>
+                    )}
+
+                    {/* Hover actions */}
+                    <div className="ssb-grp-actions" onClick={e => e.stopPropagation()} style={{ display: 'flex', gap: '2px', opacity: 0, transition: 'opacity var(--transition-fast)', flexShrink: 0 }}>
+                      {depth === 0 && (
+                        <button onClick={() => addGroup(g.id)} title="Add sub-folder" style={iconBtnStyle}><FolderPlus size={10} /></button>
+                      )}
+                      <button onClick={() => startRenameGroup(g)} title="Rename" style={iconBtnStyle}><Edit2 size={10} /></button>
+                      <button onClick={() => deleteGroup(g.id)} title="Delete" style={{ ...iconBtnStyle, color: 'var(--accent-red)' }}><Trash2 size={10} /></button>
+                    </div>
                   </div>
-                </div>
-              );
-            })}
+                );
+
+                return (
+                  <React.Fragment key={g.id}>
+                    {/* Drop indicator before this item */}
+                    <div
+                      onDragOver={e => { if (dragGrpId && dragGrpId !== g.id) { e.preventDefault(); setDropBefore(g.id); } }}
+                      onDrop={e => handleGrpReorderDrop(e, g.id)}
+                      style={{ height: '3px', borderRadius: '2px', margin: '1px 4px', background: dropBefore === g.id && dragGrpId ? 'linear-gradient(90deg, #c084fc, #a855f7)' : 'transparent', transition: 'background 0.12s', boxShadow: dropBefore === g.id && dragGrpId ? '0 0 6px rgba(192,132,252,0.6)' : 'none' }}
+                    />
+                    {depth === 1 ? (
+                      <div style={{ paddingLeft: '14px', borderLeft: '1px solid rgba(255,255,255,0.07)', marginLeft: '8px' }}>
+                        {itemContent}
+                      </div>
+                    ) : itemContent}
+                  </React.Fragment>
+                );
+              });
+            })()}
+            {/* Drop zone at end of list */}
+            <div
+              onDragOver={e => { if (dragGrpId) { e.preventDefault(); setDropBefore('__end__'); } }}
+              onDrop={e => handleGrpReorderDrop(e, null)}
+              style={{ height: '3px', borderRadius: '2px', margin: '1px 4px', background: dropBefore === '__end__' && dragGrpId ? 'linear-gradient(90deg, #c084fc, #a855f7)' : 'transparent', transition: 'background 0.12s' }}
+            />
           </div>
+          {/* Drag hint */}
+          {dragSsId && (
+            <div style={{ padding: '8px 10px', background: 'rgba(91,196,245,0.1)', border: '1px solid rgba(91,196,245,0.35)', borderRadius: '8px', fontSize: '0.68rem', color: '#5bc4f5', textAlign: 'center', marginBottom: '4px', animation: 'ssbFadeIn 0.15s ease' }}>
+              Drop on a group to <strong>move</strong><br/>
+              <span style={{ opacity: 0.7 }}>Hold Ctrl to copy instead</span>
+            </div>
+          )}
 
           {/* Add group */}
           <button
-            onClick={addGroup}
+            onClick={() => addGroup()}
             style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 10px', background: 'transparent', border: '1px dashed rgba(192,132,252,0.3)', borderRadius: 'var(--radius-md)', color: 'rgba(192,132,252,0.6)', cursor: 'pointer', fontSize: '0.8rem', fontFamily: 'var(--font-sans)', width: '100%', transition: 'all var(--transition-fast)', marginTop: '4px' }}
             onMouseEnter={e => { e.currentTarget.style.borderColor = '#c084fc'; e.currentTarget.style.color = '#c084fc'; e.currentTarget.style.background = 'rgba(192,132,252,0.06)'; }}
             onMouseLeave={e => { e.currentTarget.style.borderColor = 'rgba(192,132,252,0.3)'; e.currentTarget.style.color = 'rgba(192,132,252,0.6)'; e.currentTarget.style.background = 'transparent'; }}
@@ -462,6 +599,9 @@ const SSBucket = () => {
                     onDownload={() => downloadScreenshot(ss)}
                     onMove={toId => moveToGroup(ss.id, toId)}
                     onNoteCommit={note => updateNote(ss.id, note)}
+                    isDragging={dragSsId === ss.id}
+                    onDragStart={() => { setDragSsId(ss.id); setDragFromGrp(effectiveSelectedId); }}
+                    onDragEnd={() => { setDragSsId(null); setDragFromGrp(null); setDropOnGrpId(null); }}
                   />
                 ))}
               </div>
@@ -580,6 +720,7 @@ const ScreenshotCard = ({
   isRenaming, renameVal, renameRef,
   onRenameStart, onRenameChange, onRenameCommit, onRenameCancel,
   onCopy, onDelete, onLightbox, onDownload, onMove, onNoteCommit,
+  isDragging, onDragStart, onDragEnd,
 }) => {
   const [hovered,       setHovered]       = useState(false);
   const [moveOpen,      setMoveOpen]      = useState(false);
@@ -599,6 +740,9 @@ const ScreenshotCard = ({
   return (
     <div
       className="ssb-card"
+      draggable={true}
+      onDragStart={e => { e.dataTransfer.setData('ssb-drag-type', 'screenshot'); onDragStart?.(); }}
+      onDragEnd={onDragEnd}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => { setHovered(false); setMoveOpen(false); }}
       style={{
@@ -610,6 +754,8 @@ const ScreenshotCard = ({
         boxShadow: hovered ? '0 12px 40px rgba(0,0,0,0.4), 0 0 0 1px rgba(192,132,252,0.1)' : 'none',
         animation: 'ssbSlideUp 0.25s ease-out',
         position: 'relative',
+        opacity: isDragging ? 0.4 : 1,
+        cursor: isDragging ? 'grabbing' : 'default',
       }}
     >
       {/* Colored top accent bar */}

@@ -855,11 +855,27 @@ app.get('/api/screenshots/meta', (req, res) => {
     }
 });
 
-// Save groups metadata
+// Save groups metadata — keep a rolling 5-version backup before every write
+const SS_META_BAK = (n) => SS_META.replace(/\.json$/, `.bak${n}.json`);
 app.post('/api/screenshots/meta', (req, res) => {
     try {
         const { groups } = req.body;
         if (!Array.isArray(groups)) return res.status(400).json({ error: 'groups must be an array' });
+        // Don't overwrite real data with an empty array if the current file has content
+        if (groups.length === 0 && fs.existsSync(SS_META)) {
+            try {
+                const current = JSON.parse(fs.readFileSync(SS_META, 'utf-8'));
+                const totalShots = (current.groups || []).reduce((s, g) => s + (g.screenshots || []).length, 0);
+                if (totalShots > 0) return res.status(409).json({ error: 'Refusing to overwrite non-empty metadata with empty groups' });
+            } catch { /* parse error — allow write */ }
+        }
+        // Rotate backups: bak4 ← bak3 ← bak2 ← bak1 ← bak0 ← current
+        if (fs.existsSync(SS_META)) {
+            for (let i = 4; i > 0; i--) {
+                if (fs.existsSync(SS_META_BAK(i - 1))) fs.copyFileSync(SS_META_BAK(i - 1), SS_META_BAK(i));
+            }
+            fs.copyFileSync(SS_META, SS_META_BAK(0));
+        }
         fs.writeFileSync(SS_META, JSON.stringify({ groups }, null, 2));
         res.json({ success: true });
     } catch (e) {
