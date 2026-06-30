@@ -25,7 +25,8 @@ import {
   FolderOpen,
   GripVertical,
   Bookmark,
-  X
+  X,
+  MessageSquare,
 } from 'lucide-react';
 import { showAlert, showConfirm, showPrompt } from '../utils/Alerts';
 
@@ -61,6 +62,7 @@ const SyncHub = () => {
   const [newFolderName, setNewFolderName] = useState('');
   const [selectedCaseUids, setSelectedCaseUids] = useState([]);
   const [draggedStateId, setDraggedStateId] = useState('');
+  const [loadedStateId, setLoadedStateId] = useState(null);
   const [draggedFolder, setDraggedFolder] = useState('');
   const [folderOrder, setFolderOrder] = useState(() => {
     try { return JSON.parse(localStorage.getItem('tr-folder-order') || '[]'); } catch { return []; }
@@ -137,6 +139,11 @@ const SyncHub = () => {
   // Inline note editing
   const [editingNoteUid, setEditingNoteUid] = useState(null);
   const [editingNoteVal, setEditingNoteVal] = useState('');
+
+  // Bulk note modal
+  const [bulkNoteOpen,  setBulkNoteOpen]  = useState(false);
+  const [bulkNoteVal,   setBulkNoteVal]   = useState('');
+  const [bulkNoteMode,  setBulkNoteMode]  = useState('replace'); // 'replace' | 'append'
 
   // Sync Log
   const [reportModalOpen, setReportModalOpen] = useState(false);
@@ -395,6 +402,7 @@ const SyncHub = () => {
         const newCases = (data.testCases || []).map((tc, idx) => ({ ...tc, _uid: Date.now() + '_' + idx }));
         setTestCases(newCases);
         setFileName(`Loaded State: ${data.name}`);
+        setLoadedStateId(id);
         addLog(`Loaded state matrix "${data.name}" with ${data.testCases?.length || 0} cases.`, 'success');
       }
     } catch (e) {
@@ -420,6 +428,7 @@ const SyncHub = () => {
     setTestCases(newCases);
     setLoadedFiles([]);
     setFileName(`Merged: ${names.join(', ')}`);
+    setLoadedStateId(null);
     addLog(`Merged ${newCases.length} test cases from ${names.length} state${names.length > 1 ? 's' : ''}: ${names.join(', ')}.`, 'success');
     setSelectedStateIds(new Set());
   };
@@ -967,6 +976,22 @@ const SyncHub = () => {
     ));
   };
 
+  const handleBulkNoteApply = () => {
+    if (!bulkNoteVal.trim() && bulkNoteMode === 'replace') {
+      // Allow clearing notes with replace mode even if empty
+    }
+    setTestCases(prev => prev.map(tc => {
+      if (!selectedCaseUids.includes(tc._uid)) return tc;
+      const next = bulkNoteMode === 'append'
+        ? [tc.notes, bulkNoteVal.trim()].filter(Boolean).join('\n')
+        : bulkNoteVal.trim();
+      return { ...tc, notes: next };
+    }));
+    addLog(`Note applied to ${selectedCaseUids.length} case(s) [${bulkNoteMode}].`, 'info');
+    setBulkNoteOpen(false);
+    setBulkNoteVal('');
+  };
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
 
@@ -1497,8 +1522,34 @@ const SyncHub = () => {
                           </div>
                         )}
                         {folderStates.map(state => {
-                          const isPinned = pinnedStateId === state.id;
+                          const isPinned  = pinnedStateId === state.id;
                           const isSelected = selectedStateIds.has(state.id);
+                          const isOpen    = loadedStateId === state.id;
+
+                          let bgStyle = 'transparent';
+                          let borderStyle = '3px solid transparent';
+                          let textColor = 'var(--text-secondary)';
+                          let fontWeight = '500';
+
+                          if (isOpen && !isSelected) {
+                            bgStyle = 'linear-gradient(90deg, rgba(91,196,245,0.12), rgba(91,196,245,0.04))';
+                            borderStyle = '3px solid var(--accent-cyan)';
+                            textColor = 'var(--accent-cyan)';
+                            fontWeight = '700';
+                          } else if (isSelected) {
+                            bgStyle = 'linear-gradient(90deg, rgba(168,85,247,0.15), rgba(236,72,153,0.05))';
+                            borderStyle = '3px solid var(--accent-purple)';
+                            textColor = '#fff';
+                            fontWeight = '700';
+                          } else if (isPinned) {
+                            borderStyle = '3px solid var(--accent-pink)';
+                          }
+
+                          let iconColor = 'var(--text-muted)';
+                          if (isOpen)     iconColor = 'var(--accent-cyan)';
+                          if (isSelected) iconColor = 'var(--accent-purple)';
+                          if (isPinned && !isOpen && !isSelected) iconColor = 'var(--accent-pink)';
+
                           return (
                             <div
                               key={state.id}
@@ -1513,7 +1564,6 @@ const SyncHub = () => {
                                 setDraggedStateId('');
                               }}
                               onClick={(e) => {
-                                // if ctrl or shift are pressed, handle multi select. otherwise load
                                 if (e.ctrlKey || e.metaKey) {
                                   const newSet = new Set(selectedStateIds);
                                   if (newSet.has(state.id)) newSet.delete(state.id);
@@ -1526,13 +1576,14 @@ const SyncHub = () => {
                               style={{
                                 display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                                 padding: '8px 12px', paddingLeft: '32px',
-                                background: isSelected ? 'linear-gradient(90deg, rgba(168,85,247,0.15), rgba(236,72,153,0.05))' : 'transparent',
+                                background: bgStyle,
                                 borderRadius: '8px', cursor: 'pointer',
-                                borderLeft: isSelected ? '3px solid var(--accent-purple)' : (isPinned ? '3px solid var(--accent-pink)' : '3px solid transparent'),
-                                color: isSelected ? '#fff' : 'var(--text-secondary)',
-                                fontWeight: isSelected ? '700' : '500',
-                                marginBottom: '2px', transition: 'all 0.1s ease',
-                                opacity: draggedStateId === state.id ? 0.4 : 1
+                                borderLeft: borderStyle,
+                                color: textColor,
+                                fontWeight,
+                                marginBottom: '2px', transition: 'all 0.15s ease',
+                                opacity: draggedStateId === state.id ? 0.4 : 1,
+                                boxShadow: isOpen && !isSelected ? 'inset 0 0 0 1px rgba(91,196,245,0.15)' : 'none',
                               }}
                               className="nav-item-hover"
                             >
@@ -1551,13 +1602,30 @@ const SyncHub = () => {
                                   style={{ cursor: 'pointer', accentColor: 'var(--accent-purple)', flexShrink: 0 }}
                                 />
                                 <GripVertical size={12} className="vault-grip" style={{ cursor: 'grab' }} />
-                                <Database size={14} style={{ color: isSelected ? 'var(--accent-purple)' : (isPinned ? 'var(--accent-pink)' : 'var(--text-muted)') }} />
+                                <Database size={14} style={{ color: iconColor }} />
                                 <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
-                                  <span style={{ fontSize: '0.85rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', userSelect: 'none' }}>
-                                    {state.name}
-                                  </span>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '5px', minWidth: 0 }}>
+                                    <span style={{ fontSize: '0.85rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', userSelect: 'none' }}>
+                                      {state.name}
+                                    </span>
+                                    {isOpen && (
+                                      <span style={{
+                                        flexShrink: 0, fontSize: '0.55rem', fontWeight: 800,
+                                        letterSpacing: '0.8px', textTransform: 'uppercase',
+                                        background: 'rgba(91,196,245,0.18)',
+                                        color: 'var(--accent-cyan)',
+                                        border: '1px solid rgba(91,196,245,0.35)',
+                                        borderRadius: '4px', padding: '1px 5px',
+                                        lineHeight: '1.5',
+                                      }}>
+                                        OPEN
+                                      </span>
+                                    )}
+                                  </div>
                                   {state.testCaseCount > 0 && (
-                                    <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', lineHeight: '1' }}>{state.testCaseCount} cases</span>
+                                    <span style={{ fontSize: '0.65rem', color: isOpen ? 'rgba(91,196,245,0.6)' : 'var(--text-muted)', lineHeight: '1' }}>
+                                      {state.testCaseCount} cases
+                                    </span>
                                   )}
                                 </div>
                               </div>
@@ -1869,6 +1937,12 @@ const SyncHub = () => {
                           />
                           <button onClick={handleBulkAddTags} style={{ background: 'var(--accent-purple)', color: '#fff', border: 'none', padding: '0 10px', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.8rem' }}>+Tags</button>
                         </div>
+                        <button
+                          onClick={() => { setBulkNoteVal(''); setBulkNoteMode('replace'); setBulkNoteOpen(true); }}
+                          style={{ background: 'rgba(192,132,252,0.12)', border: '1px solid rgba(192,132,252,0.45)', color: '#c084fc', borderRadius: '8px', padding: '6px 12px', cursor: 'pointer', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '4px', fontWeight: 'bold' }}
+                        >
+                          <MessageSquare size={12} /> Note ({selectedCaseUids.length})
+                        </button>
                         <button onClick={handleDeleteSelected} data-cy="delete-selected-btn" style={{ background: 'rgba(244,63,94,0.1)', border: '1px solid var(--accent-red)', color: 'var(--accent-red)', borderRadius: '8px', padding: '6px 12px', cursor: 'pointer', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '4px', fontWeight: 'bold' }}>
                           <Trash2 size={12} /> Delete ({selectedCaseUids.length})
                         </button>
@@ -2278,6 +2352,129 @@ const SyncHub = () => {
         </div>
 
       </div>
+
+      {/* ── Bulk Note Modal ── */}
+      {bulkNoteOpen && createPortal(
+        <div
+          onClick={e => { if (e.target === e.currentTarget) setBulkNoteOpen(false); }}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000 }}
+        >
+          <div className="glass-panel" style={{ width: '480px', maxWidth: '94vw', padding: '28px', display: 'flex', flexDirection: 'column', gap: '20px', borderRadius: '16px', border: '1px solid rgba(192,132,252,0.35)', boxShadow: '0 24px 64px rgba(0,0,0,0.5), 0 0 0 1px rgba(192,132,252,0.12)' }}>
+
+            {/* Header */}
+            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '12px' }}>
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                  <MessageSquare size={18} style={{ color: '#c084fc' }} />
+                  <h3 style={{ fontSize: '1.05rem', fontWeight: 800, color: 'var(--text-primary)', margin: 0 }}>
+                    Bulk Add Note
+                  </h3>
+                </div>
+                <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', margin: 0 }}>
+                  Applying to <strong style={{ color: '#d8b4fe' }}>{selectedCaseUids.length}</strong> selected test case{selectedCaseUids.length !== 1 ? 's' : ''}
+                </p>
+              </div>
+              <button onClick={() => setBulkNoteOpen(false)} style={{ background: 'transparent', border: '1px solid var(--border-color)', borderRadius: '8px', color: 'var(--text-muted)', cursor: 'pointer', padding: '4px 8px', display: 'flex', alignItems: 'center' }}>
+                <X size={14} />
+              </button>
+            </div>
+
+            {/* Selected case IDs preview */}
+            {(() => {
+              const ids = selectedCaseUids.slice(0, 6);
+              const rest = selectedCaseUids.length - ids.length;
+              const cases = testCases.filter(tc => ids.includes(tc._uid));
+              return (
+                <div style={{ background: 'rgba(192,132,252,0.07)', border: '1px solid rgba(192,132,252,0.2)', borderRadius: '10px', padding: '10px 14px', display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                  {cases.map(tc => (
+                    <span key={tc._uid} style={{ fontSize: '0.7rem', background: 'rgba(192,132,252,0.15)', color: '#d8b4fe', border: '1px solid rgba(192,132,252,0.35)', borderRadius: '6px', padding: '2px 8px', fontFamily: 'var(--font-mono)', fontWeight: 600 }}>
+                      {tc.id ? `C${tc.id}` : tc.title?.slice(0, 18) || tc._uid.slice(0, 8)}
+                    </span>
+                  ))}
+                  {rest > 0 && (
+                    <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', padding: '2px 6px', alignSelf: 'center' }}>+{rest} more</span>
+                  )}
+                </div>
+              );
+            })()}
+
+            {/* Mode toggle */}
+            <div>
+              <div style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-muted)', letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: '8px' }}>Mode</div>
+              <div style={{ display: 'flex', borderRadius: '10px', overflow: 'hidden', border: '1px solid var(--border-color)', width: 'fit-content' }}>
+                {[['replace', 'Replace existing'], ['append', 'Append to existing']].map(([val, label]) => (
+                  <button
+                    key={val}
+                    onClick={() => setBulkNoteMode(val)}
+                    style={{
+                      padding: '7px 16px', border: 'none', cursor: 'pointer',
+                      fontSize: '0.78rem', fontWeight: 600,
+                      background: bulkNoteMode === val ? 'rgba(192,132,252,0.25)' : 'var(--bg-tertiary)',
+                      color: bulkNoteMode === val ? '#d8b4fe' : 'var(--text-muted)',
+                      borderRight: val === 'replace' ? '1px solid var(--border-color)' : 'none',
+                      transition: 'all 0.15s ease',
+                    }}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <p style={{ fontSize: '0.71rem', color: 'var(--text-muted)', marginTop: '6px', marginBottom: 0 }}>
+                {bulkNoteMode === 'replace'
+                  ? 'Overwrites any existing note on each selected case.'
+                  : 'Adds this text below each case\'s existing note (if any).'}
+              </p>
+            </div>
+
+            {/* Textarea */}
+            <div>
+              <div style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-muted)', letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: '8px' }}>Note</div>
+              <textarea
+                autoFocus
+                value={bulkNoteVal}
+                onChange={e => setBulkNoteVal(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter' && e.ctrlKey) handleBulkNoteApply(); if (e.key === 'Escape') setBulkNoteOpen(false); }}
+                placeholder={bulkNoteMode === 'replace' ? 'Enter note to set on all selected cases… (leave blank to clear)' : 'Enter text to append to each case…'}
+                rows={5}
+                style={{
+                  width: '100%', boxSizing: 'border-box',
+                  background: 'rgba(192,132,252,0.07)',
+                  border: '1px solid rgba(192,132,252,0.45)',
+                  borderRadius: '10px',
+                  color: 'var(--text-primary)',
+                  fontSize: '0.85rem', lineHeight: '1.6',
+                  padding: '12px 14px',
+                  resize: 'vertical',
+                  outline: 'none',
+                  fontFamily: 'var(--font-sans)',
+                  boxShadow: '0 0 0 3px rgba(192,132,252,0.1)',
+                }}
+              />
+              <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginTop: '5px', textAlign: 'right' }}>
+                Ctrl+Enter to apply
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+              <button
+                onClick={() => setBulkNoteOpen(false)}
+                style={{ background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)', color: 'var(--text-secondary)', borderRadius: '8px', padding: '9px 20px', cursor: 'pointer', fontSize: '0.84rem', fontWeight: 600 }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleBulkNoteApply}
+                style={{ background: 'linear-gradient(135deg, #a855f7, #c084fc)', border: 'none', color: '#fff', borderRadius: '8px', padding: '9px 24px', cursor: 'pointer', fontSize: '0.84rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '6px', boxShadow: '0 4px 16px rgba(168,85,247,0.4)' }}
+              >
+                <MessageSquare size={14} /> Apply to {selectedCaseUids.length} case{selectedCaseUids.length !== 1 ? 's' : ''}
+              </button>
+            </div>
+
+          </div>
+        </div>,
+        document.body
+      )}
 
       {/* Manual Test Case Modal */}
       {manualModalOpen && createPortal(

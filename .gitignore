@@ -13,7 +13,7 @@ data/quicklaunch/
 data/templates/
 data/screenshots/
 data/calendar.ics
-
+data/local_storage.json
 # Server Logs
 *.log
 
