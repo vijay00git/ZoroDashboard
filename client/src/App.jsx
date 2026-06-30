@@ -13,9 +13,12 @@ import Status from './pages/Status';
 import SyncHub from './pages/SyncHub';
 import Timesheet from './pages/Timesheet';
 import CSVOrganizer from './pages/CSVOrganizer';
+import SSBucket from './pages/SSBucket';
 import PomodoroTimer from './components/PomodoroTimer';
+import FocusMode from './components/FocusMode';
 import GlobalClock from './components/GlobalClock';
 import { GlobalAlert } from './components/GlobalAlert';
+import { PomodoroProvider } from './contexts/PomodoroContext';
 
 const PAGE_TITLES = {
   '/':             'Dashboard',
@@ -29,6 +32,7 @@ const PAGE_TITLES = {
   '/goal':         'Learn Skills',
   '/resume':         'Resume Up',
   '/csv-organizer':  'CSV Organizer',
+  '/ss-bucket':      'SS Bucket',
   '/settings':       'Settings',
 };
 
@@ -88,8 +92,10 @@ function App() {
   };
 
   return (
+    <PomodoroProvider>
     <div className="app-shell">
       <GlobalAlert />
+      <FocusMode />
       <Navbar />
 
       <div className="app-main">
@@ -129,12 +135,14 @@ function App() {
               <Route path="/goal"         element={<LearnSkills />} />
               <Route path="/resume"         element={<ResumeUp />} />
               <Route path="/csv-organizer" element={<CSVOrganizer />} />
+              <Route path="/ss-bucket"    element={<SSBucket />} />
               <Route path="/settings"      element={<Settings />} />
             </Routes>
           </div>
         </main>
       </div>
     </div>
+    </PomodoroProvider>
   );
 }
 

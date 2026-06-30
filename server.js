@@ -21,7 +21,8 @@ const NOTES_DIR = path.join(__dirname, 'data', 'notes');
 const TS_DIR = path.join(__dirname, 'data', 'timesheets');
 const QL_DIR = path.join(__dirname, 'data', 'quicklaunch');
 const CSV_DIR = path.join(__dirname, 'data', 'csv-organizer');
-[DATA_DIR, NOTES_DIR, TS_DIR, QL_DIR, CSV_DIR].forEach(dir => {
+const SS_DIR  = path.join(__dirname, 'data', 'screenshots');
+[DATA_DIR, NOTES_DIR, TS_DIR, QL_DIR, CSV_DIR, SS_DIR].forEach(dir => {
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 });
 
@@ -834,6 +835,71 @@ app.get('/api/calendar/:year/:month', async (req, res) => {
         res.status(200).json(output);
     } catch (e) {
         console.error("Calendar API error:", e);
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// ════════════════════════════════════════════
+// SS BUCKET — SCREENSHOTS
+// ════════════════════════════════════════════
+
+const SS_META = path.join(SS_DIR, 'meta.json');
+
+// Read groups metadata (no image data — filenames only)
+app.get('/api/screenshots/meta', (req, res) => {
+    try {
+        if (!fs.existsSync(SS_META)) return res.json({ groups: [] });
+        res.json(JSON.parse(fs.readFileSync(SS_META, 'utf-8')));
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// Save groups metadata
+app.post('/api/screenshots/meta', (req, res) => {
+    try {
+        const { groups } = req.body;
+        if (!Array.isArray(groups)) return res.status(400).json({ error: 'groups must be an array' });
+        fs.writeFileSync(SS_META, JSON.stringify({ groups }, null, 2));
+        res.json({ success: true });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// Upload a screenshot image
+const ssUpload = multer({ dest: path.join(__dirname, 'uploads') });
+app.post('/api/screenshots/upload', ssUpload.single('image'), (req, res) => {
+    if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+    const id = (req.body.id || `ss_${Date.now()}`).replace(/[^a-z0-9_-]/gi, '_');
+    const ext = (req.file.mimetype.split('/')[1] || 'png').replace('jpeg', 'jpg');
+    const filename = `${id}.${ext}`;
+    const dest = path.join(SS_DIR, filename);
+    try {
+        fs.renameSync(req.file.path, dest);
+        res.json({ id, filename });
+    } catch (e) {
+        if (fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// Serve a screenshot image
+app.get('/api/screenshots/img/:filename', (req, res) => {
+    const filename = path.basename(req.params.filename); // prevents traversal
+    const fp = path.join(SS_DIR, filename);
+    if (!fs.existsSync(fp)) return res.status(404).json({ error: 'Not found' });
+    res.sendFile(fp);
+});
+
+// Delete a screenshot image
+app.delete('/api/screenshots/img/:filename', (req, res) => {
+    const filename = path.basename(req.params.filename);
+    const fp = path.join(SS_DIR, filename);
+    try {
+        if (fs.existsSync(fp)) fs.unlinkSync(fp);
+        res.json({ success: true });
+    } catch (e) {
         res.status(500).json({ error: e.message });
     }
 });

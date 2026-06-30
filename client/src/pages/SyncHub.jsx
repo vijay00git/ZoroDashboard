@@ -23,7 +23,9 @@ import {
   ChevronDown,
   ChevronRight,
   FolderOpen,
-  GripVertical
+  GripVertical,
+  Bookmark,
+  X
 } from 'lucide-react';
 import { showAlert, showConfirm, showPrompt } from '../utils/Alerts';
 
@@ -32,6 +34,9 @@ const SyncHub = () => {
   const [runId, setRunId] = useState('');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [savedRunIds, setSavedRunIds] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('tr-saved-run-ids') || '[]'); } catch { return []; }
+  });
 
   // States list from API
   const [states, setStates] = useState([]);
@@ -129,6 +134,10 @@ const SyncHub = () => {
   // Duplicates Modal
   const [duplicatesModalOpen, setDuplicatesModalOpen] = useState(false);
 
+  // Inline note editing
+  const [editingNoteUid, setEditingNoteUid] = useState(null);
+  const [editingNoteVal, setEditingNoteVal] = useState('');
+
   // Sync Log
   const [reportModalOpen, setReportModalOpen] = useState(false);
   const [syncLogs, setSyncLogs] = useState([]);
@@ -206,6 +215,32 @@ const SyncHub = () => {
     localStorage.setItem('tr-username', username);
     localStorage.setItem('tr-password', password);
     addLog('API credentials saved locally.', 'success');
+  };
+
+  const handleSaveRunId = async () => {
+    const trimmed = runId.trim();
+    if (!trimmed) return;
+    if (savedRunIds.some(r => r.id === trimmed)) {
+      addLog(`Run ID ${trimmed} is already saved.`, 'info');
+      return;
+    }
+    const name = await showPrompt(`Enter a name for Run ID ${trimmed}:`, `Run ${trimmed}`);
+    if (name === null) return;
+    const updated = [...savedRunIds, { id: trimmed, label: name.trim() || trimmed }];
+    setSavedRunIds(updated);
+    localStorage.setItem('tr-saved-run-ids', JSON.stringify(updated));
+    addLog(`Saved Run ID ${trimmed} as "${name.trim() || trimmed}".`, 'success');
+  };
+
+  const handleRemoveSavedRunId = (id) => {
+    const updated = savedRunIds.filter(r => r.id !== id);
+    setSavedRunIds(updated);
+    localStorage.setItem('tr-saved-run-ids', JSON.stringify(updated));
+  };
+
+  const handleSelectSavedRunId = (id) => {
+    setRunId(id);
+    localStorage.setItem('tr-run-id', id);
   };
 
   const addLog = (msg, type = 'info') => {
@@ -983,9 +1018,11 @@ const SyncHub = () => {
             <h3 style={{ fontSize: '1rem', fontWeight: 'bold', marginBottom: '12px' }}>TestRail Credentials</h3>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-              <div style={{ display: 'flex', gap: '10px' }}>
-                <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                  <label style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: '600' }}>Run ID</label>
+
+              {/* Run ID row with bookmark save button */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                <label style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: '600' }}>Run ID</label>
+                <div style={{ display: 'flex', gap: '6px' }}>
                   <input
                     type="text"
                     data-cy="run-id-input"
@@ -993,7 +1030,7 @@ const SyncHub = () => {
                     onChange={(e) => setRunId(e.target.value)}
                     placeholder="e.g. 8181"
                     style={{
-                      width: '100%', minWidth: 0,
+                      flex: 1, minWidth: 0,
                       background: 'var(--bg-tertiary)',
                       border: '1px solid var(--border-color)',
                       color: 'var(--text-primary)',
@@ -1004,8 +1041,80 @@ const SyncHub = () => {
                       boxSizing: 'border-box'
                     }}
                   />
+                  <button
+                    onClick={handleSaveRunId}
+                    title="Save this Run ID"
+                    style={{
+                      background: 'var(--bg-tertiary)',
+                      border: '1px solid var(--border-color)',
+                      color: 'var(--accent-purple)',
+                      borderRadius: '8px',
+                      padding: '0 10px',
+                      cursor: 'pointer',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      flexShrink: 0,
+                      transition: 'background 0.15s'
+                    }}
+                    onMouseOver={(e) => e.currentTarget.style.background = 'rgba(168,85,247,0.15)'}
+                    onMouseOut={(e) => e.currentTarget.style.background = 'var(--bg-tertiary)'}
+                  >
+                    <Bookmark size={14} />
+                  </button>
                 </div>
+              </div>
 
+              {/* Saved Run IDs chips */}
+              {savedRunIds.length > 0 && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  <label style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontWeight: '600', letterSpacing: '0.4px' }}>SAVED RUN IDs</label>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                    {savedRunIds.map(r => {
+                      const isActive = runId === r.id;
+                      return (
+                        <div
+                          key={r.id}
+                          style={{
+                            display: 'flex', alignItems: 'center', gap: '4px',
+                            background: isActive ? 'rgba(168,85,247,0.2)' : 'var(--bg-tertiary)',
+                            border: `1px solid ${isActive ? 'var(--accent-purple)' : 'var(--border-color)'}`,
+                            borderRadius: '20px',
+                            padding: '3px 8px 3px 10px',
+                            fontSize: '0.75rem',
+                            color: isActive ? 'var(--accent-purple)' : 'var(--text-secondary)',
+                            fontWeight: isActive ? '700' : '500',
+                            transition: 'all 0.15s'
+                          }}
+                        >
+                          <span
+                            onClick={() => handleSelectSavedRunId(r.id)}
+                            style={{ cursor: 'pointer', userSelect: 'none' }}
+                            title={`Use Run ID ${r.id}`}
+                          >
+                            {r.label} <span style={{ opacity: 0.6, fontSize: '0.7rem' }}>#{r.id}</span>
+                          </span>
+                          <button
+                            onClick={() => handleRemoveSavedRunId(r.id)}
+                            title="Remove saved Run ID"
+                            style={{
+                              background: 'transparent', border: 'none',
+                              color: 'var(--text-muted)', cursor: 'pointer',
+                              display: 'flex', alignItems: 'center', justifyContent: 'center',
+                              padding: '0', lineHeight: 1,
+                              transition: 'color 0.15s'
+                            }}
+                            onMouseOver={(e) => e.currentTarget.style.color = '#f43f5e'}
+                            onMouseOut={(e) => e.currentTarget.style.color = 'var(--text-muted)'}
+                          >
+                            <X size={11} />
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              <div style={{ display: 'flex', gap: '10px' }}>
                 <div style={{ flex: 1.5, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '4px' }}>
                   <label style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: '600' }}>Username</label>
                   <input
@@ -1065,6 +1174,7 @@ const SyncHub = () => {
                   marginTop: '4px'
                 }}
               >
+                Save Credentials
               </button>
             </div>
           </div>
@@ -1835,6 +1945,7 @@ const SyncHub = () => {
                           { key: 'tags',       label: 'Tags',    width: '120px' },
                           { key: 'status',     label: 'Status',  width: '100px' },
                           { key: 'mapAction',  label: 'Mapping', width: '100px' },
+                          { key: 'notes',      label: 'Notes',   width: '180px' },
                           { key: 'syncStatus', label: 'Sync',    width: '90px' },
                         ].map(col => (
                           <th key={col.key} onClick={() => handleSort(col.key)} style={{ padding: '10px', textAlign: 'left', width: col.width || undefined, cursor: 'pointer', userSelect: 'none', whiteSpace: 'nowrap' }}>
@@ -1939,6 +2050,81 @@ const SyncHub = () => {
                               <option value="Don't Map">Ignore</option>
                             </select>
                           </td>
+                          {/* Notes — click-to-edit inline */}
+                          <td style={{ padding: '6px 8px', maxWidth: '200px' }}>
+                            {editingNoteUid === tc._uid ? (
+                              <textarea
+                                autoFocus
+                                value={editingNoteVal}
+                                onChange={e => setEditingNoteVal(e.target.value)}
+                                onBlur={() => {
+                                  setTestCases(prev => prev.map(t =>
+                                    t._uid === tc._uid ? { ...t, notes: editingNoteVal } : t
+                                  ));
+                                  setEditingNoteUid(null);
+                                }}
+                                onKeyDown={e => {
+                                  if (e.key === 'Escape') setEditingNoteUid(null);
+                                  if (e.key === 'Enter' && e.ctrlKey) {
+                                    setTestCases(prev => prev.map(t =>
+                                      t._uid === tc._uid ? { ...t, notes: editingNoteVal } : t
+                                    ));
+                                    setEditingNoteUid(null);
+                                  }
+                                }}
+                                placeholder="Add a note… (Ctrl+Enter to save, Esc to cancel)"
+                                style={{
+                                  width: '100%', minHeight: '64px', maxHeight: '140px',
+                                  resize: 'vertical', boxSizing: 'border-box',
+                                  background: 'var(--bg-primary)',
+                                  border: '1px solid var(--accent-purple)',
+                                  borderRadius: '6px',
+                                  color: 'var(--text-primary)',
+                                  fontSize: '0.75rem', lineHeight: '1.45',
+                                  padding: '6px 8px', outline: 'none',
+                                  fontFamily: 'var(--font-sans)',
+                                  boxShadow: '0 0 0 3px rgba(168,85,247,0.12)'
+                                }}
+                              />
+                            ) : (
+                              <div
+                                onClick={() => {
+                                  setEditingNoteUid(tc._uid);
+                                  setEditingNoteVal(tc.notes || '');
+                                }}
+                                title={tc.notes ? tc.notes : 'Click to add note'}
+                                style={{
+                                  cursor: 'pointer', fontSize: '0.75rem', lineHeight: '1.45',
+                                  color: tc.notes ? 'var(--text-secondary)' : 'var(--text-muted)',
+                                  minHeight: '24px', display: 'flex', alignItems: 'flex-start',
+                                  padding: '4px 6px', borderRadius: '5px',
+                                  border: '1px solid transparent',
+                                  transition: 'background 0.12s, border-color 0.12s',
+                                }}
+                                onMouseEnter={e => {
+                                  e.currentTarget.style.background = 'var(--bg-tertiary)';
+                                  e.currentTarget.style.borderColor = 'var(--border-color)';
+                                }}
+                                onMouseLeave={e => {
+                                  e.currentTarget.style.background = 'transparent';
+                                  e.currentTarget.style.borderColor = 'transparent';
+                                }}
+                              >
+                                {tc.notes ? (
+                                  <span style={{
+                                    display: '-webkit-box', WebkitLineClamp: 2,
+                                    WebkitBoxOrient: 'vertical', overflow: 'hidden',
+                                    wordBreak: 'break-word'
+                                  }}>
+                                    {tc.notes}
+                                  </span>
+                                ) : (
+                                  <span style={{ opacity: 0.38, fontStyle: 'italic' }}>Add note…</span>
+                                )}
+                              </div>
+                            )}
+                          </td>
+
                           <td style={{
                             padding: '10px',
                             color: tc.syncStatus === 'Synced' ? 'var(--accent-green)' : 'var(--text-muted)',

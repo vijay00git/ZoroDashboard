@@ -7,7 +7,7 @@ import {
   Rocket
 } from 'lucide-react';
 import { useToast } from '../contexts/ToastContext';
-import PomodoroTimer from '../components/PomodoroTimer';
+import { usePomo } from '../contexts/PomodoroContext';
 import { getAIConfig } from '../utils/ai';
 
 /* ─────────────────────────────────────────────────────────────
@@ -77,6 +77,8 @@ const Dashboard = () => {
   const [activeGoalName, setActiveGoalName] = useState('Learning Goals');
   const [currentTime, setCurrentTime] = useState(new Date());
 
+  const { timeLeft: pomoTime, isActive: pomoActive, sessions: pomoSessions, setIsFocusOpen, MODES: POMO_MODES, mode: pomoMode } = usePomo();
+
   /* ── Widget order (drag-to-reorder) ── */
   const [widgetOrder, setWidgetOrder] = useState(() => {
     const saved = localStorage.getItem('tr-dash-widgets');
@@ -94,6 +96,7 @@ const Dashboard = () => {
     return [
       { id: 'profile_widget',   enabled: true },
       { id: 'tasks',            enabled: true },
+      { id: 'pomodoro_widget',  enabled: true },
       { id: 'learning',         enabled: true },
       { id: 'matrix',           enabled: true },
       { id: 'scratchpad',       enabled: true },
@@ -359,7 +362,7 @@ const Dashboard = () => {
 
     /* ── Career Profile ── */
     profile_widget: (
-      <div className="glass-panel wgt">
+      <div className="glass-panel wgt wgt--pink">
         <WgtHeader icon={User} iconColor="var(--accent-purple)" title="Career Profile"
           badge={`Lvl ${Math.floor(activeXP / 100)}`} badgeVariant="amber" />
         <div style={{ display:'flex', alignItems:'center', gap:'14px', background:'var(--bg-tertiary)', padding:'14px', borderRadius:'var(--radius-md)', border:'1px solid var(--border-color)' }}>
@@ -394,17 +397,40 @@ const Dashboard = () => {
       </div>
     ),
 
-    /* ── Focus Timer (hidden from default, kept for old saved configs) ── */
-    pomodoro_widget: (
-      <div className="glass-panel wgt" style={{ alignItems:'center', justifyContent:'center' }}>
-        <WgtHeader icon={Clock} iconColor="var(--accent-pink)" title="Focus Timer" />
-        <div style={{ padding:'16px 0' }}><PomodoroTimer /></div>
-      </div>
-    ),
+    /* ── Focus Timer ── */
+    pomodoro_widget: (() => {
+      const pomoMins  = String(Math.floor(pomoTime / 60)).padStart(2, '0');
+      const pomoSecs  = String(pomoTime % 60).padStart(2, '0');
+      const mColor    = POMO_MODES[pomoMode]?.color || 'var(--accent-purple)';
+      const totalS    = POMO_MODES[pomoMode]?.mins * 60 || 1500;
+      const R = 34, C = 2 * Math.PI * R;
+      const arc = (pomoTime / totalS) * C;
+      return (
+        <div className="glass-panel wgt wgt--purple" style={{ alignItems:'center', textAlign:'center' }}>
+          <WgtHeader icon={Clock} iconColor={pomoActive ? mColor : 'var(--text-muted)'} title="Focus Timer"
+            badge={pomoActive ? 'Active' : POMO_MODES[pomoMode]?.label} badgeVariant={pomoActive ? 'cyan' : null} />
+          <div style={{ display:'flex', justifyContent:'center', margin:'4px 0' }}>
+            <svg width="90" height="90" viewBox="0 0 90 90">
+              <circle cx="45" cy="45" r={R} fill="none" stroke="var(--bg-tertiary)" strokeWidth="9" />
+              <circle cx="45" cy="45" r={R} fill="none" stroke={mColor} strokeWidth="9"
+                strokeLinecap="round" strokeDasharray={`${arc} ${C}`}
+                transform="rotate(-90 45 45)"
+                style={{ transition:'stroke-dasharray 0.95s linear', filter: pomoActive ? `drop-shadow(0 0 6px ${mColor})` : 'none' }} />
+              <text x="45" y="41" textAnchor="middle" fill="var(--text-primary)" fontSize="14" fontWeight="800" fontFamily="Space Mono">{pomoMins}:{pomoSecs}</text>
+              <text x="45" y="55" textAnchor="middle" fill="var(--text-muted)" fontSize="7" fontFamily="Space Grotesk">{pomoSessions} done</text>
+            </svg>
+          </div>
+          <button onClick={() => setIsFocusOpen(true)} className="glow-btn"
+            style={{ width:'100%', justifyContent:'center', background: `${mColor}18`, color: mColor, border:`1px solid ${mColor}35`, boxShadow:'none' }}>
+            <Clock size={12} /> {pomoActive ? 'Open Focus View' : 'Start Focus'}
+          </button>
+        </div>
+      );
+    })(),
 
     /* ── Active Learning ── */
     learning: (
-      <div className="glass-panel wgt">
+      <div className="glass-panel wgt wgt--purple">
         <WgtHeader icon={Layers} iconColor="var(--accent-purple)" title="Active Learning"
           right={<span style={{ fontSize:'0.68rem', color:'var(--accent-purple)', fontWeight:'700' }}>{progressPct}%</span>} />
         <p className="wgt-subtitle">{activeGoalName}</p>
@@ -429,7 +455,7 @@ const Dashboard = () => {
 
     /* ── Upcoming Events ── */
     events: (
-      <div className="glass-panel wgt">
+      <div className="glass-panel wgt wgt--orange">
         <WgtHeader icon={Calendar} iconColor="var(--accent-orange)" title="Upcoming Events"
           badge={upcomingEvents.length > 0 ? upcomingEvents.length : null} />
         <div style={{ display:'flex', flexDirection:'column', gap:'7px' }}>
@@ -457,7 +483,7 @@ const Dashboard = () => {
 
     /* ── Scratchpad ── */
     scratchpad: (
-      <div className="glass-panel wgt">
+      <div className="glass-panel wgt wgt--green">
         <WgtHeader icon={ClipboardList} iconColor="var(--accent-green)" title="Scratchpad"
           right={<span className="wgt-autosave">Autosaves</span>} />
         <textarea
@@ -471,7 +497,7 @@ const Dashboard = () => {
 
     /* ── Status Checklist ── */
     tasks: (
-      <div className="glass-panel wgt">
+      <div className="glass-panel wgt wgt--cyan">
         <WgtHeader icon={CheckCircle} iconColor="var(--accent-cyan)" title="Status Checklist"
           badge={`${tasks.filter(t => !t.completed).length} pending`} badgeVariant="cyan" />
         <div className="task-list">
@@ -507,7 +533,7 @@ const Dashboard = () => {
 
     /* ── Daily Status Draft ── */
     draft: (
-      <div className="glass-panel wgt">
+      <div className="glass-panel wgt wgt--yellow">
         <WgtHeader icon={FileText} iconColor="var(--accent-yellow)" title="Daily Status Draft"
           right={<span className="wgt-autosave">Autosaves</span>} />
         <textarea
@@ -524,26 +550,39 @@ const Dashboard = () => {
 
     /* ── Hydration ── */
     hydration: (
-      <div className="glass-panel wgt">
+      <div className="glass-panel wgt wgt--cyan">
         <WgtHeader icon={Droplet} iconColor="var(--accent-cyan)" title="Hydration"
           badge={`${waterPct}%`} badgeVariant="cyan" />
-        <div style={{ display:'flex', alignItems:'flex-end', justifyContent:'space-between' }}>
-          <span style={{ fontFamily:'var(--font-mono)', fontSize:'1.4rem', fontWeight:'700', color:'var(--accent-cyan)' }}>
-            {stats.water} <span style={{ fontSize:'0.7rem', color:'var(--text-muted)', fontWeight:'600' }}>ml</span>
-          </span>
-          <span style={{ fontSize:'0.68rem', color:'var(--text-muted)', fontWeight:'600' }}>Goal: {WATER_GOAL} ml</span>
+        <div style={{ display:'flex', alignItems:'center', gap:'16px' }}>
+          <svg width="76" height="76" viewBox="0 0 76 76" style={{ flexShrink:0 }}>
+            <circle cx="38" cy="38" r="28" fill="none" stroke="var(--bg-tertiary)" strokeWidth="9" />
+            <circle cx="38" cy="38" r="28" fill="none" stroke="var(--accent-cyan)" strokeWidth="9"
+              strokeDasharray={`${(waterPct/100)*175.9} 175.9`}
+              strokeLinecap="round" transform="rotate(-90 38 38)"
+              style={{ transition:'stroke-dasharray 0.5s ease' }} />
+            <text x="38" y="34" textAnchor="middle" fill="var(--text-primary)" fontSize="12" fontWeight="800" fontFamily="monospace">{waterPct}%</text>
+            <text x="38" y="48" textAnchor="middle" fill="var(--text-muted)" fontSize="6.5" fontFamily="monospace" letterSpacing="0.5">HYDRATED</text>
+          </svg>
+          <div style={{ flex:1, display:'flex', flexDirection:'column', gap:'10px' }}>
+            <div>
+              <span style={{ fontFamily:'var(--font-mono)', fontSize:'1.6rem', fontWeight:'800', color:'var(--accent-cyan)', lineHeight:1 }}>
+                {stats.water}
+              </span>
+              <span style={{ fontSize:'0.72rem', color:'var(--text-muted)', fontWeight:600, marginLeft:'4px' }}>ml</span>
+              <div style={{ fontSize:'0.62rem', color:'var(--text-muted)', marginTop:'3px', fontWeight:600 }}>Goal: {WATER_GOAL} ml</div>
+            </div>
+            <button onClick={handleAddWater} className="glow-btn"
+              style={{ width:'100%', justifyContent:'center', background:'rgba(91,196,245,0.12)', color:'var(--accent-cyan)', border:'1px solid rgba(91,196,245,0.25)', boxShadow:'none' }}>
+              <Plus size={13} /> +250 ml
+            </button>
+          </div>
         </div>
-        <div className="water-meter"><div className="water-fill" style={{ width:`${waterPct}%` }} /></div>
-        <button onClick={handleAddWater} className="glow-btn"
-          style={{ width:'100%', justifyContent:'center', background:'rgba(91,196,245,0.12)', color:'var(--accent-cyan)', border:'1px solid rgba(91,196,245,0.25)', boxShadow:'none' }}>
-          <Plus size={13} /> Add 250 ml
-        </button>
       </div>
     ),
 
     /* ── Timesheet ── */
     timesheet_widget: (
-      <div className="glass-panel wgt">
+      <div className="glass-panel wgt wgt--green">
         <WgtHeader icon={Clock} iconColor={isClockedIn ? 'var(--accent-green)' : 'var(--text-muted)'} title="Timesheet"
           badge={`${stats.days} days`} />
         <div className="punch-status">
@@ -565,7 +604,7 @@ const Dashboard = () => {
 
     /* ── Pinned Matrix ── */
     matrix: (
-      <div className="glass-panel wgt">
+      <div className="glass-panel wgt wgt--purple">
         <WgtHeader icon={Database} iconColor="var(--accent-purple)" title="Pinned Matrix"
           badge={pinnedMatrix ? `${pinnedMatrix.testCaseCount || 0} cases` : null} />
         {pinnedMatrix ? (
@@ -573,26 +612,36 @@ const Dashboard = () => {
             <p style={{ fontSize:'0.8rem', fontWeight:'600', color:'var(--text-primary)', wordBreak:'break-all', marginTop:'-6px' }}>
               {pinnedMatrix.name}
             </p>
-            <div className="matrix-stats">
-              <div className="matrix-stat" style={{ background:'rgba(45,232,134,0.08)', borderColor:'rgba(45,232,134,0.15)' }}>
-                <div className="matrix-stat-val" style={{ color:'var(--accent-green)' }}>{passed}</div>
-                <div className="matrix-stat-label">Passed</div>
+            <div style={{ display:'flex', alignItems:'center', gap:'16px' }}>
+              <svg width="84" height="84" viewBox="0 0 84 84" style={{ flexShrink:0 }}>
+                <circle cx="42" cy="42" r="28" fill="none" stroke="var(--bg-tertiary)" strokeWidth="10" />
+                {total > 0 && (
+                  <circle cx="42" cy="42" r="28" fill="none" stroke="var(--accent-green)" strokeWidth="10"
+                    strokeDasharray={`${(passed/total)*175.9} 175.9`}
+                    transform="rotate(-90 42 42)" />
+                )}
+                {total > 0 && failed > 0 && (
+                  <circle cx="42" cy="42" r="28" fill="none" stroke="var(--accent-red)" strokeWidth="10"
+                    strokeDasharray={`${(failed/total)*175.9} 175.9`}
+                    transform={`rotate(${-90 + (passed/total)*360} 42 42)`} />
+                )}
+                <text x="42" y="38" textAnchor="middle" fill="var(--text-primary)" fontSize="13" fontWeight="800" fontFamily="monospace">{passPct}%</text>
+                <text x="42" y="52" textAnchor="middle" fill="var(--text-muted)" fontSize="7" fontFamily="monospace" letterSpacing="0.5">PASS</text>
+              </svg>
+              <div className="matrix-stats" style={{ flex:1 }}>
+                <div className="matrix-stat" style={{ background:'rgba(45,232,134,0.08)', borderColor:'rgba(45,232,134,0.15)' }}>
+                  <div className="matrix-stat-val" style={{ color:'var(--accent-green)' }}>{passed}</div>
+                  <div className="matrix-stat-label">Passed</div>
+                </div>
+                <div className="matrix-stat" style={{ background:'rgba(240,80,80,0.08)', borderColor:'rgba(240,80,80,0.15)' }}>
+                  <div className="matrix-stat-val" style={{ color:'var(--accent-red)' }}>{failed}</div>
+                  <div className="matrix-stat-label">Failed</div>
+                </div>
+                <div className="matrix-stat" style={{ background:'rgba(245,200,66,0.08)', borderColor:'rgba(245,200,66,0.15)' }}>
+                  <div className="matrix-stat-val" style={{ color:'var(--accent-yellow)' }}>{untested}</div>
+                  <div className="matrix-stat-label">Untested</div>
+                </div>
               </div>
-              <div className="matrix-stat" style={{ background:'rgba(240,80,80,0.08)', borderColor:'rgba(240,80,80,0.15)' }}>
-                <div className="matrix-stat-val" style={{ color:'var(--accent-red)' }}>{failed}</div>
-                <div className="matrix-stat-label">Failed</div>
-              </div>
-              <div className="matrix-stat" style={{ background:'rgba(245,200,66,0.08)', borderColor:'rgba(245,200,66,0.15)' }}>
-                <div className="matrix-stat-val" style={{ color:'var(--accent-yellow)' }}>{untested}</div>
-                <div className="matrix-stat-label">Untested</div>
-              </div>
-            </div>
-            <div>
-              <div style={{ display:'flex', justifyContent:'space-between', marginBottom:'6px' }}>
-                <span style={{ fontSize:'0.62rem', fontWeight:'700', color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'1px' }}>Pass rate</span>
-                <span style={{ fontSize:'0.72rem', fontWeight:'700', fontFamily:'var(--font-mono)', color:'var(--accent-green)' }}>{passPct}%</span>
-              </div>
-              <div className="prog-bar"><div className="prog-fill" style={{ width:`${passPct}%`, background:'linear-gradient(90deg, var(--accent-green), rgba(45,232,134,0.5))' }} /></div>
             </div>
             <button onClick={() => navigate('/synchub')} className="glow-btn"
               style={{ width:'100%', justifyContent:'center', background:'var(--bg-tertiary)', border:'1px solid var(--border-color)', color:'var(--text-secondary)', boxShadow:'none' }}>
@@ -614,7 +663,7 @@ const Dashboard = () => {
 
     /* ── Frequently Visited ── */
     links: (
-      <div className="glass-panel wgt">
+      <div className="glass-panel wgt wgt--pink">
         <WgtHeader icon={Compass} iconColor="var(--accent-pink)" title="Frequently Visited" />
         <div style={{ display:'flex', flexDirection:'column', gap:'7px' }}>
           {quickLinks.length === 0
@@ -638,7 +687,7 @@ const Dashboard = () => {
 
     /* ── World Clocks ── */
     clocks: (
-      <div className="glass-panel wgt">
+      <div className="glass-panel wgt wgt--purple">
         <WgtHeader icon={Globe} iconColor="var(--accent-purple)" title="Global Sync" />
         <div className="world-clocks-grid">
           {[
@@ -671,51 +720,34 @@ const Dashboard = () => {
     <div style={{ display:'flex', flexDirection:'column', gap:'20px' }}>
 
       {/* ── Hero ── */}
-      <div className="glass-panel" style={{ overflow:'hidden' }}>
+      <div className="glass-panel dash-hero">
 
-        {/* Top: greeting + directive */}
-        <div className="dash-hero-body">
-          <div className="dash-greeting">
-            <div className="dash-greeting-eyebrow">
-              <Terminal size={11} strokeWidth={2.5} />
-              <span>Command Center · Active</span>
-            </div>
-            <h1 className="dash-greeting-h1">
-              {greeting},<br />
-              <span className="gradient-text">{displayName}</span>
-            </h1>
+        {/* Left: live clock + greeting */}
+        <div className="dash-clock-block">
+          <div className="dash-clock-eyebrow">
+            <Terminal size={10} strokeWidth={2.5} />
+            <span>Command Center · Active</span>
           </div>
-
-          <div className="dash-directive">
-            <div className="dash-directive-eyebrow">
-              <Sparkles size={11} strokeWidth={2.5} />
-              <span>Daily Directive</span>
-            </div>
-            <p className="dash-directive-text">
-              {quoteLoading ? 'Thinking…' : `"${quote}"`}
-            </p>
+          <div className="dash-clock-time">
+            {currentTime.toLocaleTimeString('en-US', { hour:'2-digit', minute:'2-digit', hour12:false })}
           </div>
+          <div className="dash-clock-date">
+            {currentTime.toLocaleDateString('en-US', { weekday:'long', month:'long', day:'numeric' })}
+          </div>
+          <h2 className="dash-clock-name">
+            {greeting}, <span className="gradient-text">{displayName}</span>
+          </h2>
         </div>
 
-        {/* Bottom strip: stats + quick nav */}
-        <div className="dash-hero-foot">
-          <div className="dash-stats-row">
-            {[
-              { val: stats.tasks,        label: 'Pending',    color: 'var(--accent-cyan)' },
-              { val: `${stats.water}ml`, label: 'Hydrated',   color: 'var(--accent-cyan)' },
-              { val: stats.days,         label: 'Days worked', color: 'var(--accent-purple)' },
-              { val: stats.syncs,        label: 'Quick links', color: 'var(--accent-pink)' },
-            ].map(s => (
-              <div className="dash-stat" key={s.label}>
-                <div className="dash-stat-dot" style={{ background: s.color }} />
-                <div className="dash-stat-inner">
-                  <span className="dash-stat-val">{s.val}</span>
-                  <span className="dash-stat-label">{s.label}</span>
-                </div>
-              </div>
-            ))}
+        {/* Right: daily directive + quick nav */}
+        <div className="dash-quote-block">
+          <div className="dash-quote-eyebrow">
+            <Sparkles size={10} strokeWidth={2.5} />
+            <span>Daily Directive</span>
           </div>
-
+          <p className="dash-quote-text">
+            {quoteLoading ? 'Thinking…' : `"${quote}"`}
+          </p>
           <div className="dash-quick-nav">
             {QUICK_NAV.map(({ label, icon: Icon, href }) => (
               <button key={href} className="dash-nav-btn" onClick={() => navigate(href)}>
@@ -727,9 +759,49 @@ const Dashboard = () => {
         </div>
       </div>
 
+      {/* ── KPI Row ── */}
+      <div className="dash-kpi-row">
+        {[
+          {
+            val: stats.tasks, sub: 'Pending tasks', label: 'Tasks',
+            color: 'var(--accent-cyan)', bg: 'rgba(91,196,245,0.12)',
+            glow: 'rgba(91,196,245,0.07)', icon: CheckSquare,
+          },
+          {
+            val: stats.water, sub: `ml · ${waterPct}% of goal`, label: 'Hydration',
+            color: '#5ba8f5', bg: 'rgba(91,168,245,0.12)',
+            glow: 'rgba(91,168,245,0.07)', icon: Droplet,
+          },
+          {
+            val: stats.days, sub: 'Days logged this month', label: 'Timesheet',
+            color: 'var(--accent-purple)', bg: 'rgba(232,168,37,0.12)',
+            glow: 'rgba(232,168,37,0.07)', icon: Calendar,
+          },
+          {
+            val: `${progressPct}%`, sub: `${lessonProgress.completed} lessons done`, label: 'Learning',
+            color: 'var(--accent-green)', bg: 'rgba(45,232,134,0.12)',
+            glow: 'rgba(45,232,134,0.07)', icon: Layers,
+          },
+          {
+            val: stats.syncs, sub: 'Saved quick links', label: 'Quick Links',
+            color: 'var(--accent-pink)', bg: 'rgba(232,83,138,0.12)',
+            glow: 'rgba(232,83,138,0.07)', icon: Rocket,
+          },
+        ].map(({ val, sub, label, color, bg, glow, icon: Icon }) => (
+          <div key={label} className="kpi-card" style={{ '--kpi-accent': color, '--kpi-glow': glow }}>
+            <div className="kpi-card-top">
+              <div className="kpi-icon-wrap" style={{ background: bg, color }}><Icon size={15} /></div>
+              <span className="kpi-label-top">{label}</span>
+            </div>
+            <div className="kpi-value" style={{ color }}>{val}</div>
+            <div className="kpi-sub">{sub}</div>
+          </div>
+        ))}
+      </div>
+
       {/* ── Widget Grid ── */}
       <div className="dash-grid">
-        {activeWidgets.map((w, idx) => (
+        {activeWidgets.map((w) => (
           <div
             key={w.id}
             className="dash-widget"
