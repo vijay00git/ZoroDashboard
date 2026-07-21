@@ -12,6 +12,8 @@ data/timesheets/
 data/quicklaunch/
 data/templates/
 data/screenshots/
+data/testcase-dashboard/
+data/settings/
 data/calendar.ics
 data/local_storage.json
 # Server Logs

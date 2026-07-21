@@ -2,8 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { marked } from 'marked';
 import {
-  FileText, Sparkles, Copy, Download, Trash2, Plus, RefreshCw, 
-  Eye, Edit3, Settings, CheckCircle2, Clock, Check, ListTodo, Droplets, Mail, DatabaseBackup, X
+  FileText, Sparkles, Copy, Download, Trash2, Plus, RefreshCw,
+  Eye, Edit3, Settings, CheckCircle2, Clock, Check, ListTodo, Droplets, Mail, DatabaseBackup, X, Send
 } from 'lucide-react';
 import { showAlert, showConfirm } from '../utils/Alerts';
 import { getAIConfig, noKeyMessage } from '../utils/ai';
@@ -31,6 +31,8 @@ const Status = () => {
   });
   const [isCopied, setIsCopied] = useState(false);
   const [isHtmlCopied, setIsHtmlCopied] = useState(false);
+  const [sendingTelegram, setSendingTelegram] = useState(false);
+  const [telegramSent, setTelegramSent] = useState(false);
 
   // Modal
   const [modalOpen, setModalOpen] = useState(false);
@@ -248,6 +250,26 @@ const Status = () => {
     } catch (e) {
       console.error(e);
       handleCopyReport(); // Fallback
+    }
+  };
+
+  const handleSendTelegram = async () => {
+    if (!report) return;
+    setSendingTelegram(true);
+    try {
+      const res = await fetch('/api/integrations/telegram/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: report }),
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error || 'Send failed');
+      setTelegramSent(true);
+      setTimeout(() => setTelegramSent(false), 2000);
+    } catch (err) {
+      showAlert("Couldn't send to Telegram: " + err.message + ' — check the bot token/chat ID in Settings → Integrations.');
+    } finally {
+      setSendingTelegram(false);
     }
   };
 
@@ -578,6 +600,10 @@ const Status = () => {
               
               <button onClick={handleCopyReport} style={{ flex: 1, background: isCopied ? 'rgba(16,185,129,0.15)' : 'var(--bg-tertiary)', border: `1px solid ${isCopied ? 'rgba(16,185,129,0.4)' : 'var(--border-color)'}`, color: isCopied ? '#10b981' : 'var(--text-primary)', padding: '12px', borderRadius: '10px', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.9rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', transition: 'all 0.2s' }} className="nav-item-hover">
                 {isCopied ? <Check size={18} /> : <Copy size={18} />} {isCopied ? 'Copied!' : 'Copy Markdown'}
+              </button>
+
+              <button onClick={handleSendTelegram} disabled={sendingTelegram} style={{ flex: 1, background: telegramSent ? 'rgba(6,182,212,0.15)' : 'var(--bg-tertiary)', border: `1px solid ${telegramSent ? 'rgba(6,182,212,0.4)' : 'var(--border-color)'}`, color: telegramSent ? '#06b6d4' : 'var(--text-primary)', padding: '12px', borderRadius: '10px', cursor: sendingTelegram ? 'default' : 'pointer', fontWeight: 'bold', fontSize: '0.9rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', transition: 'all 0.2s' }} className="nav-item-hover">
+                {telegramSent ? <Check size={18} /> : <Send size={18} className={sendingTelegram ? 'spinner' : ''} />} {telegramSent ? 'Sent!' : sendingTelegram ? 'Sending…' : 'Send to Telegram'}
               </button>
 
               <button onClick={handleExportMarkdown} style={{ background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', padding: '12px', borderRadius: '10px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }} className="nav-item-hover" title="Download .md file">

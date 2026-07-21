@@ -13,6 +13,7 @@ import {
   Briefcase,
   FileSpreadsheet,
   GalleryHorizontalEnd,
+  ListChecks,
   Settings,
 } from 'lucide-react';
 
@@ -29,6 +30,7 @@ const MAIN_NAV = [
   { path: '/resume',         label: 'Resume Up',     icon: Briefcase },
   { path: '/csv-organizer',  label: 'CSV Organizer', icon: FileSpreadsheet },
   { path: '/ss-bucket',      label: 'SS Bucket',     icon: GalleryHorizontalEnd },
+  { path: '/testcase-dashboard', label: 'Test Cases', icon: ListChecks },
 ];
 
 const Navbar = () => {

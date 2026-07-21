@@ -15,12 +15,89 @@ import {
   User,
   Palette,
   Shield,
-  Monitor
+  Monitor,
+  Plug,
+  Search,
+  Send,
+  Plus,
+  X,
+  CheckCircle2,
+  XCircle,
+  Loader2
 } from 'lucide-react';
+import { useSearchParams } from 'react-router-dom';
 import { showAlert, showConfirm } from '../utils/Alerts';
 
+const EMPTY_INTEGRATIONS_FORM = {
+  TESTRAIL_URL: '', TESTRAIL_USERNAME: '', TESTRAIL_API_KEY: '', TESTRAIL_PROJECT_ID: '', TESTRAIL_SUITE_ID: '',
+  JENKINS_URL: '', JENKINS_USERNAME: '', JENKINS_API_TOKEN: '', JENKINS_DEFAULT_ENVIRONMENT: 'qa',
+  JENKINS_JOBS: { OFFLINE: [], ONLINE: [], E2E: [] },
+  TELEGRAM_BOT_TOKEN: '', TELEGRAM_CHAT_ID: '', TELEGRAM_NOTIFY_ON_FAILURE: false, TELEGRAM_NOTIFY_ON_SUCCESS: false,
+  TELEGRAM_ATTACH_SCREENSHOTS: true, TELEGRAM_ATTACH_CSV: true,
+  TELEGRAM_DIGEST_ENABLED: false, TELEGRAM_DIGEST_TIME: '18:00',
+};
+
+const JOB_CAT_LABELS = { OFFLINE: 'Offline', ONLINE: 'Online', E2E: 'E2E / Appium' };
+const JOB_CAT_ORDER = ['OFFLINE', 'ONLINE', 'E2E'];
+
+const fieldLabelStyle = { fontSize: '0.85rem', color: 'var(--text-secondary)', fontWeight: '600' };
+const fieldInputStyle = { background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', padding: '12px 14px', borderRadius: '10px', outline: 'none', fontSize: '0.9rem', width: '100%' };
+
+const JobsPillEditor = ({ label, jobs, onChange }) => {
+  const [draft, setDraft] = useState('');
+  const add = () => {
+    const v = draft.trim();
+    if (!v || jobs.includes(v)) { setDraft(''); return; }
+    onChange([...jobs, v]);
+    setDraft('');
+  };
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+      <label style={fieldLabelStyle}>{label} jobs</label>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', alignItems: 'center', background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)', borderRadius: '10px', padding: '8px 10px' }}>
+        {jobs.map((j) => (
+          <span key={j} style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'var(--bg-primary)', border: '1px solid var(--border-glow)', color: 'var(--text-primary)', padding: '4px 8px', borderRadius: '20px', fontSize: '0.8rem' }}>
+            {j}
+            <button type="button" onClick={() => onChange(jobs.filter((x) => x !== j))} title={`Remove ${j}`} style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', display: 'flex' }}>
+              <X size={11} />
+            </button>
+          </span>
+        ))}
+        <input
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); add(); } }}
+          placeholder="Add job name…"
+          style={{ flex: 1, minWidth: '120px', background: 'transparent', border: 'none', color: 'var(--text-primary)', outline: 'none', fontSize: '0.85rem' }}
+        />
+        <button type="button" onClick={add} title="Add job" style={{ background: 'var(--bg-primary)', border: '1px solid var(--border-color)', color: 'var(--accent-cyan)', borderRadius: '6px', padding: '4px 6px', cursor: 'pointer', display: 'flex' }}>
+          <Plus size={13} />
+        </button>
+      </div>
+    </div>
+  );
+};
+
+const ConnTestRow = ({ label, testing, result }) => {
+  let icon = <span style={{ width: '13px', display: 'inline-block' }} />;
+  let text = 'Not tested yet';
+  let color = 'var(--text-muted)';
+  if (testing) { icon = <Loader2 size={13} className="spinner" />; text = 'Testing…'; }
+  else if (result) {
+    if (result.ok) { icon = <CheckCircle2 size={13} />; text = 'Connected'; color = 'var(--accent-green)'; }
+    else { icon = <XCircle size={13} />; text = result.error || 'Failed'; color = 'var(--accent-red)'; }
+  }
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.85rem', padding: '6px 0' }}>
+      <span style={{ fontWeight: '600', color: 'var(--text-primary)' }}>{label}</span>
+      <span style={{ display: 'flex', alignItems: 'center', gap: '6px', color }}>{icon}{text}</span>
+    </div>
+  );
+};
+
 const Settings = () => {
-  const [activeTab, setActiveTab] = useState('profile');
+  const [searchParams] = useSearchParams();
+  const [activeTab, setActiveTab] = useState(() => searchParams.get('tab') || 'profile');
 
   const [aiProvider, setAiProvider] = useState('gemini');
   const [apiKey, setApiKey] = useState('');
@@ -133,6 +210,111 @@ const Settings = () => {
     newShortcuts[index].key = newKey.toLowerCase();
     setShortcuts(newShortcuts);
     localStorage.setItem('tr-shortcuts', JSON.stringify(newShortcuts));
+  };
+
+  // Integrations — TestRail / Jenkins / Telegram, shared server-side config
+  // (data/settings/integrations.local.json) so any page can use them, not
+  // just the Test Case Dashboard where this used to live.
+  const [intForm, setIntForm] = useState(EMPTY_INTEGRATIONS_FORM);
+  const [intLoading, setIntLoading] = useState(true);
+  const [intSaving, setIntSaving] = useState(false);
+  const [showTrKey, setShowTrKey] = useState(false);
+  const [showJenkinsToken, setShowJenkinsToken] = useState(false);
+  const [showTelegramToken, setShowTelegramToken] = useState(false);
+  const [connTesting, setConnTesting] = useState(false);
+  const [connTestResult, setConnTestResult] = useState(null);
+  const [telegramTesting, setTelegramTesting] = useState(false);
+  const [telegramTestResult, setTelegramTestResult] = useState(null);
+  const [discovering, setDiscovering] = useState(false);
+  const [discoveredChats, setDiscoveredChats] = useState(null);
+
+  useEffect(() => {
+    fetch('/api/integrations/config', { cache: 'no-store' })
+      .then((r) => r.json())
+      .then((json) => setIntForm((f) => ({
+        ...f,
+        ...json,
+        JENKINS_JOBS: { OFFLINE: [], ONLINE: [], E2E: [], ...(json.JENKINS_JOBS || {}) },
+      })))
+      .catch(() => {})
+      .finally(() => setIntLoading(false));
+  }, []);
+
+  const setInt = (key) => (e) => setIntForm((f) => ({ ...f, [key]: e.target.value }));
+  const setIntChecked = (key) => (e) => setIntForm((f) => ({ ...f, [key]: e.target.checked }));
+  const setIntJobs = (cat) => (jobs) => setIntForm((f) => ({ ...f, JENKINS_JOBS: { ...f.JENKINS_JOBS, [cat]: jobs } }));
+
+  const handleSaveIntegrations = async (e) => {
+    e.preventDefault();
+    setIntSaving(true);
+    try {
+      const res = await fetch('/api/integrations/config', {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(intForm),
+      });
+      const body = await res.json();
+      if (!res.ok) { showAlert(body.error || "Couldn't save integrations"); return; }
+      setSaveStatus('Integrations saved successfully!');
+      setTimeout(() => setSaveStatus(''), 3000);
+    } catch (err) {
+      showAlert('Error saving integrations: ' + err.message);
+    } finally {
+      setIntSaving(false);
+    }
+  };
+
+  const runConnTest = async () => {
+    setConnTesting(true);
+    setConnTestResult(null);
+    try {
+      const res = await fetch('/api/integrations/config/test', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(intForm),
+      });
+      setConnTestResult(await res.json());
+    } catch (err) {
+      showAlert('Test failed: ' + err.message);
+    } finally {
+      setConnTesting(false);
+    }
+  };
+
+  const runTelegramTest = async () => {
+    setTelegramTesting(true);
+    setTelegramTestResult(null);
+    try {
+      const res = await fetch('/api/integrations/telegram/test', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(intForm),
+      });
+      const body = await res.json();
+      setTelegramTestResult(res.ok ? { ok: true } : { ok: false, error: body.error });
+    } catch (err) {
+      setTelegramTestResult({ ok: false, error: err.message });
+    } finally {
+      setTelegramTesting(false);
+    }
+  };
+
+  const discoverChats = async () => {
+    setDiscovering(true);
+    setDiscoveredChats(null);
+    try {
+      const res = await fetch('/api/integrations/telegram/discover-chats', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(intForm),
+      });
+      const body = await res.json();
+      if (!res.ok) { showAlert(body.error || "Couldn't look up chats"); setDiscoveredChats([]); return; }
+      setDiscoveredChats(body.chats || []);
+      if ((body.chats || []).length === 0) showAlert('No chats found yet — message your bot first, then try again.');
+    } catch (err) {
+      showAlert(`Couldn't look up chats: ${err.message}`);
+      setDiscoveredChats([]);
+    } finally {
+      setDiscovering(false);
+    }
+  };
+
+  const pickChat = (chat) => {
+    setIntForm((f) => ({ ...f, TELEGRAM_CHAT_ID: String(chat.id) }));
+    setDiscoveredChats(null);
   };
 
   useEffect(() => {
@@ -272,6 +454,7 @@ const Settings = () => {
     { id: 'dashboard', label: 'Dashboard', icon: <LayoutGrid size={16} /> },
     { id: 'shortcuts', label: 'Shortcuts', icon: <Keyboard size={16} /> },
     { id: 'ai', label: 'AI Integration', icon: <Cpu size={16} /> },
+    { id: 'integrations', label: 'Integrations', icon: <Plug size={16} /> },
     { id: 'vault', label: 'Data Vault', icon: <Database size={16} /> }
   ];
 
@@ -646,6 +829,182 @@ const Settings = () => {
                   <Check size={18} /> Save AI Settings
                 </button>
               </form>
+            </div>
+          )}
+
+          {activeTab === 'integrations' && (
+            <div className="glass-panel" style={{ padding: '32px', display: 'flex', flexDirection: 'column', gap: '24px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', borderBottom: '1px solid var(--border-color)', paddingBottom: '16px' }}>
+                <Plug size={24} style={{ color: 'var(--accent-cyan)' }} />
+                <div>
+                  <h3 style={{ fontSize: '1.3rem', fontWeight: 'bold' }}>Integrations</h3>
+                  <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: '4px' }}>
+                    TestRail, Jenkins, and Telegram credentials — shared across every page that needs them (Test Case Dashboard, Daily Status, …). Stored server-side, changes apply immediately.
+                  </p>
+                </div>
+              </div>
+
+              {intLoading ? (
+                <div style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>Loading current integrations…</div>
+              ) : (
+                <form onSubmit={handleSaveIntegrations} style={{ display: 'flex', flexDirection: 'column', gap: '28px' }}>
+
+                  {/* TestRail */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                    <h4 style={{ fontSize: '1rem', fontWeight: '700' }}>TestRail</h4>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px' }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        <label style={fieldLabelStyle}>URL</label>
+                        <input type="text" value={intForm.TESTRAIL_URL} onChange={setInt('TESTRAIL_URL')} placeholder="https://yourteam.testrail.com" style={fieldInputStyle} />
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        <label style={fieldLabelStyle}>Username</label>
+                        <input type="email" value={intForm.TESTRAIL_USERNAME} onChange={setInt('TESTRAIL_USERNAME')} placeholder="you@example.com" style={fieldInputStyle} />
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        <label style={fieldLabelStyle}>API Key</label>
+                        <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                          <input type={showTrKey ? 'text' : 'password'} value={intForm.TESTRAIL_API_KEY} onChange={setInt('TESTRAIL_API_KEY')} style={{ ...fieldInputStyle, paddingRight: '45px', fontFamily: showTrKey ? 'var(--font-mono)' : 'inherit' }} />
+                          <button type="button" onClick={() => setShowTrKey((v) => !v)} style={{ position: 'absolute', right: '14px', background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}>
+                            {showTrKey ? <EyeOff size={16} /> : <Eye size={16} />}
+                          </button>
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        <label style={fieldLabelStyle}>Project ID</label>
+                        <input type="number" value={intForm.TESTRAIL_PROJECT_ID} onChange={setInt('TESTRAIL_PROJECT_ID')} style={fieldInputStyle} />
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        <label style={fieldLabelStyle}>Suite ID</label>
+                        <input type="number" value={intForm.TESTRAIL_SUITE_ID} onChange={setInt('TESTRAIL_SUITE_ID')} style={fieldInputStyle} />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Jenkins */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', borderTop: '1px solid var(--border-color)', paddingTop: '24px' }}>
+                    <h4 style={{ fontSize: '1rem', fontWeight: '700' }}>Jenkins</h4>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px' }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        <label style={fieldLabelStyle}>URL</label>
+                        <input type="text" value={intForm.JENKINS_URL} onChange={setInt('JENKINS_URL')} placeholder="http://jenkins.internal:8080" style={fieldInputStyle} />
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        <label style={fieldLabelStyle}>Username</label>
+                        <input type="text" value={intForm.JENKINS_USERNAME} onChange={setInt('JENKINS_USERNAME')} style={fieldInputStyle} />
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        <label style={fieldLabelStyle}>API Token</label>
+                        <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                          <input type={showJenkinsToken ? 'text' : 'password'} value={intForm.JENKINS_API_TOKEN} onChange={setInt('JENKINS_API_TOKEN')} style={{ ...fieldInputStyle, paddingRight: '45px', fontFamily: showJenkinsToken ? 'var(--font-mono)' : 'inherit' }} />
+                          <button type="button" onClick={() => setShowJenkinsToken((v) => !v)} style={{ position: 'absolute', right: '14px', background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}>
+                            {showJenkinsToken ? <EyeOff size={16} /> : <Eye size={16} />}
+                          </button>
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        <label style={fieldLabelStyle}>Default environment</label>
+                        <input type="text" value={intForm.JENKINS_DEFAULT_ENVIRONMENT} onChange={setInt('JENKINS_DEFAULT_ENVIRONMENT')} style={fieldInputStyle} />
+                      </div>
+                    </div>
+                    {JOB_CAT_ORDER.map((cat) => (
+                      <JobsPillEditor key={cat} label={JOB_CAT_LABELS[cat]} jobs={intForm.JENKINS_JOBS[cat] || []} onChange={setIntJobs(cat)} />
+                    ))}
+                  </div>
+
+                  <div style={{ background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)', borderRadius: '10px', padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                    <ConnTestRow label="TestRail" testing={connTesting} result={connTestResult && connTestResult.testrail} />
+                    <ConnTestRow label="Jenkins" testing={connTesting} result={connTestResult && connTestResult.jenkins} />
+                    <button type="button" onClick={runConnTest} disabled={connTesting} style={{ alignSelf: 'flex-start', marginTop: '6px', background: 'var(--bg-primary)', border: '1px solid var(--border-glow)', color: 'var(--accent-cyan)', padding: '6px 14px', borderRadius: '8px', cursor: 'pointer', fontSize: '0.8rem', fontWeight: '600' }}>
+                      {connTesting ? 'Testing…' : 'Test connection'}
+                    </button>
+                  </div>
+
+                  {/* Telegram */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', borderTop: '1px solid var(--border-color)', paddingTop: '24px' }}>
+                    <div>
+                      <h4 style={{ fontSize: '1rem', fontWeight: '700' }}>Telegram notifications</h4>
+                      <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '4px' }}>
+                        Create a bot with <a href="https://t.me/BotFather" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent-cyan)' }}>@BotFather</a>, paste the token below,
+                        then open a chat with your bot and send it any message before using "Find chat ID".
+                      </p>
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px' }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        <label style={fieldLabelStyle}>Bot token</label>
+                        <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                          <input type={showTelegramToken ? 'text' : 'password'} value={intForm.TELEGRAM_BOT_TOKEN} onChange={setInt('TELEGRAM_BOT_TOKEN')} placeholder="123456:ABC-DEF…" style={{ ...fieldInputStyle, paddingRight: '45px', fontFamily: showTelegramToken ? 'var(--font-mono)' : 'inherit' }} />
+                          <button type="button" onClick={() => setShowTelegramToken((v) => !v)} style={{ position: 'absolute', right: '14px', background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}>
+                            {showTelegramToken ? <EyeOff size={16} /> : <Eye size={16} />}
+                          </button>
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        <label style={fieldLabelStyle}>Chat ID</label>
+                        <input type="text" value={intForm.TELEGRAM_CHAT_ID} onChange={setInt('TELEGRAM_CHAT_ID')} placeholder="e.g. 123456789" style={fieldInputStyle} />
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      <button type="button" onClick={discoverChats} disabled={discovering || !intForm.TELEGRAM_BOT_TOKEN} style={{ alignSelf: 'flex-start', background: 'var(--bg-primary)', border: '1px solid var(--border-glow)', color: 'var(--accent-cyan)', padding: '6px 14px', borderRadius: '8px', cursor: 'pointer', fontSize: '0.8rem', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <Search size={13} /> {discovering ? 'Looking…' : 'Find chat ID'}
+                      </button>
+                      {discoveredChats && discoveredChats.length > 0 && (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                          {discoveredChats.map((c) => (
+                            <button type="button" key={c.id} onClick={() => pickChat(c)} style={{ display: 'flex', justifyContent: 'space-between', background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', padding: '8px 12px', borderRadius: '8px', cursor: 'pointer', fontSize: '0.85rem' }}>
+                              <span>{c.label}</span>
+                              <span style={{ color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>{c.id}</span>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '0.85rem', color: 'var(--text-primary)', cursor: 'pointer' }}>
+                      <input type="checkbox" checked={intForm.TELEGRAM_NOTIFY_ON_FAILURE} onChange={setIntChecked('TELEGRAM_NOTIFY_ON_FAILURE')} />
+                      Notify me when a triggered build fails
+                    </label>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '0.85rem', color: 'var(--text-primary)', cursor: 'pointer' }}>
+                      <input type="checkbox" checked={intForm.TELEGRAM_NOTIFY_ON_SUCCESS} onChange={setIntChecked('TELEGRAM_NOTIFY_ON_SUCCESS')} />
+                      Notify me when a triggered build succeeds
+                    </label>
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginLeft: '24px', paddingLeft: '12px', borderLeft: '2px solid var(--border-color)' }}>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '0.85rem', color: 'var(--text-primary)', cursor: 'pointer' }}>
+                        <input type="checkbox" checked={intForm.TELEGRAM_ATTACH_SCREENSHOTS} onChange={setIntChecked('TELEGRAM_ATTACH_SCREENSHOTS')} />
+                        Attach every screenshot from the build
+                      </label>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '0.85rem', color: 'var(--text-primary)', cursor: 'pointer' }}>
+                        <input type="checkbox" checked={intForm.TELEGRAM_ATTACH_CSV} onChange={setIntChecked('TELEGRAM_ATTACH_CSV')} />
+                        Attach the CSV results file
+                      </label>
+                    </div>
+
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '0.85rem', color: 'var(--text-primary)', cursor: 'pointer' }}>
+                      <input type="checkbox" checked={intForm.TELEGRAM_DIGEST_ENABLED} onChange={setIntChecked('TELEGRAM_DIGEST_ENABLED')} />
+                      Send a daily digest of everything that ran
+                    </label>
+                    {intForm.TELEGRAM_DIGEST_ENABLED && (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxWidth: '160px' }}>
+                        <label style={fieldLabelStyle}>Digest time (server local time)</label>
+                        <input type="time" value={intForm.TELEGRAM_DIGEST_TIME} onChange={setInt('TELEGRAM_DIGEST_TIME')} style={fieldInputStyle} />
+                      </div>
+                    )}
+
+                    <div style={{ background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)', borderRadius: '10px', padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                      <ConnTestRow label="Telegram" testing={telegramTesting} result={telegramTestResult} />
+                      <button type="button" onClick={runTelegramTest} disabled={telegramTesting} style={{ alignSelf: 'flex-start', marginTop: '6px', background: 'var(--bg-primary)', border: '1px solid var(--border-glow)', color: 'var(--accent-cyan)', padding: '6px 14px', borderRadius: '8px', cursor: 'pointer', fontSize: '0.8rem', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <Send size={13} /> {telegramTesting ? 'Sending…' : 'Send test message'}
+                      </button>
+                    </div>
+                  </div>
+
+                  <button type="submit" className="glow-btn" disabled={intSaving} style={{ justifyContent: 'center', padding: '14px' }}>
+                    <Check size={18} /> {intSaving ? 'Saving…' : 'Save Integrations'}
+                  </button>
+                </form>
+              )}
             </div>
           )}
 
