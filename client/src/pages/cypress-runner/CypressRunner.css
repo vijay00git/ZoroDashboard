@@ -94,6 +94,7 @@
 .cyr-e2e-note code { background: var(--bg-tertiary); padding: 0.1rem 0.35rem; border-radius: 4px; }
 
 .cyr-tree-actions { display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.8rem; gap: 0.6rem; flex-wrap: wrap; }
+.cyr-report-controls { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
 
 /* ── Modals (lightbox + log viewer) ── */
 .cyr-modal-overlay {

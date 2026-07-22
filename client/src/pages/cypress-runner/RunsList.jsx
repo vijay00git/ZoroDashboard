@@ -1,6 +1,9 @@
 import { Image, Terminal, X, Send } from 'lucide-react';
 import RunStatusPill from './RunStatusPill';
-import { formatDuration, formatDateTime } from './helpers';
+import { formatDuration, formatTime } from './helpers';
+import { dateHeadingLabel } from '../testcase-dashboard/helpers';
+
+const HISTORY_LIMIT = 100;
 
 const TestRailSyncBadge = ({ sync }) => {
   if (!sync) return null;
@@ -48,7 +51,7 @@ const HistoryItem = ({ h, onViewLog, onViewScreenshots, onSendTelegram }) => (
       </button>
     )}
     <TestRailSyncBadge sync={h.testrailSync} />
-    <span className="cyr-badge">{formatDateTime(h.completedAt || h.startedAt)}</span>
+    <span className="cyr-badge" title="When this run started">Started {formatTime(h.startedAt)}</span>
     <button type="button" className="cyr-btn small" onClick={() => onViewLog(h)}>
       <Terminal size={12} /> Log
     </button>
@@ -64,12 +67,26 @@ const RunsList = ({ queue, history, onDequeue, onViewLog, onViewScreenshots, onS
   if (!hasQueue && !hasHistory) {
     return <p className="cyr-empty">No local runs yet — configure a project above and hit Run, or queue files from the tree.</p>;
   }
+
+  const historyLen = history ? history.length : 0;
+  const shown = Math.min(historyLen, HISTORY_LIMIT);
+
+  let lastDateLabel = null;
+  const historyEls = [];
+  (history || []).slice(0, HISTORY_LIMIT).forEach((h, i) => {
+    const label = dateHeadingLabel(h.completedAt || h.startedAt);
+    if (label !== lastDateLabel) {
+      historyEls.push(<h3 key={`d${i}`} className="tcd-run-date-heading">{label}</h3>);
+      lastDateLabel = label;
+    }
+    historyEls.push(<HistoryItem key={h.id} h={h} onViewLog={onViewLog} onViewScreenshots={onViewScreenshots} onSendTelegram={onSendTelegram} />);
+  });
+
   return (
     <div className="cyr-history-list">
       {hasQueue && queue.map((item) => <QueueItem key={item.id} item={item} onDequeue={onDequeue} />)}
-      {hasHistory && history.map((h) => (
-        <HistoryItem key={h.id} h={h} onViewLog={onViewLog} onViewScreenshots={onViewScreenshots} onSendTelegram={onSendTelegram} />
-      ))}
+      {historyEls}
+      {shown < historyLen && <p className="cyr-empty">Showing {shown} of {historyLen} past runs.</p>}
     </div>
   );
 };

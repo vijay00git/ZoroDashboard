@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { PlayCircle, Square, FolderOpen, Terminal, ListChecks, SlidersHorizontal } from 'lucide-react';
+import { PlayCircle, Square, FolderOpen, Terminal, ListChecks, SlidersHorizontal, Clipboard } from 'lucide-react';
 import { useToast } from '../contexts/ToastContext';
 import { showConfirm, showPrompt } from '../utils/Alerts';
 import ModalPortal from './testcase-dashboard/ModalPortal';
@@ -13,7 +13,8 @@ import RunsList from './cypress-runner/RunsList';
 import Lightbox from './cypress-runner/Lightbox';
 import CyrHeroStats from './cypress-runner/CyrHeroStats';
 import CyrActivityCard from './cypress-runner/CyrActivityCard';
-import { latestCaseResultsForPaths, latestCaseResultsByPath, buildCyrReportText } from './cypress-runner/helpers';
+import { latestCaseResultsForPaths, latestCaseResultsByPath, buildCyrReportText, buildCyrDateReportText } from './cypress-runner/helpers';
+import { filterHistoryByDate, formatReportDateLabel, todayDateKey, copyText } from './testcase-dashboard/helpers';
 import './testcase-dashboard/TestCaseDashboard.css';
 import './cypress-runner/CypressRunner.css';
 
@@ -55,6 +56,8 @@ const CypressRunner = () => {
   const [runStatus, setRunStatus] = useState(null);
   const [runPulling, setRunPulling] = useState(false);
   const [runError, setRunError] = useState(null);
+
+  const [reportDate, setReportDate] = useState(() => todayDateKey());
 
   const logCursorRef = useRef(0);
   const prevActiveIdRef = useRef(null);
@@ -296,6 +299,14 @@ const CypressRunner = () => {
       .catch((err) => showToast(err.message, 'error'));
   };
 
+  const handleCopyReport = () => {
+    const jobs = filterHistoryByDate(runState.history, reportDate);
+    const built = buildCyrDateReportText(jobs, formatReportDateLabel(reportDate));
+    if (!built) { showToast(`No runs on ${formatReportDateLabel(reportDate)}`, 'warning'); return; }
+    copyText(built.text);
+    showToast(`Copied report (${built.count} run${built.count === 1 ? '' : 's'})`, 'success');
+  };
+
   const toggleCat = (cat) => {
     setActiveCats((prev) => {
       const next = { ...prev, [cat]: !prev[cat] };
@@ -532,7 +543,22 @@ const CypressRunner = () => {
           )}
 
           <div className="cyr-card">
-            <h3>Runs</h3>
+            <div className="cyr-tree-actions">
+              <h3 style={{ margin: 0 }}>Runs</h3>
+              <div className="cyr-report-controls">
+                <input
+                  type="date"
+                  className="tcd-report-date-input"
+                  value={reportDate}
+                  max={todayDateKey()}
+                  onChange={(e) => setReportDate(e.target.value)}
+                  title="Report date"
+                />
+                <button type="button" className="cyr-btn small" title="Copy this date's report" onClick={handleCopyReport}>
+                  <Clipboard size={12} /> Copy report
+                </button>
+              </div>
+            </div>
             <RunsList
               queue={runState.queue}
               history={runState.history}

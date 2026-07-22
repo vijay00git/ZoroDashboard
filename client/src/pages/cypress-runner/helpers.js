@@ -16,6 +16,13 @@ export function formatDateTime(ms) {
     d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
 }
 
+// Time-only (no date) — used once runs are already grouped under a date
+// heading, so the date itself doesn't need repeating on every row.
+export function formatTime(ms) {
+  if (!ms) return '';
+  return new Date(ms).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+}
+
 export const STATUS_LABEL = {
   queued: 'Queued',
   running: 'Running',
@@ -95,8 +102,18 @@ export function buildCyrReportText(h) {
     `[${verdict}] ${h.specPath || 'all specs'}`,
     `${h.category ? h.category + ' — ' : ''}${h.browser || 'electron'}${h.headed ? ' (headed)' : ''}${h.environment ? ` — env: ${h.environment}` : ''}`,
     statsStr,
+    `Started ${formatTime(h.startedAt)}${h.duration ? ` · took ${formatDuration(h.duration)}` : ''}`,
   ];
-  if (h.duration) lines.push(formatDuration(h.duration));
   if (h.testrailRunId) lines.push(`TestRail run #${h.testrailRunId}`);
   return lines.join('\n');
+}
+
+// Mirrors buildReportText's shape (testcase-dashboard/helpers.js) — a header
+// + count + each job's own block, joined — but built on buildCyrReportText
+// instead of the Jenkins-specific buildJobReportBlock.
+export function buildCyrDateReportText(jobs, headerLabel) {
+  if (!jobs || jobs.length === 0) return null;
+  const lines = [`Cypress Run Report — ${headerLabel}`, `${jobs.length} run${jobs.length === 1 ? '' : 's'}`, ''];
+  jobs.forEach((h) => { lines.push(buildCyrReportText(h)); lines.push(''); });
+  return { text: lines.join('\n').trim(), count: jobs.length };
 }
