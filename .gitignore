@@ -14,6 +14,8 @@ data/templates/
 data/screenshots/
 data/testcase-dashboard/
 data/settings/
+data/cypress-runs/
+data/cypress-screenshots/
 data/calendar.ics
 data/local_storage.json
 # Server Logs

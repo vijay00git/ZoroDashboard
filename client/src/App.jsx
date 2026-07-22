@@ -15,6 +15,7 @@ import Timesheet from './pages/Timesheet';
 import CSVOrganizer from './pages/CSVOrganizer';
 import SSBucket from './pages/SSBucket';
 import TestCaseDashboard from './pages/TestCaseDashboard';
+import CypressRunner from './pages/CypressRunner';
 import PomodoroTimer from './components/PomodoroTimer';
 import FocusMode from './components/FocusMode';
 import GlobalClock from './components/GlobalClock';
@@ -34,7 +35,8 @@ const PAGE_TITLES = {
   '/resume':         'Resume Up',
   '/csv-organizer':  'CSV Organizer',
   '/ss-bucket':      'SS Bucket',
-  '/testcase-dashboard': 'Test Cases',
+  '/testcase-dashboard': 'Jenkins Runner',
+  '/cypress-runner': 'Cypress Runner',
   '/settings':       'Settings',
 };
 
@@ -139,6 +141,7 @@ function App() {
               <Route path="/csv-organizer" element={<CSVOrganizer />} />
               <Route path="/ss-bucket"    element={<SSBucket />} />
               <Route path="/testcase-dashboard" element={<TestCaseDashboard />} />
+              <Route path="/cypress-runner" element={<CypressRunner />} />
               <Route path="/settings"      element={<Settings />} />
             </Routes>
           </div>

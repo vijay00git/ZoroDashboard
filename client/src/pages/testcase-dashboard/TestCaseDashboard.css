@@ -165,6 +165,7 @@
 .tcd-file-card { background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: var(--radius-md); overflow: hidden; }
 .tcd-file-card--pass { border-left: 3px solid var(--accent-green); }
 .tcd-file-card--fail { border-left: 3px solid var(--accent-red); }
+.tcd-file-card--partial { border-left: 3px solid var(--accent-yellow); }
 .tcd-file-summary {
   display: flex; align-items: center; gap: 0.55rem; padding: 0.5rem 0.7rem; cursor: pointer; user-select: none;
 }

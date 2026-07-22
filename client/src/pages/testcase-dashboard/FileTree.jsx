@@ -1,4 +1,5 @@
 import { useEffect, useMemo } from 'react';
+import { UploadCloud } from 'lucide-react';
 import { CAT_ORDER, CAT_LABELS, buildTree, fileSortComparator } from './helpers';
 import FileCard from './FileCard';
 import SelectAllCheckbox from './SelectAllCheckbox';
@@ -9,7 +10,8 @@ const FileTree = ({
   openFiles, onToggleFileOpen,
   collapsedGroups, onToggleGroupCollapse,
   fileTrendMap, onRunFile, onOpenNote, onVisiblePathsChange, showToast,
-  sortMode, testrailUrl,
+  sortMode, testrailUrl, runLabel,
+  onSyncFile, onSyncGroup, onSyncCategory, caseResultsByPath,
 }) => {
   const unknownIdSet = useMemo(() => new Set((data.unknownIds || []).map((u) => u.id)), [data.unknownIds]);
   const tree = useMemo(() => buildTree(data.rows), [data.rows]);
@@ -69,6 +71,9 @@ const FileTree = ({
             onOpenNote={onOpenNote}
             showToast={showToast}
             testrailUrl={testrailUrl}
+            runLabel={runLabel}
+            onSync={onSyncFile}
+            runCaseResults={caseResultsByPath ? caseResultsByPath[path] : undefined}
           />
         );
       });
@@ -89,6 +94,16 @@ const FileTree = ({
             )}
             <svg className="chev" viewBox="0 0 24 24" fill="none" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M9 6l6 6-6 6" stroke="currentColor" /></svg>
             {grpName} <span className="tcd-group-sub">({fileEls.length} file{fileEls.length === 1 ? '' : 's'})</span>
+            {onSyncGroup && groupSelectablePaths.length > 0 && (
+              <button
+                type="button"
+                className="tcd-icon-btn"
+                title="Sync this group's results to TestRail run…"
+                onClick={(e) => { e.preventDefault(); e.stopPropagation(); onSyncGroup(groupSelectablePaths, cat); }}
+              >
+                <UploadCloud size={12} />
+              </button>
+            )}
           </h3>
           <div className="tcd-group-files">{fileEls}</div>
         </div>
@@ -112,6 +127,16 @@ const FileTree = ({
           <div className="bar" />
           <h2>{CAT_LABELS[cat]}</h2>
           <span className="tcd-category-sub">{catRowCount} test case{catRowCount === 1 ? '' : 's'}</span>
+          {onSyncCategory && catSelectablePaths.length > 0 && (
+            <button
+              type="button"
+              className="tcd-icon-btn"
+              title={`Sync all of ${CAT_LABELS[cat]}'s results to TestRail run…`}
+              onClick={() => onSyncCategory(catSelectablePaths, cat)}
+            >
+              <UploadCloud size={12} />
+            </button>
+          )}
         </div>
         {groupBlocks}
       </section>

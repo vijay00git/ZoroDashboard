@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Copy, Check, Play, ChevronRight, StickyNote, ExternalLink } from 'lucide-react';
+import { Copy, Check, Play, ChevronRight, StickyNote, ExternalLink, UploadCloud } from 'lucide-react';
 import { splitPath, numericId, statusClass, tallyFor, trendDotClass, formatDateTime, copyText, highlightParts, testRailCaseUrl } from './helpers';
 
 const Highlighted = ({ text, term }) => {
@@ -10,12 +10,37 @@ const Highlighted = ({ text, term }) => {
 const FileCard = ({
   path, rows, visibleRows, cat, isOpen, onToggleOpen, trend, term, runStatus,
   notes, selectable, selected, onToggleSelect, onRun, canRun, onOpenNote, showToast, testrailUrl,
+  runLabel = 'Run on Jenkins', onSync, runCaseResults,
 }) => {
   const [copied, setCopied] = useState(false);
   const sp = splitPath(path);
 
-  let lastRunClass = '';
-  if (trend && trend.length > 0) lastRunClass = ` tcd-file-card--${trendDotClass(trend[trend.length - 1].status).replace('dot-', '')}`;
+  // runCaseResults (only ever passed by the Cypress Runner page) is this
+  // file's own most recent local run, keyed by numeric case id (1=passed,
+  // 5=failed) — tallying against it marks each case individually instead of
+  // coloring the whole card by the run's overall pass/fail verdict, so one
+  // failing case among five doesn't paint all five red.
+  let caseResultClass = '';
+  let caseResultTallyEl = null;
+  if (runCaseResults) {
+    let pass = 0, fail = 0;
+    rows.forEach((r) => {
+      const v = runCaseResults[numericId(r.id)];
+      if (v === 1) pass++;
+      else if (v === 5) fail++;
+    });
+    if (pass + fail > 0) {
+      caseResultClass = fail === 0 ? ' tcd-file-card--pass' : (pass === 0 ? ' tcd-file-card--fail' : ' tcd-file-card--partial');
+      caseResultTallyEl = (
+        <span className="tcd-file-tally" title={`${pass} passed, ${fail} failed (this file's most recent local run)`}>
+          <b className="fp">{pass}✓</b> <b className="ff">{fail}✗</b>
+        </span>
+      );
+    }
+  }
+
+  let lastRunClass = caseResultClass;
+  if (!lastRunClass && trend && trend.length > 0) lastRunClass = ` tcd-file-card--${trendDotClass(trend[trend.length - 1].status).replace('dot-', '')}`;
 
   let fileTallyEl = null;
   if (runStatus) {
@@ -60,6 +85,7 @@ const FileCard = ({
           </span>
         )}
         {fileTallyEl}
+        {caseResultTallyEl}
         <span className="tcd-file-count">{visibleRows.length}{visibleRows.length === rows.length ? '' : ` / ${rows.length}`} case{rows.length === 1 ? '' : 's'}</span>
         <button type="button" className={`tcd-icon-btn${copied ? ' copied' : ''}`} title="Copy file path" onClick={handleCopy}>
           {copied ? <Check size={13} /> : <Copy size={13} />}
@@ -68,11 +94,21 @@ const FileCard = ({
           type="button"
           className="tcd-icon-btn"
           disabled={!canRun}
-          title={canRun ? 'Run on Jenkins' : `No Jenkins job configured for ${cat} yet`}
+          title={canRun ? runLabel : `No Jenkins job configured for ${cat} yet`}
           onClick={(e) => { e.preventDefault(); e.stopPropagation(); if (canRun) onRun(path, cat); }}
         >
           <Play size={13} fill="currentColor" />
         </button>
+        {onSync && (
+          <button
+            type="button"
+            className="tcd-icon-btn"
+            title="Sync results to TestRail run…"
+            onClick={(e) => { e.preventDefault(); e.stopPropagation(); onSync(path, cat); }}
+          >
+            <UploadCloud size={13} />
+          </button>
+        )}
       </div>
       {isOpen && (
         <div className="tcd-file-body">
@@ -80,6 +116,7 @@ const FileCard = ({
               {visibleRows.map((r) => {
                 const note = notes[r.id];
                 const entry = runStatus ? runStatus.statuses[numericId(r.id)] : null;
+                const caseVal = runCaseResults ? runCaseResults[numericId(r.id)] : undefined;
                 return (
                   <div key={`${r.id}-${r.title}`} className={`tcd-tc-row${r.commented ? ' is-commented' : ''}`}>
                     <div className="tcd-tc-id">
@@ -112,6 +149,11 @@ const FileCard = ({
                       {runStatus && (
                         <span className={`tcd-status-pill ${entry ? statusClass(entry.status) : 'st-missing'}`}>
                           <span className="sw" />{entry ? entry.status : 'not in run'}
+                        </span>
+                      )}
+                      {!runStatus && runCaseResults && (
+                        <span className={`tcd-status-pill ${caseVal === 1 ? statusClass('passed') : (caseVal === 5 ? statusClass('failed') : 'st-missing')}`}>
+                          <span className="sw" />{caseVal === 1 ? 'passed' : (caseVal === 5 ? 'failed' : 'not run')}
                         </span>
                       )}
                       <span className="tcd-title-text"><Highlighted text={r.title} term={term} /></span>

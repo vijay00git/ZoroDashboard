@@ -14,6 +14,7 @@ import {
   FileSpreadsheet,
   GalleryHorizontalEnd,
   ListChecks,
+  TerminalSquare,
   Settings,
 } from 'lucide-react';
 
@@ -30,7 +31,8 @@ const MAIN_NAV = [
   { path: '/resume',         label: 'Resume Up',     icon: Briefcase },
   { path: '/csv-organizer',  label: 'CSV Organizer', icon: FileSpreadsheet },
   { path: '/ss-bucket',      label: 'SS Bucket',     icon: GalleryHorizontalEnd },
-  { path: '/testcase-dashboard', label: 'Test Cases', icon: ListChecks },
+  { path: '/testcase-dashboard', label: 'Jenkins Runner', icon: ListChecks },
+  { path: '/cypress-runner', label: 'Cypress Runner', icon: TerminalSquare },
 ];
 
 const Navbar = () => {
