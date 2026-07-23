@@ -77,7 +77,20 @@ const CypressRunner = () => {
   useEffect(() => { localStorage.setItem('cyr_testrail_run_id', testrailRunId); }, [testrailRunId]);
 
   useEffect(() => {
-    fetch('/api/testcases/data', { cache: 'no-store' }).then((r) => r.json()).then(setManifestData).catch(() => {});
+    // A non-2xx response (e.g. the manifest file isn't set up on this
+    // machine yet) still returns a JSON body ({ error: '...' }), which has
+    // none of the fields (rows, catCounts, ...) every child component here
+    // assumes exist — blindly setManifestData()-ing it crashes the whole
+    // page (StatsBar etc. reading .rows off it) instead of just showing an
+    // empty state. Checking res.ok keeps manifestData at its safe
+    // EMPTY_MANIFEST default and surfaces the real error as a toast instead.
+    fetch('/api/testcases/data', { cache: 'no-store' })
+      .then((r) => r.json().then((body) => ({ ok: r.ok, body })))
+      .then(({ ok, body }) => {
+        if (!ok) { showToast(`Couldn't load test cases: ${body.error || 'unknown error'}`, 'error'); return; }
+        setManifestData(body);
+      })
+      .catch(() => {});
     fetch('/api/testcases/jenkins-jobs', { cache: 'no-store' })
       .then((r) => r.json())
       .then((json) => {
