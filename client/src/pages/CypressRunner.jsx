@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { PlayCircle, Square, FolderOpen, Terminal, ListChecks, SlidersHorizontal, Clipboard } from 'lucide-react';
+import { PlayCircle, Square, FolderOpen, Terminal, ListChecks, SlidersHorizontal, Clipboard, Download } from 'lucide-react';
 import { useToast } from '../contexts/ToastContext';
 import { showConfirm, showPrompt } from '../utils/Alerts';
 import ModalPortal from './testcase-dashboard/ModalPortal';
@@ -7,14 +7,18 @@ import FileTree from './testcase-dashboard/FileTree';
 import StatsBar from './testcase-dashboard/StatsBar';
 import CoverageCard from './testcase-dashboard/CoverageCard';
 import RunStatusCard from './testcase-dashboard/RunStatusCard';
+import LocalRunStatusCard from './cypress-runner/LocalRunStatusCard';
 import RunStatusPill from './cypress-runner/RunStatusPill';
 import LogViewer from './cypress-runner/LogViewer';
 import RunsList from './cypress-runner/RunsList';
 import Lightbox from './cypress-runner/Lightbox';
 import CyrHeroStats from './cypress-runner/CyrHeroStats';
 import CyrActivityCard from './cypress-runner/CyrActivityCard';
-import { latestCaseResultsForPaths, latestCaseResultsByPath, buildCyrReportText, buildCyrDateReportText } from './cypress-runner/helpers';
-import { filterHistoryByDate, formatReportDateLabel, todayDateKey, copyText } from './testcase-dashboard/helpers';
+import {
+  latestCaseResultsForPaths, latestCaseResultsByPath, latestRunStatusByPath,
+  localCaseStatus, buildCyrReportText, buildCyrDateReportText,
+} from './cypress-runner/helpers';
+import { filterHistoryByDate, formatReportDateLabel, todayDateKey, copyText, csvEscape } from './testcase-dashboard/helpers';
 import './testcase-dashboard/TestCaseDashboard.css';
 import './cypress-runner/CypressRunner.css';
 
@@ -367,6 +371,41 @@ const CypressRunner = () => {
     [runState.history]
   );
 
+  const runStatusByPath = useMemo(
+    () => latestRunStatusByPath(runState.history),
+    [runState.history]
+  );
+
+  const STATUS_LABEL_CSV = { passed: 'Passed', failed: 'Failed', untested: 'Untested' };
+
+  // scope 'selected' exports only the currently checked files in the tree
+  // (selectedFiles, the same Map the "Queue N selected" button reads) —
+  // everything else exports the full manifest.
+  const handleExportCsv = (scope) => {
+    const rows = scope === 'selected'
+      ? manifestData.rows.filter((r) => selectedFiles.has(r.path))
+      : manifestData.rows;
+    if (rows.length === 0) { showToast('No test cases selected', 'warning'); return; }
+
+    const lines = [['ID', 'Description', 'Status']];
+    rows.forEach((r) => {
+      const status = STATUS_LABEL_CSV[localCaseStatus(r, caseResultsByPath, runStatusByPath)];
+      lines.push([r.id, r.title, status]);
+    });
+    const csv = lines.map((row) => row.map(csvEscape).join(',')).join('\r\n');
+    const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const stamp = new Date().toISOString().slice(0, 10);
+    a.href = url;
+    a.download = `local-run-status-${scope}-${stamp}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    showToast(`Exported ${rows.length} case${rows.length === 1 ? '' : 's'}`, 'success');
+  };
+
   const active = runState.active;
   const selectedCount = selectedFiles.size;
 
@@ -476,6 +515,7 @@ const CypressRunner = () => {
         <CyrHeroStats manifestData={manifestData} runState={runState} />
         <div className="tcd-cards-row">
           <CoverageCard data={manifestData} />
+          <LocalRunStatusCard data={manifestData} caseResultsByPath={caseResultsByPath} statusByPath={runStatusByPath} />
           <RunStatusCard data={manifestData} runStatus={runStatus} onFocusRunId={() => testrailRunIdInputRef.current?.focus()} />
           <CyrActivityCard history={runState.history} />
         </div>
@@ -499,6 +539,18 @@ const CypressRunner = () => {
                 onClick={() => enqueuePaths(Array.from(selectedFiles.entries()).map(([path, cat]) => ({ path, cat })))}
               >
                 Queue {selectedCount > 0 ? selectedCount : ''} selected
+              </button>
+              <button type="button" className="cyr-btn small" title="Export local run status for every test case" onClick={() => handleExportCsv('all')}>
+                <Download size={12} /> Export CSV (all)
+              </button>
+              <button
+                type="button"
+                className="cyr-btn small"
+                title="Export local run status for the selected files only"
+                disabled={selectedCount === 0}
+                onClick={() => handleExportCsv('selected')}
+              >
+                <Download size={12} /> Export CSV ({selectedCount > 0 ? selectedCount : '0'} selected)
               </button>
             </div>
             <FileTree
