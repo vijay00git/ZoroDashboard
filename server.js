@@ -950,6 +950,15 @@ app.post('/api/backup', (req, res) => {
         const zip = new AdmZip();
         zip.addLocalFolder(dataPath, 'data');
 
+        // The Cypress Runner / Test Case Dashboard manifest (TCD_MANIFEST_PATH,
+        // normally ~/.claude/ic-tokyo-file-manifest.md) lives outside data/
+        // entirely, so it's otherwise silently left out of every backup —
+        // bundle it at the zip root under a distinct name so /api/restore can
+        // recognize it and put it back at that same external path.
+        if (fs.existsSync(TCD_MANIFEST_PATH)) {
+            zip.addLocalFile(TCD_MANIFEST_PATH, '', 'external-ic-tokyo-file-manifest.md');
+        }
+
         const zipBuffer = zip.toBuffer();
         res.setHeader('Content-Type', 'application/zip');
         res.setHeader('Content-Disposition', 'attachment; filename="zoro_dashboard_backup.zip"');
@@ -976,6 +985,26 @@ app.post('/api/restore', upload.single('backup'), (req, res) => {
         // Cleanup uploaded file
         fs.unlinkSync(req.file.path);
 
+        // Move the bundled manifest (see /api/backup) from its stray
+        // zip-root landing spot back to its real external path.
+        const bundledManifestPath = path.join(__dirname, 'external-ic-tokyo-file-manifest.md');
+        if (fs.existsSync(bundledManifestPath)) {
+            fs.mkdirSync(path.dirname(TCD_MANIFEST_PATH), { recursive: true });
+            fs.renameSync(bundledManifestPath, TCD_MANIFEST_PATH);
+        }
+
+        // A restore can silently replace data/settings/integrations.local.json
+        // out from under the running server — invalidate every cache derived
+        // from it, same as the PUT /api/integrations/config route does, so
+        // the restored credentials/jobs take effect on the very next request
+        // instead of needing a server restart.
+        TCD_TR_CONFIG = null;
+        TCD_JENKINS_CONFIG = null;
+        tcdEnvironmentChoicesCache = null;
+        tcdStatusNameCache = null;
+        tcdCaseIdCache = null;
+        tcdCaseIdCacheAt = 0;
+
         // Check if localStorage backup exists
         let localStorageData = null;
         const lsBackupPath = path.join(__dirname, 'data', 'local_storage.json');
@@ -989,7 +1018,7 @@ app.post('/api/restore', upload.single('backup'), (req, res) => {
             }
         }
 
-        res.status(200).json({ 
+        res.status(200).json({
             success: true, 
             message: 'Backup restored successfully',
             localStorageData 
