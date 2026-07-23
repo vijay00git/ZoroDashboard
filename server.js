@@ -2075,7 +2075,17 @@ app.get('/api/testcases/recheck-ids', (req, res) => {
 });
 
 app.get('/api/testcases/jenkins-jobs', async (req, res) => {
-    const { jobs, defaultEnvironment } = tcdLoadJenkinsConfig();
+    // Falls back to "nothing configured yet" the same way the TestRail load
+    // right below does — on a fresh machine (or before Settings > Integrations
+    // has been filled in), data/settings/integrations.local.json doesn't
+    // exist yet. Without this try/catch, the thrown error was an unhandled
+    // rejection inside this async handler, which crashes the whole server
+    // process rather than just failing this one request.
+    let jobs = { ONLINE: [], OFFLINE: [], E2E: [] };
+    let defaultEnvironment = 'qa';
+    try {
+        ({ jobs, defaultEnvironment } = tcdLoadJenkinsConfig());
+    } catch (e) { /* config not set up yet */ }
     // TestRail's base URL (not a secret) rides along so the client can build
     // "open in TestRail" deep links without fetching the full credentials.
     let testrailUrl = null;
