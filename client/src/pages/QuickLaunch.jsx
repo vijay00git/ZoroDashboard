@@ -11,11 +11,12 @@ import {
   Copy
 } from 'lucide-react';
 import { showConfirm } from '../utils/Alerts';
+import { useApi } from '../hooks/useApi';
 
 const QuickLaunch = () => {
   // --- State ---
   const [folders, setFolders] = useState([]);
-  const [loading, setLoading] = useState(false);
+  const [request] = useApi(true); // the mount effect below fetches immediately
 
   // Modals
   const [folderModalOpen, setFolderModalOpen] = useState(false);
@@ -55,48 +56,38 @@ const QuickLaunch = () => {
 
   // --- Load Data ---
   const loadData = async () => {
-    setLoading(true);
-    try {
-      const res = await fetch('http://localhost:3000/api/quicklaunch');
-      let serverData = [];
-      if (res.ok) {
-        serverData = await res.json();
-      }
-      
-      if (!serverData || serverData.length === 0) {
-        const localData = localStorage.getItem(LOCAL_STORAGE_KEY);
-        if (localData) {
+    const { ok, body } = await request('http://localhost:3000/api/quicklaunch');
+    const serverData = ok && Array.isArray(body) ? body : [];
+
+    if (serverData.length === 0) {
+      const localData = localStorage.getItem(LOCAL_STORAGE_KEY);
+      if (localData) {
+        try {
           const parsed = JSON.parse(localData);
           if (parsed && parsed.length > 0) {
             setFolders(parsed);
             saveData(parsed);
           }
-        } else {
-          // Default seed
-          const defaults = [
-            {
-              id: 'folder_default',
-              name: 'Favorites',
-              color: 'default',
-              links: [
-                { id: 'link_1', name: 'GitHub', url: 'https://github.com', emoji: '🐙', clicks: 0 },
-                { id: 'link_2', name: 'TestRail', url: 'https://elosystemsteam.testrail.com/', emoji: '🚂', clicks: 0 }
-              ]
-            }
-          ];
-          setFolders(defaults);
-          saveData(defaults);
-        }
+        } catch (e) { console.warn('Failed to parse quicklaunch local backup:', e); }
       } else {
-        setFolders(serverData);
-        localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(serverData));
+        // Default seed
+        const defaults = [
+          {
+            id: 'folder_default',
+            name: 'Favorites',
+            color: 'default',
+            links: [
+              { id: 'link_1', name: 'GitHub', url: 'https://github.com', emoji: '🐙', clicks: 0 },
+              { id: 'link_2', name: 'TestRail', url: 'https://elosystemsteam.testrail.com/', emoji: '🚂', clicks: 0 }
+            ]
+          }
+        ];
+        setFolders(defaults);
+        saveData(defaults);
       }
-    } catch (e) {
-      console.error(e);
-      const localData = localStorage.getItem(LOCAL_STORAGE_KEY);
-      if (localData) setFolders(JSON.parse(localData));
-    } finally {
-      setLoading(false);
+    } else {
+      setFolders(serverData);
+      localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(serverData));
     }
   };
 

@@ -60,8 +60,12 @@ const Dashboard = () => {
   const { showToast } = useToast();
 
   const displayName = localStorage.getItem('tr-display-name') || 'Zoro';
-  const [scratchpadContent, setScratchpadContent] = useState('');
-  const [statusDraft, setStatusDraft] = useState('');
+  const [scratchpadContent, setScratchpadContent] = useState(() => {
+    try { return localStorage.getItem('tr-dash-scratchpad') || ''; } catch (_) { return ''; }
+  });
+  const [statusDraft, setStatusDraft] = useState(() => {
+    try { return localStorage.getItem('tr-status-draft') || ''; } catch (_) { return ''; }
+  });
   const [quote, setQuote] = useState('Loading daily wisdom...');
   const [quoteLoading, setQuoteLoading] = useState(false);
   const [pinnedMatrix, setPinnedMatrix] = useState(null);
@@ -131,16 +135,6 @@ const Dashboard = () => {
 
   const hour = currentTime.getHours();
   const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
-
-  /* ── Scratchpad ── */
-  useEffect(() => {
-    try { const s = localStorage.getItem('tr-dash-scratchpad'); if (s) setScratchpadContent(s); } catch (_) {}
-  }, []);
-
-  /* ── Status draft ── */
-  useEffect(() => {
-    try { const s = localStorage.getItem('tr-status-draft'); if (s) setStatusDraft(s); } catch (_) {}
-  }, []);
 
   /* ── Daily quote ── */
   useEffect(() => {
@@ -228,7 +222,7 @@ const Dashboard = () => {
   const loadAllStates = async () => {
     // Tasks
     let tasksList = [];
-    try { tasksList = JSON.parse(localStorage.getItem('tr-run-tasks') || '[]'); if (!Array.isArray(tasksList)) tasksList = []; } catch (_) {}
+    try { tasksList = JSON.parse(localStorage.getItem('tr-run-tasks') || '[]'); if (!Array.isArray(tasksList)) tasksList = []; } catch (e) { console.warn('Failed to parse tr-run-tasks:', e); }
     setTasks(tasksList);
 
     // Water
@@ -249,7 +243,7 @@ const Dashboard = () => {
           if (row?.inTime) { clockedIn = !row.outTime; punchStr = row.inTime; }
         }
       }
-    } catch (_) {}
+    } catch (e) { console.warn('Failed to parse timesheet data for', monthKey, ':', e); }
     setIsClockedIn(clockedIn);
     setClockInTime(punchStr);
 
@@ -268,7 +262,7 @@ const Dashboard = () => {
       qLinks.forEach(item => { if (item.links) flat.push(...item.links); else if (item.url) flat.push(item); });
       flat.sort((a, b) => (b.clicks||0) - (a.clicks||0));
       setQuickLinks(flat.slice(0, 5));
-    } catch (_) {}
+    } catch (e) { console.warn('Failed to load quick links:', e); }
 
     setStats({ tasks: tasksList.filter(t => !t.completed).length, water: waterAmt, days: daysCount, syncs: qCount });
 
@@ -280,7 +274,7 @@ const Dashboard = () => {
         const future = all.filter(e => e.start >= new Date(new Date().setHours(0,0,0,0))).sort((a,b) => a.start - b.start);
         setUpcomingEvents(future.slice(0, 3));
       }
-    } catch (_) {}
+    } catch (e) { console.warn('Failed to parse ts-events:', e); }
   };
 
   const fetchPinnedMatrix = async () => {
@@ -293,7 +287,7 @@ const Dashboard = () => {
         const found = data.matrices?.find(m => m.filename === id || m.id === id);
         if (found) setPinnedMatrix(found);
       }
-    } catch (_) {}
+    } catch (e) { console.warn('Failed to fetch pinned matrix:', e); }
   };
 
   useEffect(() => { loadAllStates(); fetchPinnedMatrix(); }, []);
@@ -312,7 +306,7 @@ const Dashboard = () => {
     const cur = parseInt(localStorage.getItem('tr-water-intake-ml') || '0');
     const next = cur + 250;
     let logs = [];
-    try { logs = JSON.parse(localStorage.getItem('tr-water-log') || '[]'); } catch (_) {}
+    try { logs = JSON.parse(localStorage.getItem('tr-water-log') || '[]'); } catch (e) { console.warn('Failed to parse tr-water-log:', e); }
     const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     localStorage.setItem('tr-water-intake-ml', String(next));
     localStorage.setItem('tr-water-log', JSON.stringify([{ id: Date.now(), time: timeStr, amount: 250 }, ...logs]));
@@ -327,7 +321,7 @@ const Dashboard = () => {
     const monthKey = `ts-data-${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
     const todayStr = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
     let tsData = { empId: '', empName: 'Zoro', org: '', rows: [] };
-    try { tsData = JSON.parse(localStorage.getItem(monthKey)) || tsData; } catch (_) {}
+    try { tsData = JSON.parse(localStorage.getItem(monthKey)) || tsData; } catch (e) { console.warn('Failed to parse timesheet data for', monthKey, ':', e); }
     let idx = tsData.rows.findIndex(r => r.date === todayStr);
     if (idx === -1) {
       tsData.rows.push({ day: now.getDate(), date: todayStr, dayName: now.toLocaleDateString([],{weekday:'short'}), type: 'Working', inTime: '', outTime: '', notes: '' });
@@ -509,7 +503,7 @@ const Dashboard = () => {
               </div>
             : tasks.filter(t => !t.completed).slice(0, 6).map(task => {
                 let due = task.deadline;
-                if (due) try { const d = new Date(due); if (!isNaN(d)) due = d.toLocaleDateString('en-US',{month:'short',day:'numeric'}); } catch (_) {}
+                if (due) try { const d = new Date(due); if (!isNaN(d)) due = d.toLocaleDateString('en-US',{month:'short',day:'numeric'}); } catch (e) { console.warn('Failed to format task deadline:', e); }
                 return (
                   <div key={task.id} className="task-item" onClick={() => handleToggleTask(task.id)}>
                     <div className="task-check" />

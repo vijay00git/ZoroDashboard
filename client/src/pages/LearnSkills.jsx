@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { marked } from 'marked';
+import { sanitizeHtml } from '../utils/sanitizeHtml';
 import confetti from 'canvas-confetti';
 import { 
   BookOpen, 
@@ -774,7 +775,7 @@ const LearnSkills = () => {
                 ) : (
                   <div 
                     className="markdown-body"
-                    dangerouslySetInnerHTML={{ __html: marked(lessonContent) }}
+                    dangerouslySetInnerHTML={{ __html: sanitizeHtml(marked(lessonContent)) }}
                     style={{ fontSize: '0.95rem' }}
                   />
                 )}
@@ -810,7 +811,7 @@ const LearnSkills = () => {
                           </div>
                           <div 
                             className="markdown-body"
-                            dangerouslySetInnerHTML={{ __html: marked(msg.text) }} 
+                            dangerouslySetInnerHTML={{ __html: sanitizeHtml(marked(msg.text)) }}
                             style={{ fontSize: '0.9rem', color: msg.role === 'user' ? '#fff' : 'inherit' }}
                           />
                         </div>

@@ -2,8 +2,8 @@ import { ListChecks, Activity, Gauge, CheckCircle2, XCircle } from 'lucide-react
 import { pctColor } from '../testcase-dashboard/helpers';
 import { cyrRecentRunStats, formatDateTime } from './helpers';
 
-const Tile = ({ icon: Icon, label, value, valueColor, sub, subColor }) => (
-  <div className="tcd-kpi">
+const Tile = ({ icon: Icon, label, value, valueColor, sub, subColor, accent }) => (
+  <div className="tcd-kpi" style={{ '--tile-accent': accent || valueColor || 'var(--accent-purple)' }}>
     <div className="tcd-kpi-icon"><Icon size={16} /></div>
     <div className="tcd-kpi-body">
       <div className="tcd-kpi-value" style={valueColor ? { color: valueColor } : undefined}>{value}</div>
@@ -38,7 +38,7 @@ const CyrHeroStats = ({ manifestData, runState }) => {
 
   return (
     <div className="tcd-hero-kpis">
-      <Tile icon={ListChecks} label="Test cases" value={manifestData.totalCases || 0} sub={`${manifestData.totalFiles || 0} files`} />
+      <Tile icon={ListChecks} label="Test cases" value={manifestData.totalCases || 0} sub={`${manifestData.totalFiles || 0} files`} accent="var(--accent-cyan)" />
       <Tile
         icon={Activity} label="Active runs" value={activeCount || 'Idle'}
         valueColor={activeCount ? 'var(--accent-cyan)' : 'var(--text-muted)'}

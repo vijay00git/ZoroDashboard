@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { marked } from 'marked';
+import { sanitizeHtml } from '../utils/sanitizeHtml';
 import {
   FileText, Sparkles, Copy, Download, Trash2, Plus, RefreshCw,
   Eye, Edit3, Settings, CheckCircle2, Clock, Check, ListTodo, Droplets, Mail, DatabaseBackup, X, Send
@@ -174,7 +175,7 @@ const Status = () => {
             tsInfo = `Type: ${row.type} | In: ${row.inTime || 'N/A'} | Out: ${row.outTime || 'N/A'}`;
           }
         }
-      } catch(e) {}
+      } catch (e) { console.warn('Failed to read work-hours timesheet data:', e); }
       finalNotes += `### Work Hours\n${tsInfo}\n\n`;
     }
 
@@ -239,7 +240,7 @@ const Status = () => {
   const handleCopyHtml = async () => {
     if (!report) return;
     try {
-      const htmlContent = marked(report);
+      const htmlContent = sanitizeHtml(marked(report));
       const clipboardItem = new ClipboardItem({
         'text/html': new Blob([htmlContent], { type: 'text/html' }),
         'text/plain': new Blob([report], { type: 'text/plain' })
@@ -582,7 +583,7 @@ const Status = () => {
                 </p>
               </div>
             ) : viewMode === 'preview' ? (
-              <div className="markdown-body" dangerouslySetInnerHTML={{ __html: marked(report) }} />
+              <div className="markdown-body" dangerouslySetInnerHTML={{ __html: sanitizeHtml(marked(report)) }} />
             ) : (
               <textarea
                 value={report}
@@ -672,13 +673,13 @@ const Status = () => {
                 overflowY: 'auto',
                 fontSize: '0.9rem'
               }}
-              dangerouslySetInnerHTML={{ 
-                __html: marked(templateContent
+              dangerouslySetInnerHTML={{
+                __html: sanitizeHtml(marked(templateContent
                   .replace(/{DATE}/g, new Date().toLocaleDateString())
                   .replace(/{TASKS_COMPLETED}/g, 'Task 1\n- Task 2')
                   .replace(/{TASKS_IN_PROGRESS}/g, 'Task 3\n- Task 4')
                   .replace(/{TASKS_TABLE_ROW}/g, '| Example Task | ✅ Completed | Details |\n| Pending Task | 🔄 In Progress | Fix requested |')
-                ) 
+                ))
               }}
             />
             

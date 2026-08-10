@@ -99,14 +99,14 @@ const Settings = () => {
   const [searchParams] = useSearchParams();
   const [activeTab, setActiveTab] = useState(() => searchParams.get('tab') || 'profile');
 
-  const [aiProvider, setAiProvider] = useState('gemini');
-  const [apiKey, setApiKey] = useState('');
+  const [aiProvider, setAiProvider] = useState(() => localStorage.getItem('zoro-ai-provider') || 'gemini');
+  const [apiKey, setApiKey] = useState(() => localStorage.getItem('zoro-ai-key') || '');
   const [showKey, setShowKey] = useState(false);
-  const [model, setModel] = useState('gemini-1.5-flash-8b');
-  const [groqKey, setGroqKey] = useState('');
+  const [model, setModel] = useState(() => localStorage.getItem('zoro-ai-model') || 'gemini-1.5-flash-8b');
+  const [groqKey, setGroqKey] = useState(() => localStorage.getItem('zoro-groq-key') || '');
   const [showGroqKey, setShowGroqKey] = useState(false);
-  const [groqModel, setGroqModel] = useState('llama-3.3-70b-versatile');
-  const [theme, setTheme] = useState('dark');
+  const [groqModel, setGroqModel] = useState(() => localStorage.getItem('zoro-groq-model') || 'llama-3.3-70b-versatile');
+  const [theme, setTheme] = useState(() => localStorage.getItem('tr-theme') || 'dark');
 
   const GROQ_MODELS = [
     { id: 'llama-3.3-70b-versatile', label: 'Llama 3.3 70B Versatile (Best Quality)' },
@@ -141,8 +141,8 @@ const Settings = () => {
   };
 
   // Profile State
-  const [displayName, setDisplayName] = useState('');
-  const [avatarUrl, setAvatarUrl] = useState('');
+  const [displayName, setDisplayName] = useState(() => localStorage.getItem('tr-display-name') || 'Zoro User');
+  const [avatarUrl, setAvatarUrl] = useState(() => localStorage.getItem('tr-avatar-url') || '');
 
   // Backup/Restore status
   const [exportLoading, setExportLoading] = useState(false);
@@ -317,16 +317,6 @@ const Settings = () => {
     setDiscoveredChats(null);
   };
 
-  useEffect(() => {
-    setAiProvider(localStorage.getItem('zoro-ai-provider') || 'gemini');
-    setApiKey(localStorage.getItem('zoro-ai-key') || '');
-    setModel(localStorage.getItem('zoro-ai-model') || 'gemini-1.5-flash-8b');
-    setGroqKey(localStorage.getItem('zoro-groq-key') || '');
-    setGroqModel(localStorage.getItem('zoro-groq-model') || 'llama-3.3-70b-versatile');
-    setTheme(localStorage.getItem('tr-theme') || 'dark');
-    setDisplayName(localStorage.getItem('tr-display-name') || 'Zoro User');
-    setAvatarUrl(localStorage.getItem('tr-avatar-url') || '');
-  }, []);
 
   const handleSaveAIConfig = (e) => {
     e.preventDefault();

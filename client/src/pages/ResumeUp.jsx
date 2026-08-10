@@ -151,7 +151,7 @@ const ResumeUp = () => {
 
   const [resumes, setResumes] = useState(() => {
     const saved = localStorage.getItem('tr-resumes-list-v2');
-    if (saved) { try { return JSON.parse(saved); } catch { } }
+    if (saved) { try { return JSON.parse(saved); } catch (e) { console.warn('Failed to parse tr-resumes-list-v2:', e); } }
     return [{ id: 'res-1', name: 'Software Engineer Resume', data: initialResumeData }];
   });
   const [activeResumeId, setActiveResumeId] = useState(() => resumes[0]?.id || 'res-1');

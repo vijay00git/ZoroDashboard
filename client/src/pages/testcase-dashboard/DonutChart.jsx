@@ -1,58 +1,72 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useId, useState } from 'react';
 
-// segments: [{ value, color }]. Draws a ring chart into a <canvas>, cut out
-// in the middle so it reads as a donut rather than a pie.
+// Visual gap between adjacent segments, in pathLength percent units (see
+// pathLength={100} below — this makes the gap a fixed fraction of the ring
+// regardless of pixel size, so it looks consistent at every size prop).
+const GAP_PCT = 2.4;
+
+// segments: [{ value, color }]. Renders a ring chart (SVG stroke, not a
+// filled pie) with rounded segment caps, a small surface-color gap between
+// segments instead of a border, a self-gradient sheen per segment, and a
+// draw-in animation on mount — all driven by the theme's own --accent-*
+// tokens via stop-color, so it stays correct across dark/light/lava.
 const DonutChart = ({ segments, size = 88 }) => {
-  const canvasRef = useRef(null);
+  const rawId = useId();
+  const uid = `donut${rawId.replace(/[^a-zA-Z0-9]/g, '')}`;
+  const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const dpr = window.devicePixelRatio || 1;
-    canvas.width = size * dpr;
-    canvas.height = size * dpr;
-    const ctx = canvas.getContext('2d');
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.clearRect(0, 0, size, size);
+    const raf = requestAnimationFrame(() => setMounted(true));
+    return () => cancelAnimationFrame(raf);
+  }, [segments]);
 
-    const cx = size / 2, cy = size / 2, rOuter = size / 2 - 3, rInner = rOuter * 0.52;
-    const total = segments.reduce((s, seg) => s + seg.value, 0);
+  const strokeWidth = Math.max(7, size * 0.15);
+  const r = size / 2 - strokeWidth / 2;
+  const cx = size / 2;
+  const cy = size / 2;
+  const total = segments.reduce((s, seg) => s + seg.value, 0);
+  const visible = segments.filter((seg) => seg.value > 0);
+  const gap = visible.length > 1 ? GAP_PCT : 0;
+  const fullPcts = visible.map((seg) => (seg.value / total) * 100);
 
-    // canvas fillStyle can't resolve CSS custom properties itself — read the
-    // computed value off a live element so var(--accent-*) colors still work.
-    const computed = getComputedStyle(canvas);
-    const resolveColor = (c) => {
-      const m = /^var\((--[\w-]+)\)$/.exec(c || '');
-      return m ? (computed.getPropertyValue(m[1]).trim() || '#888') : c;
-    };
-
-    if (total === 0) {
-      ctx.beginPath();
-      ctx.arc(cx, cy, rOuter, 0, Math.PI * 2);
-      ctx.fillStyle = 'rgba(128,128,128,0.25)';
-      ctx.fill();
-    } else {
-      let start = -Math.PI / 2;
-      segments.forEach((seg) => {
-        if (seg.value === 0) return;
-        const angle = (seg.value / total) * Math.PI * 2;
-        ctx.beginPath();
-        ctx.moveTo(cx, cy);
-        ctx.arc(cx, cy, rOuter, start, start + angle);
-        ctx.closePath();
-        ctx.fillStyle = resolveColor(seg.color);
-        ctx.fill();
-        start += angle;
-      });
-      ctx.globalCompositeOperation = 'destination-out';
-      ctx.beginPath();
-      ctx.arc(cx, cy, rInner, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.globalCompositeOperation = 'source-over';
-    }
-  }, [segments, size]);
-
-  return <canvas ref={canvasRef} style={{ width: size, height: size }} />;
+  return (
+    <svg className="tcd-donut-svg" width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+      {total === 0 ? (
+        <circle cx={cx} cy={cy} r={r} fill="none" className="tcd-donut-track" strokeWidth={strokeWidth} />
+      ) : (
+        <>
+          <defs>
+            {visible.map((seg, i) => (
+              <linearGradient key={i} id={`${uid}-${i}`} x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" style={{ stopColor: seg.color, stopOpacity: 0.72 }} />
+                <stop offset="100%" style={{ stopColor: seg.color, stopOpacity: 1 }} />
+              </linearGradient>
+            ))}
+          </defs>
+          <g transform={`rotate(-90 ${cx} ${cy})`}>
+            {visible.map((seg, i) => {
+              const drawPct = Math.max(0, fullPcts[i] - gap);
+              const cumPct = fullPcts.slice(0, i).reduce((a, b) => a + b, 0);
+              const rotateDeg = (cumPct / 100) * 360;
+              return (
+                <circle
+                  key={i}
+                  cx={cx} cy={cy} r={r} fill="none"
+                  stroke={`url(#${uid}-${i})`}
+                  strokeWidth={strokeWidth}
+                  pathLength={100}
+                  strokeDasharray={`${drawPct} ${100 - drawPct}`}
+                  transform={`rotate(${rotateDeg} ${cx} ${cy})`}
+                  className={`tcd-ring-seg${mounted ? ' in' : ''}`}
+                  style={{ transitionDelay: `${i * 60}ms` }}
+                />
+              );
+            })}
+          </g>
+        </>
+      )}
+    </svg>
+  );
 };
 
 export default DonutChart;

@@ -612,7 +612,7 @@ const CypressRunner = () => {
       <div className="cyr-card">
         <div className={`cyr-setup-header${setupCollapsed ? '' : ' open'}`} onClick={() => setSetupCollapsed((v) => !v)}>
           <ChevronRight className="chev" size={16} />
-          <h2><Terminal size={18} /> Cypress Runner</h2>
+          <h2><span className="cyr-icon-chip"><Terminal size={16} /></span> Cypress Runner</h2>
           {setupCollapsed && (
             <div className="cyr-setup-summary" onClick={(e) => e.stopPropagation()}>
               <span className="cyr-badge cyr-setup-path" title={projectPath || 'No project path set'}>
@@ -750,7 +750,7 @@ const CypressRunner = () => {
       <div className={`cyr-layout${(active || !runsHidden) ? '' : ' cyr-layout-single'}`}>
         <div className="cyr-col-left">
           <div className="cyr-card">
-            <h3><ListChecks size={15} /> Test cases</h3>
+            <h3><span className="cyr-icon-chip" style={{ '--chip-accent': 'var(--accent-cyan)' }}><ListChecks size={15} /></span> Test cases</h3>
             {manifestData.e2eRoot && (
               <p className="cyr-e2e-note">
                 Queued runs use the same E2E project as Test Cases: <code>{manifestData.e2eRoot}</code>
@@ -778,7 +778,7 @@ const CypressRunner = () => {
               </button>
               <button
                 type="button"
-                className="cyr-btn small"
+                className={`cyr-btn small${failedFileItems.length > 0 ? ' warn' : ''}`}
                 disabled={failedFileItems.length === 0}
                 title={failedFileItems.length > 0 ? `Re-queue the ${failedFileItems.length} file(s) whose last run failed` : 'No files currently failing their last run'}
                 onClick={handleRetryFailed}
@@ -863,9 +863,10 @@ const CypressRunner = () => {
             {active && (
               <div className="cyr-card">
                 <h3>
-                  <FolderOpen size={15} /> Live output — {active.specPath || 'all specs'} {active.headed ? '(headed)' : '(headless)'}
+                  <span className="cyr-icon-chip" style={{ '--chip-accent': 'var(--accent-green)' }}><FolderOpen size={15} /></span>
+                  Live output — {active.specPath || 'all specs'} {active.headed ? '(headed)' : '(headless)'}
                 </h3>
-                <LogViewer text={logText} />
+                <LogViewer text={logText} live />
               </div>
             )}
 
@@ -916,7 +917,7 @@ const CypressRunner = () => {
         <ModalPortal>
           <div className="cyr-modal-overlay" onClick={(e) => { if (e.target === e.currentTarget) setViewLog(null); }}>
             <div className="cyr-modal cyr-log-modal" role="dialog" aria-modal="true">
-              <h3><Terminal size={15} /> Run log</h3>
+              <h3><span className="cyr-icon-chip"><Terminal size={15} /></span> Run log</h3>
               <LogViewer text={viewLog.log} />
               <div className="cyr-modal-actions">
                 <button className="cyr-btn primary" onClick={() => setViewLog(null)}>Close</button>

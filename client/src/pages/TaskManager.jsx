@@ -99,9 +99,36 @@ const CustomSelect = ({ value, onChange, options, icon: Icon, iconColor }) => {
   );
 };
 
+const LOCAL_TASKS_KEY = 'tr-run-tasks';
+
+function loadInitialTasks() {
+  const savedTasks = localStorage.getItem(LOCAL_TASKS_KEY);
+  if (savedTasks) return JSON.parse(savedTasks);
+  const seed = [
+    { id: 't_1', title: 'Complete timesheet log for regression test runs', deadline: new Date().toISOString(), priority: 'high', completed: false },
+    { id: 't_2', title: 'Revise mastery roadmap for learning React components', deadline: '', priority: 'medium', completed: false }
+  ];
+  localStorage.setItem(LOCAL_TASKS_KEY, JSON.stringify(seed));
+  return seed;
+}
+
+function loadInitialCalendarEvents() {
+  try {
+    const storedEvents = localStorage.getItem('ts-events');
+    if (storedEvents) {
+      return JSON.parse(storedEvents).map(e => ({
+        ...e,
+        start: e.start ? new Date(e.start) : null,
+        end: e.end ? new Date(e.end) : null
+      }));
+    }
+  } catch (e) { console.warn('Failed to parse ts-events:', e); }
+  return [];
+}
+
 const TaskManager = () => {
   // --- Tasks State ---
-  const [tasks, setTasks] = useState([]);
+  const [tasks, setTasks] = useState(loadInitialTasks);
   const [newTaskTitle, setNewTaskTitle] = useState('');
   const [newTaskDeadline, setNewTaskDeadline] = useState('');
   const [newTaskPriority, setNewTaskPriority] = useState('medium');
@@ -119,37 +146,8 @@ const TaskManager = () => {
 
   // --- Calendar State ---
   const [currentDate, setCurrentDate] = useState(new Date());
-  const [calendarEvents, setCalendarEvents] = useState([]);
+  const [calendarEvents, setCalendarEvents] = useState(loadInitialCalendarEvents);
   const [timesheetData, setTimesheetData] = useState([]);
-
-  const LOCAL_TASKS_KEY = 'tr-run-tasks';
-
-  // --- Initialize ---
-  useEffect(() => {
-    const savedTasks = localStorage.getItem(LOCAL_TASKS_KEY);
-    if (savedTasks) {
-      setTasks(JSON.parse(savedTasks));
-    } else {
-      const seed = [
-        { id: 't_1', title: 'Complete timesheet log for regression test runs', deadline: new Date().toISOString(), priority: 'high', completed: false },
-        { id: 't_2', title: 'Revise mastery roadmap for learning React components', deadline: '', priority: 'medium', completed: false }
-      ];
-      setTasks(seed);
-      localStorage.setItem(LOCAL_TASKS_KEY, JSON.stringify(seed));
-    }
-
-    try {
-      const storedEvents = localStorage.getItem('ts-events');
-      if (storedEvents) {
-        const parsed = JSON.parse(storedEvents).map(e => ({
-          ...e,
-          start: e.start ? new Date(e.start) : null,
-          end: e.end ? new Date(e.end) : null
-        }));
-        setCalendarEvents(parsed);
-      }
-    } catch (e) { }
-  }, []);
 
   const loadTimesheetData = () => {
     const year = currentDate.getFullYear();
@@ -164,7 +162,7 @@ const TaskManager = () => {
           return;
         }
       }
-    } catch (e) { }
+    } catch (e) { console.warn('Failed to parse timesheet data for', key, ':', e); }
     setTimesheetData([]);
   };
 

@@ -1,26 +1,30 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, lazy, Suspense } from 'react';
 import { Routes, Route, useLocation, useNavigate } from 'react-router-dom';
 import Navbar from './components/Navbar';
-import Dashboard from './pages/Dashboard';
-import LearnSkills from './pages/LearnSkills';
-import QuickLaunch from './pages/QuickLaunch';
-import ResumeUp from './pages/ResumeUp';
-import Notebook from './pages/Notebook';
-import TaskManager from './pages/TaskManager';
-import Water from './pages/Water';
-import Settings from './pages/Settings';
-import Status from './pages/Status';
-import SyncHub from './pages/SyncHub';
-import Timesheet from './pages/Timesheet';
-import CSVOrganizer from './pages/CSVOrganizer';
-import SSBucket from './pages/SSBucket';
-import TestCaseDashboard from './pages/TestCaseDashboard';
-import CypressRunner from './pages/CypressRunner';
 import PomodoroTimer from './components/PomodoroTimer';
 import FocusMode from './components/FocusMode';
 import GlobalClock from './components/GlobalClock';
 import { GlobalAlert } from './components/GlobalAlert';
 import { PomodoroProvider } from './contexts/PomodoroContext';
+
+// Lazy-loaded per route so navigating to one page doesn't also download
+// every other page's code in the same bundle (see the Vite build's
+// "chunks larger than 500kB" warning prior to this split).
+const Dashboard = lazy(() => import('./pages/Dashboard'));
+const LearnSkills = lazy(() => import('./pages/LearnSkills'));
+const QuickLaunch = lazy(() => import('./pages/QuickLaunch'));
+const ResumeUp = lazy(() => import('./pages/ResumeUp'));
+const Notebook = lazy(() => import('./pages/Notebook'));
+const TaskManager = lazy(() => import('./pages/TaskManager'));
+const Water = lazy(() => import('./pages/Water'));
+const Settings = lazy(() => import('./pages/Settings'));
+const Status = lazy(() => import('./pages/Status'));
+const SyncHub = lazy(() => import('./pages/SyncHub'));
+const Timesheet = lazy(() => import('./pages/Timesheet'));
+const CSVOrganizer = lazy(() => import('./pages/CSVOrganizer'));
+const SSBucket = lazy(() => import('./pages/SSBucket'));
+const TestCaseDashboard = lazy(() => import('./pages/TestCaseDashboard'));
+const CypressRunner = lazy(() => import('./pages/CypressRunner'));
 
 const PAGE_TITLES = {
   '/':             'Dashboard',
@@ -66,7 +70,7 @@ function App() {
       try {
         const saved = localStorage.getItem('tr-shortcuts');
         if (saved) shortcuts = JSON.parse(saved);
-      } catch (_) {}
+      } catch (e) { console.warn('Failed to parse tr-shortcuts, using defaults:', e); }
       const target = shortcuts.find(s => s.key === e.key);
       if (target) { e.preventDefault(); navigate(target.path); }
     };
@@ -127,23 +131,25 @@ function App() {
         {/* ── Page Content ── */}
         <main className="app-content">
           <div key={location.pathname} style={{ animation: 'fadeIn 0.25s ease-out forwards' }}>
-            <Routes>
-              <Route path="/"             element={<Dashboard />} />
-              <Route path="/synchub"      element={<SyncHub />} />
-              <Route path="/notebook"     element={<Notebook />} />
-              <Route path="/task-manager" element={<TaskManager />} />
-              <Route path="/timesheet"    element={<Timesheet />} />
-              <Route path="/water"        element={<Water />} />
-              <Route path="/quicklaunch"  element={<QuickLaunch />} />
-              <Route path="/status"       element={<Status />} />
-              <Route path="/goal"         element={<LearnSkills />} />
-              <Route path="/resume"         element={<ResumeUp />} />
-              <Route path="/csv-organizer" element={<CSVOrganizer />} />
-              <Route path="/ss-bucket"    element={<SSBucket />} />
-              <Route path="/testcase-dashboard" element={<TestCaseDashboard />} />
-              <Route path="/cypress-runner" element={<CypressRunner />} />
-              <Route path="/settings"      element={<Settings />} />
-            </Routes>
+            <Suspense fallback={<div className="app-route-loading"><div className="spinner" /></div>}>
+              <Routes>
+                <Route path="/"             element={<Dashboard />} />
+                <Route path="/synchub"      element={<SyncHub />} />
+                <Route path="/notebook"     element={<Notebook />} />
+                <Route path="/task-manager" element={<TaskManager />} />
+                <Route path="/timesheet"    element={<Timesheet />} />
+                <Route path="/water"        element={<Water />} />
+                <Route path="/quicklaunch"  element={<QuickLaunch />} />
+                <Route path="/status"       element={<Status />} />
+                <Route path="/goal"         element={<LearnSkills />} />
+                <Route path="/resume"         element={<ResumeUp />} />
+                <Route path="/csv-organizer" element={<CSVOrganizer />} />
+                <Route path="/ss-bucket"    element={<SSBucket />} />
+                <Route path="/testcase-dashboard" element={<TestCaseDashboard />} />
+                <Route path="/cypress-runner" element={<CypressRunner />} />
+                <Route path="/settings"      element={<Settings />} />
+              </Routes>
+            </Suspense>
           </div>
         </main>
       </div>

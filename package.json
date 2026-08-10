@@ -15,7 +15,6 @@
     "cors": "^2.8.6",
     "express": "^5.2.1",
     "multer": "^2.1.1",
-    "node-ical": "^0.26.1",
-    "puppeteer": "^25.1.0"
+    "node-ical": "^0.26.1"
   }
 }

@@ -32,9 +32,9 @@ import { showAlert, showConfirm, showPrompt } from '../utils/Alerts';
 
 const SyncHub = () => {
   // TestRail credentials
-  const [runId, setRunId] = useState('');
-  const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
+  const [runId, setRunId] = useState(() => localStorage.getItem('tr-run-id') || '');
+  const [username, setUsername] = useState(() => localStorage.getItem('tr-username') || '');
+  const [password, setPassword] = useState(() => localStorage.getItem('tr-password') || '');
   const [savedRunIds, setSavedRunIds] = useState(() => {
     try { return JSON.parse(localStorage.getItem('tr-saved-run-ids') || '[]'); } catch { return []; }
   });
@@ -185,11 +185,7 @@ const SyncHub = () => {
     return () => { clearInterval(tick); };
   }, [syncSuccessAnim]);
 
-  // Load credential defaults
   useEffect(() => {
-    setRunId(localStorage.getItem('tr-run-id') || '');
-    setUsername(localStorage.getItem('tr-username') || '');
-    setPassword(localStorage.getItem('tr-password') || '');
     fetchSavedStates();
   }, []);
 

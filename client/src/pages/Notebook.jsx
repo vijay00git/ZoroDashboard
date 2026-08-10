@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { marked } from 'marked';
 import html2pdf from 'html2pdf.js';
+import { sanitizeHtml } from '../utils/sanitizeHtml';
 import {
   Plus,
   Trash2,
@@ -275,7 +276,7 @@ const Notebook = () => {
     tempContainer.innerHTML = `
       <div style="padding: 20px 40px; font-family: 'Inter', sans-serif; color: #111;">
         <h1 style="border-bottom: 2px solid #eaeaea; padding-bottom: 10px; margin-bottom: 20px;">${activeNote.name}</h1>
-        ${marked(activeNote.content || '')}
+        ${sanitizeHtml(marked(activeNote.content || ''))}
       </div>
     `;
     
@@ -575,7 +576,7 @@ const Notebook = () => {
                       overflowY: 'auto',
                       background: 'var(--bg-primary)'
                     }}
-                    dangerouslySetInnerHTML={{ __html: marked(activeNote.content || '') }}
+                    dangerouslySetInnerHTML={{ __html: sanitizeHtml(marked(activeNote.content || '')) }}
                   />
                 )}
 

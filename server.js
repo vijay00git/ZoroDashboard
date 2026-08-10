@@ -15,7 +15,11 @@ const upload = multer({ dest: path.join(__dirname, 'uploads') });
 const app = express();
 const PORT = 3000;
 
-app.use(cors());
+// Locally-hosted, unauthenticated API — restrict CORS to this app's own
+// origins (production on :3000, the Vite dev server on :5173) so an
+// unrelated page open in the same browser can't read or mutate this data.
+const ALLOWED_ORIGINS = ['http://localhost:3000', 'http://localhost:5173'];
+app.use(cors({ origin: ALLOWED_ORIGINS }));
 app.use(express.json({ limit: '50mb' }));
 app.use(express.static(path.join(__dirname, 'client/dist')));
 
@@ -34,6 +38,20 @@ const CYR_SCREENSHOTS_DIR = path.join(__dirname, 'data', 'cypress-screenshots');
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 });
 
+// Every persisted file in data/ goes through here instead of a raw
+// fs.writeFileSync — writing to a sibling temp file and renaming it into
+// place means a crash/power-loss mid-write leaves the *old* file intact
+// (a rename onto an existing path is atomic on the same filesystem)
+// instead of a half-written, corrupted one.
+function writeFileAtomic(filePath, data) {
+    const tmpPath = `${filePath}.tmp-${process.pid}-${Date.now()}`;
+    fs.writeFileSync(tmpPath, data);
+    fs.renameSync(tmpPath, filePath);
+}
+function writeJsonAtomic(filePath, obj) {
+    writeFileAtomic(filePath, JSON.stringify(obj, null, 2));
+}
+
 app.post('/api/save', (req, res) => {
     const { name, folder, testCases } = req.body;
     if (!name || !testCases) return res.status(400).json({ error: 'Missing name or testCases' });
@@ -42,7 +60,7 @@ app.post('/api/save', (req, res) => {
     const filePath = path.join(DATA_DIR, `${safeName}.json`);
 
     try {
-        fs.writeFileSync(filePath, JSON.stringify({ name, folder: folder || 'Uncategorized', testCases }, null, 2));
+        writeJsonAtomic(filePath, { name, folder: folder || 'Uncategorized', testCases });
         res.status(200).json({ success: true, message: 'Saved successfully.' });
     } catch (e) {
         res.status(500).json({ error: e.message });
@@ -91,7 +109,7 @@ app.get('/api/matrices', (req, res) => {
 });
 
 app.get('/api/matrix/:id', (req, res) => {
-    const { id } = req.params;
+    const id = path.basename(req.params.id); // prevents traversal
     const filePath = path.join(DATA_DIR, `${id}.json`);
     if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'Matrix not found' });
 
@@ -104,7 +122,7 @@ app.get('/api/matrix/:id', (req, res) => {
 });
 
 app.put('/api/matrix/:id', (req, res) => {
-    const { id } = req.params;
+    const id = path.basename(req.params.id); // prevents traversal
     const { testCases, name, folder } = req.body;
 
     const filePath = path.join(DATA_DIR, `${id}.json`);
@@ -115,7 +133,7 @@ app.put('/api/matrix/:id', (req, res) => {
         if (testCases) existing.testCases = testCases;
         if (name) existing.name = name;
         if (folder !== undefined) existing.folder = folder;
-        fs.writeFileSync(filePath, JSON.stringify(existing, null, 2));
+        writeJsonAtomic(filePath, existing);
         res.status(200).json({ success: true, message: 'Updated successfully.' });
     } catch (e) {
         res.status(500).json({ error: e.message });
@@ -123,7 +141,7 @@ app.put('/api/matrix/:id', (req, res) => {
 });
 
 app.delete('/api/matrix/:id', (req, res) => {
-    const { id } = req.params;
+    const id = path.basename(req.params.id); // prevents traversal
     const filePath = path.join(DATA_DIR, `${id}.json`);
 
     if (!fs.existsSync(filePath)) {
@@ -162,7 +180,7 @@ app.get('/api/csvfiles', (req, res) => {
 });
 
 app.get('/api/csvfiles/:id', (req, res) => {
-    const fp = path.join(CSV_DIR, `${req.params.id}.csv`);
+    const fp = path.join(CSV_DIR, `${path.basename(req.params.id)}.csv`); // prevents traversal
     if (!fs.existsSync(fp)) return res.status(404).json({ error: 'Not found' });
     try { res.json({ content: fs.readFileSync(fp, 'utf-8') }); }
     catch (e) { res.status(500).json({ error: e.message }); }
@@ -174,17 +192,17 @@ app.post('/api/csvfiles', (req, res) => {
     const safe = name.replace(/[^a-z0-9_\-]/gi, '_').replace(/\.csv$/i, '');
     const fp = path.join(CSV_DIR, `${safe}.csv`);
     try {
-        fs.writeFileSync(fp, content, 'utf-8');
+        writeFileAtomic(fp, content);
         res.json({ success: true, id: safe });
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 app.put('/api/csvfiles/:id', (req, res) => {
     const { content, newName } = req.body;
-    const fp = path.join(CSV_DIR, `${req.params.id}.csv`);
+    const fp = path.join(CSV_DIR, `${path.basename(req.params.id)}.csv`); // prevents traversal
     if (!fs.existsSync(fp)) return res.status(404).json({ error: 'Not found' });
     try {
-        if (content !== undefined) fs.writeFileSync(fp, content, 'utf-8');
+        if (content !== undefined) writeFileAtomic(fp, content);
         if (newName) {
             const safe = newName.replace(/[^a-z0-9_\-]/gi, '_').replace(/\.csv$/i, '');
             const newFp = path.join(CSV_DIR, `${safe}.csv`);
@@ -196,7 +214,7 @@ app.put('/api/csvfiles/:id', (req, res) => {
 });
 
 app.delete('/api/csvfiles/:id', (req, res) => {
-    const fp = path.join(CSV_DIR, `${req.params.id}.csv`);
+    const fp = path.join(CSV_DIR, `${path.basename(req.params.id)}.csv`); // prevents traversal
     if (!fs.existsSync(fp)) return res.status(404).json({ error: 'Not found' });
     try { fs.unlinkSync(fp); res.json({ success: true }); }
     catch (e) { res.status(500).json({ error: e.message }); }
@@ -241,7 +259,7 @@ app.post('/api/notes', (req, res) => {
 
     try {
         // We'll write it as a simple markdown file to satisfy "saved in local machine with correct file name"
-        fs.writeFileSync(filePath, content || '');
+        writeFileAtomic(filePath, content || '');
         res.status(200).json({ success: true, message: 'Note saved successfully.', file: `${safeName}.md` });
     } catch (e) {
         res.status(500).json({ error: e.message });
@@ -375,7 +393,7 @@ app.post('/api/timesheet', (req, res) => {
     const filePath = path.join(TS_DIR, safeName);
 
     try {
-        fs.writeFileSync(filePath, csvData);
+        writeFileAtomic(filePath, csvData);
         res.status(200).json({ success: true, message: 'Timesheet saved successfully.', file: safeName });
     } catch (e) {
         res.status(500).json({ error: e.message });
@@ -459,7 +477,7 @@ app.get('/api/quicklaunch', (req, res) => {
 app.post('/api/quicklaunch', (req, res) => {
     const filePath = path.join(QL_DIR, 'data.json');
     try {
-        fs.writeFileSync(filePath, JSON.stringify(req.body, null, 2));
+        writeJsonAtomic(filePath, req.body);
         res.status(200).json({ success: true });
     } catch (e) {
         res.status(500).json({ error: e.message });
@@ -634,7 +652,7 @@ app.use('/api/calendar/upload', express.text({ limit: '10mb', type: '*/*' }));
 app.post('/api/calendar/upload', (req, res) => {
     try {
         if (!req.body) return res.status(400).json({ error: 'No content' });
-        fs.writeFileSync(path.join(__dirname, 'data', 'calendar.ics'), req.body, 'utf-8');
+        writeFileAtomic(path.join(__dirname, 'data', 'calendar.ics'), req.body);
         res.status(200).json({ success: true });
     } catch (e) {
         res.status(500).json({ error: e.message });
@@ -682,7 +700,7 @@ function seedTemplatesIfEmpty() {
         if (mdFiles.length === 0) {
             DEFAULT_TEMPLATES.forEach(t => {
                 const fileContent = `<!-- name: ${t.name} -->\n${t.content}`;
-                fs.writeFileSync(path.join(TEMPLATE_DIR, `${t.id}.md`), fileContent, 'utf-8');
+                writeFileAtomic(path.join(TEMPLATE_DIR, `${t.id}.md`), fileContent);
             });
         }
     } catch (err) {
@@ -734,7 +752,7 @@ app.post('/api/status/templates', (req, res) => {
 
         templates.forEach(t => {
             const fileContent = `<!-- name: ${t.name} -->\n${t.content}`;
-            fs.writeFileSync(path.join(TEMPLATE_DIR, `${t.id}.md`), fileContent, 'utf-8');
+            writeFileAtomic(path.join(TEMPLATE_DIR, `${t.id}.md`), fileContent);
         });
 
         res.json({ success: true });
@@ -884,7 +902,7 @@ app.post('/api/screenshots/meta', (req, res) => {
             }
             fs.copyFileSync(SS_META, SS_META_BAK(0));
         }
-        fs.writeFileSync(SS_META, JSON.stringify({ groups }, null, 2));
+        writeJsonAtomic(SS_META, { groups });
         res.json({ success: true });
     } catch (e) {
         res.status(500).json({ error: e.message });
@@ -941,10 +959,7 @@ app.post('/api/backup', (req, res) => {
         
         // Save localStorage data sent from client
         if (req.body && req.body.localStorageData) {
-            fs.writeFileSync(
-                path.join(dataPath, 'local_storage.json'), 
-                JSON.stringify(req.body.localStorageData, null, 2)
-            );
+            writeJsonAtomic(path.join(dataPath, 'local_storage.json'), req.body.localStorageData);
         }
 
         const zip = new AdmZip();
@@ -974,24 +989,37 @@ app.post('/api/restore', upload.single('backup'), (req, res) => {
         return res.status(400).json({ error: 'No backup file uploaded' });
     }
 
+    // Extract into an isolated temp directory first — never straight onto
+    // the app root — so a malformed/malicious zip can only ever land inside
+    // data/ (and the manifest path below), never overwrite server.js,
+    // package.json, or anything else in the project.
+    const tempExtractDir = path.join(os.tmpdir(), `zoro-restore-${Date.now()}-${Math.round(Math.random() * 1e6)}`);
+
     try {
         const zip = new AdmZip(req.file.path);
-        const extractPath = __dirname;
-
-        // Extract the zip to the root (since we backed up 'data' folder inside)
-        // Overwrite existing files
-        zip.extractAllTo(extractPath, true);
+        fs.mkdirSync(tempExtractDir, { recursive: true });
+        zip.extractAllTo(tempExtractDir, true);
 
         // Cleanup uploaded file
         fs.unlinkSync(req.file.path);
 
-        // Move the bundled manifest (see /api/backup) from its stray
-        // zip-root landing spot back to its real external path.
-        const bundledManifestPath = path.join(__dirname, 'external-ic-tokyo-file-manifest.md');
+        // Only two things are ever expected in a backup zip (see /api/backup
+        // above): the data/ folder, and the bundled external manifest file.
+        // Copy just those into place — anything else in the zip is ignored.
+        const extractedDataDir = path.join(tempExtractDir, 'data');
+        const dataPath = path.join(__dirname, 'data');
+        if (fs.existsSync(extractedDataDir)) {
+            fs.mkdirSync(dataPath, { recursive: true });
+            fs.cpSync(extractedDataDir, dataPath, { recursive: true, force: true });
+        }
+
+        const bundledManifestPath = path.join(tempExtractDir, 'external-ic-tokyo-file-manifest.md');
         if (fs.existsSync(bundledManifestPath)) {
             fs.mkdirSync(path.dirname(TCD_MANIFEST_PATH), { recursive: true });
-            fs.renameSync(bundledManifestPath, TCD_MANIFEST_PATH);
+            fs.copyFileSync(bundledManifestPath, TCD_MANIFEST_PATH);
         }
+
+        fs.rmSync(tempExtractDir, { recursive: true, force: true });
 
         // A restore can silently replace data/settings/integrations.local.json
         // out from under the running server — invalidate every cache derived
@@ -1026,6 +1054,7 @@ app.post('/api/restore', upload.single('backup'), (req, res) => {
     } catch (e) {
         console.error("Backup restoration failed:", e);
         if (fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
+        fs.rmSync(tempExtractDir, { recursive: true, force: true });
         res.status(500).json({ error: 'Failed to restore backup' });
     }
 });
@@ -1062,7 +1091,7 @@ function tcdLoadNotes() {
 }
 function tcdSaveNotes() {
     try {
-        fs.writeFileSync(TCD_NOTES_PATH, JSON.stringify(tcdNotesCache || {}, null, 2));
+        writeJsonAtomic(TCD_NOTES_PATH, tcdNotesCache || {});
     } catch (e) {
         console.error('[testcases] failed to save notes:', e.message);
     }
@@ -1083,7 +1112,7 @@ function tcdLoadManualStatus() {
 }
 function tcdSaveManualStatus() {
     try {
-        fs.writeFileSync(TCD_MANUAL_STATUS_PATH, JSON.stringify(tcdManualStatusCache || {}, null, 2));
+        writeJsonAtomic(TCD_MANUAL_STATUS_PATH, tcdManualStatusCache || {});
     } catch (e) {
         console.error('[testcases] failed to save manual status:', e.message);
     }
@@ -1103,7 +1132,7 @@ function tcdLoadTags() {
 }
 function tcdSaveTags() {
     try {
-        fs.writeFileSync(TCD_TAGS_PATH, JSON.stringify(tcdTagsCache || {}, null, 2));
+        writeJsonAtomic(TCD_TAGS_PATH, tcdTagsCache || {});
     } catch (e) {
         console.error('[testcases] failed to save tags:', e.message);
     }
@@ -1302,7 +1331,7 @@ let tcdPumpInFlight = false;
 
 function tcdSaveQueueState() {
     try {
-        fs.writeFileSync(TCD_QUEUE_STATE_PATH, JSON.stringify({ queue: tcdJobQueue, running: tcdRunningJobs }, null, 2));
+        writeJsonAtomic(TCD_QUEUE_STATE_PATH, { queue: tcdJobQueue, running: tcdRunningJobs });
     } catch (e) {
         console.error('[testcases] failed to save queue state:', e.message);
     }
@@ -1310,7 +1339,7 @@ function tcdSaveQueueState() {
 
 function tcdSaveHistory() {
     try {
-        fs.writeFileSync(TCD_HISTORY_PATH, JSON.stringify(tcdJobHistory.slice(0, TCD_HISTORY_MAX), null, 2));
+        writeJsonAtomic(TCD_HISTORY_PATH, tcdJobHistory.slice(0, TCD_HISTORY_MAX));
     } catch (e) {
         console.error('[testcases] failed to save history:', e.message);
     }
@@ -2047,6 +2076,14 @@ function tcdExtractFromFile(content) {
     return rows;
 }
 
+// relPath -> { mtimeMs, size, rows } — /api/testcases/data is polled every
+// 60s by TestCaseDashboard.jsx, and re-reading + re-parsing every manifest
+// file's full contents on every single poll (even when nothing changed)
+// blocks Node's single event loop long enough to delay other concurrent
+// requests on a large manifest. Skip the read+parse for any file whose
+// mtime/size haven't moved since the last build.
+const tcdFileParseCache = new Map();
+
 function tcdBuildData() {
     const md = fs.readFileSync(TCD_MANIFEST_PATH, 'utf8');
     const entries = tcdParseManifest(md);
@@ -2055,21 +2092,46 @@ function tcdBuildData() {
     const missing = [];
     const fileSet = {};
     const catCounts = {};
+    const seenPaths = new Set();
 
     for (const { cat, grp, relPath } of entries) {
         const fullPath = path.join(TCD_E2E_ROOT, relPath);
-        if (!fs.existsSync(fullPath) || !fs.statSync(fullPath).isFile()) {
+        seenPaths.add(relPath);
+
+        let stat;
+        try {
+            stat = fs.statSync(fullPath);
+        } catch (e) {
+            stat = null;
+        }
+        if (!stat || !stat.isFile()) {
             missing.push({ cat, grp, path: relPath });
+            tcdFileParseCache.delete(relPath);
             continue;
         }
-        const content = fs.readFileSync(fullPath, 'utf8');
-        const fileRows = tcdExtractFromFile(content);
+
+        const cached = tcdFileParseCache.get(relPath);
+        let fileRows;
+        if (cached && cached.mtimeMs === stat.mtimeMs && cached.size === stat.size) {
+            fileRows = cached.rows;
+        } else {
+            const content = fs.readFileSync(fullPath, 'utf8');
+            fileRows = tcdExtractFromFile(content);
+            tcdFileParseCache.set(relPath, { mtimeMs: stat.mtimeMs, size: stat.size, rows: fileRows });
+        }
+
         fileSet[cat] = fileSet[cat] || new Set();
         fileSet[cat].add(relPath);
         for (const r of fileRows) {
             rows.push({ cat, grp, path: relPath, id: r.id, title: r.title, club: r.club, commented: r.commented });
             catCounts[cat] = (catCounts[cat] || 0) + 1;
         }
+    }
+
+    // Drop cache entries for files no longer referenced by the manifest
+    // (removed/renamed) so this map doesn't grow unbounded over time.
+    for (const key of tcdFileParseCache.keys()) {
+        if (!seenPaths.has(key)) tcdFileParseCache.delete(key);
     }
 
     const fileCounts = {};
@@ -2122,7 +2184,7 @@ app.post('/api/testcases/manifest/add-file', (req, res) => {
     try {
         const md = fs.readFileSync(TCD_MANIFEST_PATH, 'utf8');
         const updated = tcdAddFileToManifest(md, category, group, relPath);
-        fs.writeFileSync(TCD_MANIFEST_PATH, updated);
+        writeFileAtomic(TCD_MANIFEST_PATH, updated);
         res.json({ added: relPath });
     } catch (err) {
         res.status(400).json({ error: String(err && err.message || err) });
@@ -2393,7 +2455,7 @@ app.put('/api/integrations/config', (req, res) => {
         TELEGRAM_DIGEST_TIME: /^\d{2}:\d{2}$/.test(digestTime) ? digestTime : '18:00',
     };
     try {
-        fs.writeFileSync(INTEGRATIONS_CONFIG_PATH, JSON.stringify(merged, null, 2));
+        writeJsonAtomic(INTEGRATIONS_CONFIG_PATH, merged);
     } catch (err) {
         return res.status(500).json({ error: String(err && err.message || err) });
     }
@@ -2835,7 +2897,7 @@ let tcdTelegramState = { lastDigestDate: null };
 
 function tcdSaveTelegramState() {
     try {
-        fs.writeFileSync(TCD_TELEGRAM_STATE_PATH, JSON.stringify(tcdTelegramState, null, 2));
+        writeJsonAtomic(TCD_TELEGRAM_STATE_PATH, tcdTelegramState);
     } catch (e) {
         console.error('[testcases] failed to save telegram state:', e.message);
     }
@@ -3043,7 +3105,7 @@ async function cyrSyncTestRailResults(run) {
     } catch (err) {
         run.testrailSync = { posted: 0, error: String(err && err.message || err) };
     }
-    try { fs.writeFileSync(path.join(run.dir, 'meta.json'), JSON.stringify(cyrSerializeRun(run), null, 2)); } catch (e) { /* best effort */ }
+    try { writeJsonAtomic(path.join(run.dir, 'meta.json'), cyrSerializeRun(run)); } catch (e) { /* best effort */ }
     const idx = cyrRunHistory.findIndex((h) => h.id === run.id);
     if (idx !== -1) { cyrRunHistory[idx] = cyrSerializeRun(run); cyrSaveHistory(); }
 }
@@ -3089,7 +3151,7 @@ function cyrSerializeRun(run) {
 
 function cyrSaveHistory() {
     try {
-        fs.writeFileSync(CYR_HISTORY_PATH, JSON.stringify(cyrRunHistory.slice(0, CYR_HISTORY_MAX), null, 2));
+        writeJsonAtomic(CYR_HISTORY_PATH, cyrRunHistory.slice(0, CYR_HISTORY_MAX));
     } catch (e) {
         console.error('[cypress-runner] failed to save history:', e.message);
     }
@@ -3102,7 +3164,7 @@ function cyrSaveHistory() {
 function cyrSaveState() {
     try {
         if (cyrActiveRun) {
-            fs.writeFileSync(CYR_STATE_PATH, JSON.stringify({
+            writeJsonAtomic(CYR_STATE_PATH, {
                 active: {
                     runId: cyrActiveRun.id,
                     pid: cyrActiveRun.pid,
@@ -3115,7 +3177,7 @@ function cyrSaveState() {
                     environment: cyrActiveRun.environment,
                     testrailRunId: cyrActiveRun.testrailRunId,
                 },
-            }, null, 2));
+            });
         } else if (fs.existsSync(CYR_STATE_PATH)) {
             fs.unlinkSync(CYR_STATE_PATH);
         }
@@ -3200,7 +3262,7 @@ function cyrFinalizeRun(run) {
     run.caseResults = cyrExtractCaseResults(fullLog);
     run.screenshots = cyrWalkScreenshots(path.join(CYR_SCREENSHOTS_DIR, run.id), run.id);
     try {
-        fs.writeFileSync(path.join(run.dir, 'meta.json'), JSON.stringify(cyrSerializeRun(run), null, 2));
+        writeJsonAtomic(path.join(run.dir, 'meta.json'), cyrSerializeRun(run));
     } catch (e) {
         console.error('[cypress-runner] failed to write run meta.json:', e.message);
     }
@@ -3264,7 +3326,7 @@ let cyrQueue = [];
 
 function cyrSaveQueue() {
     try {
-        fs.writeFileSync(CYR_QUEUE_PATH, JSON.stringify(cyrQueue, null, 2));
+        writeJsonAtomic(CYR_QUEUE_PATH, cyrQueue);
     } catch (e) {
         console.error('[cypress-runner] failed to save queue:', e.message);
     }

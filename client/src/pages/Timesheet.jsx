@@ -79,7 +79,7 @@ const Timesheet = () => {
           end: e.end ? new Date(e.end) : null
         }));
       }
-    } catch(err){}
+    } catch (err) { console.warn('Failed to parse ts-events:', err); }
     return [];
   });
   
@@ -168,7 +168,7 @@ const Timesheet = () => {
           if (modified) localStorage.setItem(storageKey, JSON.stringify({ ...parsed, rows: cleanRows }));
           return;
         }
-      } catch (e) { }
+      } catch (e) { console.warn('Failed to parse stored timesheet data for', storageKey, ':', e); }
     }
 
     const totalDays = getDaysInMonth(year, month);

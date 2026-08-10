@@ -6,6 +6,7 @@ import {
   Columns, Rows, ArrowUpDown
 } from 'lucide-react';
 import { showAlert, showConfirm, showPrompt } from '../utils/Alerts';
+import { useApi } from '../hooks/useApi';
 
 /* ── CSV helpers ─────────────────────────────────────────────── */
 function parseLine(line) {
@@ -106,7 +107,7 @@ export default function CSVOrganizer() {
   const [activeId,    setActiveId]    = useState(null);
   const [dirty,       setDirty]       = useState(false);
   const [savedFiles,  setSavedFiles]  = useState([]);
-  const [loadingList, setLoadingList] = useState(false);
+  const [request, loadingList] = useApi(true); // the mount effect below fetches immediately
 
   // Right panel
   const [showPanel, setShowPanel] = useState(true);
@@ -118,13 +119,10 @@ export default function CSVOrganizer() {
 
   /* ── API ──────────────────────────────────────────────────── */
   const fetchFiles = useCallback(async () => {
-    setLoadingList(true);
-    try {
-      const r = await fetch(`${API}/api/csvfiles`);
-      if (r.ok) setSavedFiles((await r.json()).files || []);
-    } catch (_) {}
-    setLoadingList(false);
-  }, []);
+    const { ok, body } = await request(`${API}/api/csvfiles`);
+    if (ok) setSavedFiles(body?.files || []);
+    else console.warn('Failed to fetch CSV file list:', body?.error);
+  }, [request]);
 
   useEffect(() => { fetchFiles(); }, [fetchFiles]);
 
@@ -311,43 +309,40 @@ export default function CSVOrganizer() {
       name = n.trim(); setFileName(name);
     }
     const content = serializeCSV(headers, rows);
-    try {
-      if (activeId) {
-        const r = await fetch(`${API}/api/csvfiles/${activeId}`, {
-          method: 'PUT', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ content })
-        });
-        if (r.ok) { setDirty(false); fetchFiles(); }
-        else showAlert('Save failed.');
-      } else {
-        const r = await fetch(`${API}/api/csvfiles`, {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name, content })
-        });
-        if (r.ok) { const d = await r.json(); setActiveId(d.id); setDirty(false); fetchFiles(); }
-        else showAlert('Save failed.');
-      }
-    } catch (e) { showAlert('Network error: ' + e.message); }
+    if (activeId) {
+      const { ok } = await request(`${API}/api/csvfiles/${activeId}`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content })
+      });
+      if (ok) { setDirty(false); fetchFiles(); }
+      else showAlert('Save failed.');
+    } else {
+      const { ok, body } = await request(`${API}/api/csvfiles`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, content })
+      });
+      if (ok) { setActiveId(body.id); setDirty(false); fetchFiles(); }
+      else showAlert('Save failed.');
+    }
   };
 
   const handleRename = async (fileId, oldName) => {
     const n = await showPrompt('Rename file to:', oldName.replace(/\.csv$/i, ''));
     if (!n?.trim()) return;
-    const r = await fetch(`${API}/api/csvfiles/${fileId}`, {
+    const { ok, body } = await request(`${API}/api/csvfiles/${fileId}`, {
       method: 'PUT', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ newName: n.trim() })
     });
-    if (r.ok) {
-      const d = await r.json();
-      if (activeId === fileId) { setActiveId(d.id); setFileName(n.trim()); }
+    if (ok) {
+      if (activeId === fileId) { setActiveId(body.id); setFileName(n.trim()); }
       fetchFiles();
-    }
+    } else showAlert('Rename failed.');
   };
 
   const handleLoad = async (fileId, name) => {
-    const r = await fetch(`${API}/api/csvfiles/${fileId}`);
-    if (!r.ok) return showAlert('Failed to load.');
-    const { headers: h, rows: rv } = parseCSV((await r.json()).content);
+    const { ok, body } = await request(`${API}/api/csvfiles/${fileId}`);
+    if (!ok) return showAlert('Failed to load.');
+    const { headers: h, rows: rv } = parseCSV(body.content);
     setHeaders(h); setRows(rv);
     setFileName(name.replace(/\.csv$/i, ''));
     setActiveId(fileId); setDirty(false);
@@ -357,7 +352,8 @@ export default function CSVOrganizer() {
   const handleDelete = async (fileId, e) => {
     e.stopPropagation();
     if (!(await showConfirm('Delete this CSV file permanently?'))) return;
-    await fetch(`${API}/api/csvfiles/${fileId}`, { method: 'DELETE' });
+    const { ok } = await request(`${API}/api/csvfiles/${fileId}`, { method: 'DELETE' });
+    if (!ok) return showAlert('Delete failed.');
     if (activeId === fileId) handleNew();
     fetchFiles();
   };

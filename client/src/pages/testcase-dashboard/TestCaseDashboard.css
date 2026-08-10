@@ -143,6 +143,16 @@
 .tcd-donut-total .n { font-size: 1.05rem; font-weight: 700; color: var(--text-primary); font-family: var(--font-mono); }
 .tcd-donut-total .lbl { font-size: 0.6rem; color: var(--text-muted); text-transform: uppercase; }
 
+.tcd-donut-svg { overflow: visible; filter: drop-shadow(0 3px 8px rgba(0, 0, 0, 0.3)); }
+.tcd-donut-track { stroke: var(--border-color); opacity: 0.6; }
+.tcd-ring-seg {
+  stroke-dashoffset: 100; transition: stroke-dashoffset 0.7s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.tcd-ring-seg.in { stroke-dashoffset: 0; }
+@media (prefers-reduced-motion: reduce) {
+  .tcd-ring-seg { transition: none; stroke-dashoffset: 0; }
+}
+
 .tcd-legend { display: flex; flex-direction: column; gap: 0.3rem; font-size: 0.78rem; color: var(--text-secondary); }
 .tcd-legend-item { display: flex; align-items: center; gap: 0.4rem; }
 .tcd-sw { width: 9px; height: 9px; border-radius: 50%; display: inline-block; flex-shrink: 0; }

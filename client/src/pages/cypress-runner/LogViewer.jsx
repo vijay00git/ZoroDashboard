@@ -3,7 +3,7 @@ import { useEffect, useRef } from 'react';
 // Auto-scrolls to the bottom as new output arrives, but stops doing so the
 // moment the user scrolls up to read something — re-engages once they
 // scroll back near the bottom themselves.
-const LogViewer = ({ text }) => {
+const LogViewer = ({ text, live = false }) => {
   const ref = useRef(null);
   const stickToBottomRef = useRef(true);
 
@@ -19,9 +19,18 @@ const LogViewer = ({ text }) => {
   }, [text]);
 
   return (
-    <pre className="cyr-log-viewer" ref={ref} onScroll={handleScroll}>
-      {text || 'Waiting for output…'}
-    </pre>
+    <div className={`cyr-terminal${live ? ' cyr-terminal-live' : ''}`}>
+      <div className="cyr-terminal-bar">
+        <span className="cyr-terminal-dot red" />
+        <span className="cyr-terminal-dot yellow" />
+        <span className="cyr-terminal-dot green" />
+        {live && <span className="cyr-terminal-live-tag">live</span>}
+      </div>
+      <pre className="cyr-log-viewer" ref={ref} onScroll={handleScroll}>
+        {text || 'Waiting for output…'}
+        {live && text ? <span className="cyr-cursor" /> : null}
+      </pre>
+    </div>
   );
 };
 

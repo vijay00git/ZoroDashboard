@@ -41,9 +41,9 @@ const SSBucket = () => {
   const grpRenameRef = useRef(null);
   const saveTimer    = useRef(null);
 
-  // ── Load metadata from server on mount ──
+  // ── Load metadata from server on mount ── (isLoading already defaults to
+  // true, so there's no need to set it again here before the fetch starts)
   useEffect(() => {
-    setIsLoading(true);
     fetch(`${API}/api/screenshots/meta`)
       .then(r => r.json())
       .then(data => {
