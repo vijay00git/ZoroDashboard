@@ -1,6 +1,6 @@
-import { CAT_ORDER, CAT_LABELS, normCat } from './helpers';
+import { CAT_ORDER, CAT_LABELS, normCat, STATUS_FILTER_ORDER, STATUS_FILTER_LABELS } from './helpers';
 
-const StatsBar = ({ data, activeCats, onToggleCat, issueFilter, onToggleIssue }) => {
+const StatsBar = ({ data, activeCats, onToggleCat, issueFilter, onToggleIssue, statusCounts }) => {
   const commentedCount = data.rows.filter((r) => r.commented).length;
   const unknownCount = (data.unknownIds || []).length;
 
@@ -37,6 +37,21 @@ const StatsBar = ({ data, activeCats, onToggleCat, issueFilter, onToggleIssue })
         >
           Not in TestRail <span className="num">{unknownCount}</span>
         </span>
+        {statusCounts && (
+          <>
+            <span className="tcd-filter-divider" />
+            {STATUS_FILTER_ORDER.map((key) => (
+              <span
+                key={key}
+                className={`tcd-chip tcd-status-chip st-${key} ${issueFilter === key ? 'active' : ''}`}
+                onClick={() => onToggleIssue(key)}
+                title={`Cases currently ${STATUS_FILTER_LABELS[key].toLowerCase()}`}
+              >
+                <span className="dot" /> {STATUS_FILTER_LABELS[key]} <span className="num">{statusCounts[key] || 0}</span>
+              </span>
+            ))}
+          </>
+        )}
       </div>
     </div>
   );

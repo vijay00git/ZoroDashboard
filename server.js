@@ -1043,6 +1043,8 @@ app.post('/api/restore', upload.single('backup'), (req, res) => {
 
 const INTEGRATIONS_CONFIG_PATH = path.join(SETTINGS_DIR, 'integrations.local.json');
 const TCD_NOTES_PATH = path.join(TCD_DIR, 'notes.json');
+const TCD_MANUAL_STATUS_PATH = path.join(TCD_DIR, 'manual-status.json');
+const TCD_TAGS_PATH = path.join(TCD_DIR, 'tags.json');
 const TCD_HISTORY_PATH = path.join(TCD_DIR, 'job-history.json');
 const TCD_QUEUE_STATE_PATH = path.join(TCD_DIR, 'queue-state.json');
 const TCD_MANIFEST_PATH = process.env.TCD_MANIFEST_PATH || path.join(os.homedir(), '.claude', 'ic-tokyo-file-manifest.md');
@@ -1064,6 +1066,55 @@ function tcdSaveNotes() {
     } catch (e) {
         console.error('[testcases] failed to save notes:', e.message);
     }
+}
+
+// Manual pass/fail/blocked/retest overrides — lets the Cypress Runner page
+// record a status for a case that wasn't (or can't be) determined by an
+// actual local run, keyed by case id the same way notes.json is.
+let tcdManualStatusCache = null;
+function tcdLoadManualStatus() {
+    if (tcdManualStatusCache) return tcdManualStatusCache;
+    try {
+        tcdManualStatusCache = JSON.parse(fs.readFileSync(TCD_MANUAL_STATUS_PATH, 'utf8'));
+    } catch (e) {
+        tcdManualStatusCache = {};
+    }
+    return tcdManualStatusCache;
+}
+function tcdSaveManualStatus() {
+    try {
+        fs.writeFileSync(TCD_MANUAL_STATUS_PATH, JSON.stringify(tcdManualStatusCache || {}, null, 2));
+    } catch (e) {
+        console.error('[testcases] failed to save manual status:', e.message);
+    }
+}
+
+// Free-form tags per case id, keyed the same way notes/manual-status are.
+// Stored as { [caseId]: string[] } — lowercased, trimmed, deduped on the way in.
+let tcdTagsCache = null;
+function tcdLoadTags() {
+    if (tcdTagsCache) return tcdTagsCache;
+    try {
+        tcdTagsCache = JSON.parse(fs.readFileSync(TCD_TAGS_PATH, 'utf8'));
+    } catch (e) {
+        tcdTagsCache = {};
+    }
+    return tcdTagsCache;
+}
+function tcdSaveTags() {
+    try {
+        fs.writeFileSync(TCD_TAGS_PATH, JSON.stringify(tcdTagsCache || {}, null, 2));
+    } catch (e) {
+        console.error('[testcases] failed to save tags:', e.message);
+    }
+}
+function tcdNormalizeTagList(list) {
+    const seen = new Set();
+    (list || []).forEach((t) => {
+        const clean = String(t || '').trim().toLowerCase();
+        if (clean) seen.add(clean);
+    });
+    return Array.from(seen);
 }
 
 let TCD_TR_CONFIG = null;
@@ -2097,6 +2148,68 @@ app.post('/api/testcases/notes', (req, res) => {
     res.json({ caseId, note: notes[caseId] || null });
 });
 
+const TCD_MANUAL_STATUSES = new Set(['passed', 'failed', 'blocked', 'retest']);
+
+app.get('/api/testcases/manual-status', (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    res.json(tcdLoadManualStatus());
+});
+
+app.post('/api/testcases/manual-status', (req, res) => {
+    const { caseId, status } = req.body;
+    if (!caseId) return res.status(400).json({ error: 'caseId is required' });
+    const statuses = tcdLoadManualStatus();
+    if (status && TCD_MANUAL_STATUSES.has(status)) {
+        statuses[caseId] = { status, updatedAt: Date.now() };
+    } else {
+        delete statuses[caseId]; // clearing an override reverts the case to its auto-detected status
+    }
+    tcdSaveManualStatus();
+    res.json({ caseId, entry: statuses[caseId] || null });
+});
+
+app.get('/api/testcases/tags', (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    res.json(tcdLoadTags());
+});
+
+// Full replace of one case's tag list — used by the individual tag editor,
+// which edits the whole set at once rather than adding/removing one at a time.
+app.post('/api/testcases/tags', (req, res) => {
+    const { caseId, tags } = req.body;
+    if (!caseId) return res.status(400).json({ error: 'caseId is required' });
+    const store = tcdLoadTags();
+    const clean = tcdNormalizeTagList(tags);
+    if (clean.length > 0) {
+        store[caseId] = clean;
+    } else {
+        delete store[caseId];
+    }
+    tcdSaveTags();
+    res.json({ caseId, tags: store[caseId] || [] });
+});
+
+// Adds/removes a single tag across many case ids at once — the bulk-select
+// toolbar's action, kept separate from the single-case replace above so a
+// bulk add can't accidentally wipe out a case's other, unrelated tags.
+app.post('/api/testcases/tags/bulk', (req, res) => {
+    const { caseIds, action, tag } = req.body;
+    const cleanTag = String(tag || '').trim().toLowerCase();
+    if (!Array.isArray(caseIds) || caseIds.length === 0) return res.status(400).json({ error: 'caseIds is required' });
+    if (!cleanTag) return res.status(400).json({ error: 'tag is required' });
+    if (action !== 'add' && action !== 'remove') return res.status(400).json({ error: "action must be 'add' or 'remove'" });
+    const store = tcdLoadTags();
+    caseIds.forEach((caseId) => {
+        const current = store[caseId] || [];
+        const next = action === 'add'
+            ? tcdNormalizeTagList([...current, cleanTag])
+            : current.filter((t) => t !== cleanTag);
+        if (next.length > 0) store[caseId] = next; else delete store[caseId];
+    });
+    tcdSaveTags();
+    res.json({ updated: caseIds.length, tag: cleanTag, action });
+});
+
 app.get('/api/testcases/recheck-ids', (req, res) => {
     tcdCaseIdCache = null; // force tcdEnsureCaseIdsFresh() to refetch on the next /api/testcases/data call
     tcdCaseIdCacheAt = 0;
@@ -2899,13 +3012,16 @@ function cyrPostTestRailResults(testrailRunId, resultMap, cyrRunId) {
 
 // Client-supplied (manual sync button) result maps are validated before
 // ever reaching a TestRail POST — case_id must be a positive integer and
-// status_id must be one of the two values this feature ever produces.
+// status_id must be one of the values this feature can produce: 1=passed,
+// 2=blocked, 4=retest, 5=failed (TestRail's own status ids). Blocked/retest
+// only ever come from a manually-marked case (cyrExtractCaseResults itself
+// only ever emits 1/5), but sync doesn't care which source it came from.
 function cyrSanitizeResultMap(resultMap) {
     const clean = {};
     Object.keys(resultMap || {}).forEach((k) => {
         const caseId = Number(k);
         const statusId = Number(resultMap[k]);
-        if (Number.isInteger(caseId) && caseId > 0 && (statusId === 1 || statusId === 5)) {
+        if (Number.isInteger(caseId) && caseId > 0 && [1, 2, 4, 5].includes(statusId)) {
             clean[caseId] = statusId;
         }
     });

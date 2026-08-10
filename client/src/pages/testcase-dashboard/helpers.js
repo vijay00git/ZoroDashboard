@@ -49,6 +49,24 @@ export function trendDotClass(status) {
   return 'dot-other';
 }
 
+// A file is "flaky" when its recent runs flip between pass and fail more
+// than once (P F P, F P F, ...) rather than settling one way — a single
+// fail-then-fixed transition is just progress, not flakiness. Killed/errored
+// runs (ABORTED/ERROR) are excluded from the sequence since they're
+// inconclusive, not a real pass/fail verdict.
+export function isFlakyTrend(trend) {
+  if (!trend || trend.length < 3) return false;
+  const relevant = trend
+    .map((h) => String(h.status || '').toUpperCase())
+    .filter((s) => s === 'SUCCESS' || s === 'FAILURE');
+  if (relevant.length < 3) return false;
+  let transitions = 0;
+  for (let i = 1; i < relevant.length; i++) {
+    if (relevant[i] !== relevant[i - 1]) transitions++;
+  }
+  return transitions >= 2;
+}
+
 export function formatDuration(ms) {
   if (!ms) return '';
   const s = Math.round(ms / 1000);
@@ -90,6 +108,12 @@ export const STATUS_COLOR = {
   retest: 'var(--accent-purple)', untested: 'var(--text-muted)', other: 'var(--border-hover)',
 };
 
+// The filter bar's status chips — order they render in, and the set FileTree
+// checks `issueFilter` against to know it's a status (not commented/unknown).
+export const STATUS_FILTER_ORDER = ['passed', 'failed', 'blocked', 'retest', 'untested'];
+export const STATUS_FILTER_KEYS = new Set(STATUS_FILTER_ORDER);
+export const STATUS_FILTER_LABELS = { passed: 'Passed', failed: 'Failed', blocked: 'Blocked', retest: 'Retest', untested: 'Untested' };
+
 export function tallyFor(rows, runStatus) {
   const tally = { passed: 0, failed: 0, blocked: 0, retest: 0, untested: 0, other: 0 };
   let matched = 0;
@@ -116,6 +140,16 @@ export function pctColor(pct) {
   if (pct >= 95) return 'var(--accent-green)';
   if (pct >= 80) return 'var(--accent-yellow)';
   return 'var(--accent-red)';
+}
+
+// Deterministic tag -> color, so the same tag string always renders the same
+// chip color everywhere it appears (no stored color, just a stable hash).
+const TAG_COLOR_CLASSES = ['tag-c0', 'tag-c1', 'tag-c2', 'tag-c3', 'tag-c4', 'tag-c5'];
+export function tagColorClass(tag) {
+  let hash = 0;
+  const s = String(tag || '');
+  for (let i = 0; i < s.length; i++) hash = (hash * 31 + s.charCodeAt(i)) | 0;
+  return TAG_COLOR_CLASSES[Math.abs(hash) % TAG_COLOR_CLASSES.length];
 }
 
 const TERMINAL_STATUSES = new Set(['SUCCESS', 'FAILURE', 'ERROR', 'ABORTED']);

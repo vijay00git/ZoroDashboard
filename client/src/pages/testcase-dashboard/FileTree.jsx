@@ -1,8 +1,9 @@
 import { useEffect, useMemo } from 'react';
 import { UploadCloud } from 'lucide-react';
-import { CAT_ORDER, CAT_LABELS, buildTree, fileSortComparator } from './helpers';
+import { CAT_ORDER, CAT_LABELS, buildTree, fileSortComparator, STATUS_FILTER_KEYS } from './helpers';
 import FileCard from './FileCard';
 import SelectAllCheckbox from './SelectAllCheckbox';
+import SelectAllCasesCheckbox from './SelectAllCasesCheckbox';
 
 const FileTree = ({
   data, activeCats, issueFilter, searchTerm, runStatus, notes, jenkinsConfig,
@@ -12,6 +13,9 @@ const FileTree = ({
   fileTrendMap, onRunFile, onOpenNote, onVisiblePathsChange, showToast,
   sortMode, testrailUrl, runLabel,
   onSyncFile, onSyncGroup, onSyncCategory, caseResultsByPath,
+  manualStatus, onSetManualStatus,
+  tags, onOpenTagModal, onRemoveTag, selectedCases, onToggleCaseSelect, onSelectManyCases,
+  getCaseStatus,
 }) => {
   const unknownIdSet = useMemo(() => new Set((data.unknownIds || []).map((u) => u.id)), [data.unknownIds]);
   const tree = useMemo(() => buildTree(data.rows), [data.rows]);
@@ -32,6 +36,7 @@ const FileTree = ({
     Object.keys(groups).forEach((grpName) => {
       const files = groups[grpName];
       const groupSelectablePaths = [];
+      const groupCaseIds = [];
       const fileEls = [];
 
       const orderedPaths = Object.keys(files).sort(fileSortComparator(sortMode, files, fileTrendMap));
@@ -42,6 +47,7 @@ const FileTree = ({
           if (term && `${r.id} ${r.title} ${r.path} ${r.club || ''}`.toLowerCase().indexOf(term) === -1) return false;
           if (issueFilter === 'commented' && !r.commented) return false;
           if (issueFilter === 'unknown' && !unknownIdSet.has(r.id)) return false;
+          if (STATUS_FILTER_KEYS.has(issueFilter) && getCaseStatus?.(r) !== issueFilter) return false;
           return true;
         }).map((r) => ({ ...r, __unknown: unknownIdSet.has(r.id) }));
         if (visibleRows.length === 0) return;
@@ -49,6 +55,7 @@ const FileTree = ({
         visiblePaths.push(path);
         if (catHasJobs) { groupSelectablePaths.push(path); catSelectablePaths.push(path); }
         catRowCount += visibleRows.length;
+        groupCaseIds.push(...visibleRows.map((r) => r.id));
 
         fileEls.push(
           <FileCard
@@ -74,6 +81,14 @@ const FileTree = ({
             runLabel={runLabel}
             onSync={onSyncFile}
             runCaseResults={caseResultsByPath ? caseResultsByPath[path] : undefined}
+            manualStatus={manualStatus}
+            onSetManualStatus={onSetManualStatus}
+            tags={tags}
+            onOpenTagModal={onOpenTagModal}
+            onRemoveTag={onRemoveTag}
+            selectedCases={selectedCases}
+            onToggleCaseSelect={onToggleCaseSelect}
+            onSelectManyCases={onSelectManyCases}
           />
         );
       });
@@ -90,6 +105,14 @@ const FileTree = ({
                 cat={cat}
                 onChange={onToggleManySelect}
                 title="Select all in this group"
+              />
+            )}
+            {onSelectManyCases && groupCaseIds.length > 0 && (
+              <SelectAllCasesCheckbox
+                caseIds={groupCaseIds}
+                selectedCases={selectedCases || new Set()}
+                onChange={onSelectManyCases}
+                title="Select all cases in this section for tagging"
               />
             )}
             <svg className="chev" viewBox="0 0 24 24" fill="none" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M9 6l6 6-6 6" stroke="currentColor" /></svg>

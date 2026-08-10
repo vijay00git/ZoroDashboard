@@ -3,19 +3,25 @@ import DonutChart from '../testcase-dashboard/DonutChart';
 import { STATUS_COLOR } from '../testcase-dashboard/helpers';
 import { localRunTally } from './helpers';
 
-const SWATCHES = [['passed', 'Passed'], ['failed', 'Failed'], ['untested', 'Untested']];
+const SWATCHES = [
+  ['passed', 'Passed'], ['failed', 'Failed'], ['blocked', 'Blocked'],
+  ['retest', 'Retest'], ['untested', 'Untested'],
+];
 
 // Local counterpart to RunStatusCard — that card tallies a pulled TestRail
 // run's statuses against the manifest; this one tallies each file's own most
-// recent *local* Cypress run (caseResultsByPath) against the manifest, so it
-// stays populated even when no TestRail run has been pulled yet.
-const LocalRunStatusCard = ({ data, caseResultsByPath, statusByPath }) => {
-  const tally = localRunTally(data.rows, caseResultsByPath, statusByPath);
+// recent *local* Cypress run (caseResultsByPath) plus any manual overrides
+// against the manifest, so it stays populated even when no TestRail run has
+// been pulled yet. Blocked/retest only ever come from a manual mark.
+const LocalRunStatusCard = ({ data, caseResultsByPath, statusByPath, manualStatus }) => {
+  const tally = localRunTally(data.rows, caseResultsByPath, statusByPath, manualStatus);
   const total = data.totalCases || 0;
-  const run = tally.passed + tally.failed;
+  const run = tally.passed + tally.failed + tally.blocked + tally.retest;
   const segments = [
     { value: tally.passed, color: STATUS_COLOR.passed },
     { value: tally.failed, color: STATUS_COLOR.failed },
+    { value: tally.blocked, color: STATUS_COLOR.blocked },
+    { value: tally.retest, color: STATUS_COLOR.retest },
     { value: tally.untested, color: STATUS_COLOR.untested },
   ];
 

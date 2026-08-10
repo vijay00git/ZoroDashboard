@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { PlayCircle, Square, FolderOpen, Terminal, ListChecks, SlidersHorizontal, Clipboard, Download } from 'lucide-react';
+import { PlayCircle, Square, FolderOpen, Terminal, ListChecks, SlidersHorizontal, Clipboard, Download, Eye, EyeOff, ChevronRight, Search, RotateCcw } from 'lucide-react';
 import { useToast } from '../contexts/ToastContext';
 import { showConfirm, showPrompt } from '../utils/Alerts';
 import ModalPortal from './testcase-dashboard/ModalPortal';
 import FileTree from './testcase-dashboard/FileTree';
+import TagModal from './testcase-dashboard/TagModal';
+import BulkTagBar from './testcase-dashboard/BulkTagBar';
 import StatsBar from './testcase-dashboard/StatsBar';
 import CoverageCard from './testcase-dashboard/CoverageCard';
 import RunStatusCard from './testcase-dashboard/RunStatusCard';
@@ -16,9 +18,9 @@ import CyrHeroStats from './cypress-runner/CyrHeroStats';
 import CyrActivityCard from './cypress-runner/CyrActivityCard';
 import {
   latestCaseResultsForPaths, latestCaseResultsByPath, latestRunStatusByPath,
-  localCaseStatus, buildCyrReportText, buildCyrDateReportText,
+  localCaseStatus, localRunTally, buildCyrReportText, buildCyrDateReportText, mergeManualIntoResultMap,
 } from './cypress-runner/helpers';
-import { filterHistoryByDate, formatReportDateLabel, todayDateKey, copyText, csvEscape } from './testcase-dashboard/helpers';
+import { filterHistoryByDate, formatReportDateLabel, todayDateKey, copyText, csvEscape, normCat } from './testcase-dashboard/helpers';
 import './testcase-dashboard/TestCaseDashboard.css';
 import './cypress-runner/CypressRunner.css';
 
@@ -43,9 +45,13 @@ const CypressRunner = () => {
   const [envConfig, setEnvConfig] = useState({ environments: [], defaultEnvironment: 'qa', testrailUrl: null });
 
   const [manifestData, setManifestData] = useState(EMPTY_MANIFEST);
+  const [manualStatus, setManualStatus] = useState({});
+  const [tags, setTags] = useState({});
+  const [selectedCases, setSelectedCases] = useState(new Set());
+  const [tagModal, setTagModal] = useState(null); // { caseId, caseTitle }
   const [activeCats, setActiveCats] = useState({ OFFLINE: true, ONLINE: true, E2E: true });
   const [issueFilter, setIssueFilter] = useState(null);
-  const [searchTerm, setSearchTerm] = useState('');
+  const [searchTerm, setSearchTerm] = useState(() => localStorage.getItem('cyr_search_term') || '');
   const [selectedFiles, setSelectedFiles] = useState(new Map());
   const [openFiles, setOpenFiles] = useState(new Set());
   const [collapsedGroups, setCollapsedGroups] = useState(new Set());
@@ -62,12 +68,15 @@ const CypressRunner = () => {
   const [runError, setRunError] = useState(null);
 
   const [reportDate, setReportDate] = useState(() => todayDateKey());
+  const [runsHidden, setRunsHidden] = useState(() => localStorage.getItem('cyr_runs_hidden') === '1');
+  const [setupCollapsed, setSetupCollapsed] = useState(() => localStorage.getItem('cyr_setup_collapsed') === '1');
 
   const logCursorRef = useRef(0);
   const prevActiveIdRef = useRef(null);
   const pollTimeoutRef = useRef(null);
   const pollRef = useRef(null);
   const testrailRunIdInputRef = useRef(null);
+  const searchInputRef = useRef(null);
 
   useEffect(() => { localStorage.setItem('cyr_project_path', projectPath); }, [projectPath]);
   useEffect(() => { localStorage.setItem('cyr_spec_path', specPath); }, [specPath]);
@@ -75,6 +84,26 @@ const CypressRunner = () => {
   useEffect(() => { localStorage.setItem('cyr_headed', headed ? '1' : '0'); }, [headed]);
   useEffect(() => { localStorage.setItem('cyr_environment', environment); }, [environment]);
   useEffect(() => { localStorage.setItem('cyr_testrail_run_id', testrailRunId); }, [testrailRunId]);
+  useEffect(() => { localStorage.setItem('cyr_runs_hidden', runsHidden ? '1' : '0'); }, [runsHidden]);
+  useEffect(() => { localStorage.setItem('cyr_setup_collapsed', setupCollapsed ? '1' : '0'); }, [setupCollapsed]);
+  useEffect(() => { localStorage.setItem('cyr_search_term', searchTerm); }, [searchTerm]);
+
+  // "/" focuses search (scoped to this page), Escape clears it — same shortcut
+  // as the Jenkins-based Test Case Dashboard's search box.
+  useEffect(() => {
+    const onKeyDown = (e) => {
+      const tag = document.activeElement?.tagName || '';
+      if (e.key === '/' && tag !== 'INPUT' && tag !== 'TEXTAREA') {
+        e.preventDefault();
+        searchInputRef.current?.focus();
+      } else if (e.key === 'Escape' && document.activeElement === searchInputRef.current) {
+        setSearchTerm('');
+        searchInputRef.current.blur();
+      }
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, []);
 
   useEffect(() => {
     // A non-2xx response (e.g. the manifest file isn't set up on this
@@ -90,6 +119,14 @@ const CypressRunner = () => {
         if (!ok) { showToast(`Couldn't load test cases: ${body.error || 'unknown error'}`, 'error'); return; }
         setManifestData(body);
       })
+      .catch(() => {});
+    fetch('/api/testcases/manual-status', { cache: 'no-store' })
+      .then((r) => r.json())
+      .then(setManualStatus)
+      .catch(() => {});
+    fetch('/api/testcases/tags', { cache: 'no-store' })
+      .then((r) => r.json())
+      .then(setTags)
       .catch(() => {});
     fetch('/api/testcases/jenkins-jobs', { cache: 'no-store' })
       .then((r) => r.json())
@@ -272,7 +309,10 @@ const CypressRunner = () => {
   // page-level field, which may be blank or pointed at a different run),
   // pre-filled with whatever's currently in that field as a convenience.
   const handleSyncPaths = async (paths, label) => {
-    const resultMap = latestCaseResultsForPaths(runState.history, paths);
+    const pathSet = new Set(paths);
+    const rowsInScope = manifestData.rows.filter((r) => pathSet.has(r.path));
+    const autoResultMap = latestCaseResultsForPaths(runState.history, paths);
+    const resultMap = mergeManualIntoResultMap(autoResultMap, rowsInScope, manualStatus);
     const caseCount = Object.keys(resultMap).length;
     if (caseCount === 0) { showToast(`No local run results yet for ${label}`, 'warning'); return; }
     const runId = await showPrompt(`Enter TestRail Run ID to sync ${caseCount} case result${caseCount === 1 ? '' : 's'} for ${label}:`, testrailRunId);
@@ -287,6 +327,111 @@ const CypressRunner = () => {
         if (!ok) { showToast(body.error || 'Sync failed', 'error'); return; }
         showToast(`Synced ${body.posted} result${body.posted === 1 ? '' : 's'} to TestRail #${runId.trim()}`, 'success');
       })
+      .catch((err) => showToast(err.message, 'error'));
+  };
+
+  // Clicking the currently-active status again clears the override (back to
+  // whatever the auto-detected status is) instead of leaving it stuck.
+  const handleSetManualStatus = (caseId, status) => {
+    const next = manualStatus[caseId]?.status === status ? null : status;
+    setManualStatus((prev) => {
+      const copy = { ...prev };
+      if (next) copy[caseId] = { status: next, updatedAt: Date.now() }; else delete copy[caseId];
+      return copy;
+    });
+    fetch('/api/testcases/manual-status', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ caseId, status: next }),
+    })
+      .then((res) => res.json().then((body) => ({ ok: res.ok, body })))
+      .then(({ ok, body }) => { if (!ok) showToast(body.error || 'Failed to save status', 'error'); })
+      .catch((err) => showToast(err.message, 'error'));
+  };
+
+  // Full replace of one case's tags — used by the tag editor modal.
+  const handleSaveTags = (caseId, nextTags) => {
+    setTags((prev) => {
+      const copy = { ...prev };
+      if (nextTags.length > 0) copy[caseId] = nextTags; else delete copy[caseId];
+      return copy;
+    });
+    setTagModal(null);
+    fetch('/api/testcases/tags', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ caseId, tags: nextTags }),
+    })
+      .then((res) => res.json().then((body) => ({ ok: res.ok, body })))
+      .then(({ ok, body }) => { if (!ok) showToast(body.error || 'Failed to save tags', 'error'); })
+      .catch((err) => showToast(err.message, 'error'));
+  };
+
+  // One-click removal of a single tag straight from a row's chip.
+  const handleRemoveTag = (caseId, tag) => {
+    const next = (tags[caseId] || []).filter((t) => t !== tag);
+    handleSaveTags(caseId, next);
+  };
+
+  const toggleCaseSelect = (caseId) => {
+    setSelectedCases((prev) => {
+      const next = new Set(prev);
+      if (next.has(caseId)) next.delete(caseId); else next.add(caseId);
+      return next;
+    });
+  };
+
+  // File-wise / section-wise "select all" checkboxes both funnel through
+  // here with the full list of case ids they cover.
+  const selectManyCases = (caseIds, checked) => {
+    setSelectedCases((prev) => {
+      const next = new Set(prev);
+      caseIds.forEach((id) => { if (checked) next.add(id); else next.delete(id); });
+      return next;
+    });
+  };
+
+  // "Run selected" in the bulk tag bar — maps the selected cases to their
+  // (deduped) spec files and queues those, the same as clicking each file's
+  // own Run button individually. Cypress can only run whole spec files, so
+  // running "N selected cases" really means running every file that contains
+  // one of them.
+  const handleRunSelectedCases = () => {
+    const seenPaths = new Set();
+    const items = [];
+    manifestData.rows.forEach((r) => {
+      if (selectedCases.has(r.id) && !seenPaths.has(r.path)) {
+        seenPaths.add(r.path);
+        items.push({ path: r.path, cat: normCat(r.cat) });
+      }
+    });
+    enqueuePaths(items);
+  };
+
+  // Applies (or removes) one tag across every currently-selected case in a
+  // single request, then merges the result into local state optimistically —
+  // matches how handleSetManualStatus updates state ahead of the server ack.
+  const handleBulkTag = (action, tag) => {
+    const caseIds = Array.from(selectedCases);
+    if (caseIds.length === 0) return;
+    setTags((prev) => {
+      const copy = { ...prev };
+      caseIds.forEach((caseId) => {
+        const current = copy[caseId] || [];
+        const next = action === 'add'
+          ? Array.from(new Set([...current, tag]))
+          : current.filter((t) => t !== tag);
+        if (next.length > 0) copy[caseId] = next; else delete copy[caseId];
+      });
+      return copy;
+    });
+    fetch('/api/testcases/tags/bulk', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ caseIds, action, tag }),
+    })
+      .then((res) => res.json().then((body) => ({ ok: res.ok, body })))
+      .then(({ ok, body }) => { if (!ok) showToast(body.error || 'Bulk tag update failed', 'error'); })
       .catch((err) => showToast(err.message, 'error'));
   };
 
@@ -389,7 +534,47 @@ const CypressRunner = () => {
     [runState.history]
   );
 
-  const STATUS_LABEL_CSV = { passed: 'Passed', failed: 'Failed', untested: 'Untested' };
+  // Drives "Retry failed" — one entry per file whose most recent run failed,
+  // in the same {path, cat} shape enqueuePaths expects. History is
+  // newest-first, so the first entry seen per path is that file's last run.
+  const failedFileItems = useMemo(() => {
+    const seen = new Set();
+    const items = [];
+    (runState.history || []).forEach((h) => {
+      if (!h.specPath || seen.has(h.specPath)) return;
+      seen.add(h.specPath);
+      if (h.status === 'failed') items.push({ path: h.specPath, cat: h.category || null });
+    });
+    return items;
+  }, [runState.history]);
+
+  const handleRetryFailed = () => {
+    if (failedFileItems.length === 0) return;
+    enqueuePaths(failedFileItems);
+  };
+
+  // Drives the filter bar's Passed/Failed/Blocked/Retest/Untested chips —
+  // same per-case verdict (manual override > local run > file's overall
+  // status) the status pills and CSV export already use.
+  const getCaseStatus = useCallback(
+    (r) => localCaseStatus(r, caseResultsByPath, runStatusByPath, manualStatus),
+    [caseResultsByPath, runStatusByPath, manualStatus]
+  );
+  const statusCounts = useMemo(
+    () => localRunTally(manifestData.rows, caseResultsByPath, runStatusByPath, manualStatus),
+    [manifestData.rows, caseResultsByPath, runStatusByPath, manualStatus]
+  );
+
+  // Union of tags already present on any currently-selected case — feeds the
+  // bulk toolbar's "remove" chips, so it only ever offers to remove a tag
+  // that's actually there to remove.
+  const selectedCasesTags = useMemo(() => {
+    const set = new Set();
+    selectedCases.forEach((caseId) => (tags[caseId] || []).forEach((t) => set.add(t)));
+    return Array.from(set).sort();
+  }, [selectedCases, tags]);
+
+  const STATUS_LABEL_CSV = { passed: 'Passed', failed: 'Failed', blocked: 'Blocked', retest: 'Retest', untested: 'Untested' };
 
   // scope 'selected' exports only the currently checked files in the tree
   // (selectedFiles, the same Map the "Queue N selected" button reads) —
@@ -400,10 +585,10 @@ const CypressRunner = () => {
       : manifestData.rows;
     if (rows.length === 0) { showToast('No test cases selected', 'warning'); return; }
 
-    const lines = [['ID', 'Description', 'Status']];
+    const lines = [['ID', 'Description', 'Status', 'Tags']];
     rows.forEach((r) => {
-      const status = STATUS_LABEL_CSV[localCaseStatus(r, caseResultsByPath, runStatusByPath)];
-      lines.push([r.id, r.title, status]);
+      const status = STATUS_LABEL_CSV[localCaseStatus(r, caseResultsByPath, runStatusByPath, manualStatus)];
+      lines.push([r.id, r.title, status, (tags[r.id] || []).join('; ')]);
     });
     const csv = lines.map((row) => row.map(csvEscape).join(',')).join('\r\n');
     const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8;' });
@@ -425,7 +610,33 @@ const CypressRunner = () => {
   return (
     <div className="cyr-page">
       <div className="cyr-card">
-        <h2><Terminal size={18} /> Cypress Runner</h2>
+        <div className={`cyr-setup-header${setupCollapsed ? '' : ' open'}`} onClick={() => setSetupCollapsed((v) => !v)}>
+          <ChevronRight className="chev" size={16} />
+          <h2><Terminal size={18} /> Cypress Runner</h2>
+          {setupCollapsed && (
+            <div className="cyr-setup-summary" onClick={(e) => e.stopPropagation()}>
+              <span className="cyr-badge cyr-setup-path" title={projectPath || 'No project path set'}>
+                {projectPath ? projectPath.split('/').pop() : 'no project set'}
+              </span>
+              <span className="cyr-badge">{browser}</span>
+              <span className="cyr-badge">{headed ? 'headed' : 'headless'}</span>
+              {environment && <span className="cyr-badge">{environment}</span>}
+              {!active ? (
+                <button type="button" className="cyr-btn primary small" onClick={handleRun} disabled={triggering}>
+                  <PlayCircle size={13} /> {triggering ? 'Starting…' : 'Run'}
+                </button>
+              ) : (
+                <button type="button" className="cyr-btn danger small" onClick={handleKill} disabled={killing}>
+                  <Square size={13} /> {killing ? 'Stopping…' : 'Stop'}
+                </button>
+              )}
+              {active && <RunStatusPill status={active.status} />}
+            </div>
+          )}
+        </div>
+
+        {!setupCollapsed && (
+        <>
         <p className="cyr-sub">
           Trigger a local <code>cypress run</code> against a project on this machine — headed or headless,
           with live logs, stats, and failure screenshots.
@@ -519,22 +730,24 @@ const CypressRunner = () => {
           )}
           {active && <RunStatusPill status={active.status} />}
         </div>
+        </>
+        )}
       </div>
-
-      <StatsBar data={manifestData} activeCats={activeCats} onToggleCat={toggleCat} issueFilter={issueFilter} onToggleIssue={toggleIssue} />
 
       <div className="tcd-hero">
         <div className="tcd-hero-heading"><SlidersHorizontal size={13} /> Overview</div>
         <CyrHeroStats manifestData={manifestData} runState={runState} />
         <div className="tcd-cards-row">
           <CoverageCard data={manifestData} />
-          <LocalRunStatusCard data={manifestData} caseResultsByPath={caseResultsByPath} statusByPath={runStatusByPath} />
+          <LocalRunStatusCard data={manifestData} caseResultsByPath={caseResultsByPath} statusByPath={runStatusByPath} manualStatus={manualStatus} />
           <RunStatusCard data={manifestData} runStatus={runStatus} onFocusRunId={() => testrailRunIdInputRef.current?.focus()} />
           <CyrActivityCard history={runState.history} />
         </div>
       </div>
 
-      <div className="cyr-layout">
+      <StatsBar data={manifestData} activeCats={activeCats} onToggleCat={toggleCat} issueFilter={issueFilter} onToggleIssue={toggleIssue} statusCounts={statusCounts} />
+
+      <div className={`cyr-layout${(active || !runsHidden) ? '' : ' cyr-layout-single'}`}>
         <div className="cyr-col-left">
           <div className="cyr-card">
             <h3><ListChecks size={15} /> Test cases</h3>
@@ -543,6 +756,16 @@ const CypressRunner = () => {
                 Queued runs use the same E2E project as Test Cases: <code>{manifestData.e2eRoot}</code>
               </p>
             )}
+            <div className="cyr-search-row">
+              <Search size={14} className="cyr-search-icon" />
+              <input
+                ref={searchInputRef}
+                className="tcd-search-input cyr-search-input"
+                placeholder="Search cases, files, titles… (press /)"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+              />
+            </div>
             <div className="cyr-tree-actions">
               <span className="cyr-sub" style={{ margin: 0 }}>{manifestData.totalCases} test cases across {manifestData.totalFiles} files</span>
               <button
@@ -552,6 +775,15 @@ const CypressRunner = () => {
                 onClick={() => enqueuePaths(Array.from(selectedFiles.entries()).map(([path, cat]) => ({ path, cat })))}
               >
                 Queue {selectedCount > 0 ? selectedCount : ''} selected
+              </button>
+              <button
+                type="button"
+                className="cyr-btn small"
+                disabled={failedFileItems.length === 0}
+                title={failedFileItems.length > 0 ? `Re-queue the ${failedFileItems.length} file(s) whose last run failed` : 'No files currently failing their last run'}
+                onClick={handleRetryFailed}
+              >
+                <RotateCcw size={12} /> Retry failed {failedFileItems.length > 0 ? `(${failedFileItems.length})` : ''}
               </button>
               <button type="button" className="cyr-btn small" title="Export local run status for every test case" onClick={() => handleExportCsv('all')}>
                 <Download size={12} /> Export CSV (all)
@@ -565,7 +797,27 @@ const CypressRunner = () => {
               >
                 <Download size={12} /> Export CSV ({selectedCount > 0 ? selectedCount : '0'} selected)
               </button>
+              <button
+                type="button"
+                className={`cyr-btn small cyr-history-toggle${runsHidden ? ' active' : ''}`}
+                title={runsHidden ? 'Show the Runs history panel' : 'Hide the Runs history panel — test cases expand to full width'}
+                onClick={() => setRunsHidden((v) => !v)}
+              >
+                {runsHidden ? <Eye size={12} /> : <EyeOff size={12} />}
+                {runsHidden ? 'Show run history' : 'Hide run history'}
+                <span className="cyr-runs-count">{(runState.queue?.length || 0) + (runState.history?.length || 0)}</span>
+              </button>
             </div>
+            {selectedCases.size > 0 && (
+              <BulkTagBar
+                count={selectedCases.size}
+                existingTags={selectedCasesTags}
+                onAddTag={(tag) => handleBulkTag('add', tag)}
+                onRemoveTag={(tag) => handleBulkTag('remove', tag)}
+                onRun={handleRunSelectedCases}
+                onClear={() => setSelectedCases(new Set())}
+              />
+            )}
             <FileTree
               data={manifestData}
               activeCats={activeCats}
@@ -593,47 +845,71 @@ const CypressRunner = () => {
               onSyncGroup={(paths) => handleSyncPaths(paths, `this group (${paths.length} file${paths.length === 1 ? '' : 's'})`)}
               onSyncCategory={(paths, cat) => handleSyncPaths(paths, `${cat} (${paths.length} file${paths.length === 1 ? '' : 's'})`)}
               caseResultsByPath={caseResultsByPath}
+              manualStatus={manualStatus}
+              tags={tags}
+              onOpenTagModal={(caseId, caseTitle) => setTagModal({ caseId, caseTitle })}
+              onRemoveTag={handleRemoveTag}
+              selectedCases={selectedCases}
+              onToggleCaseSelect={toggleCaseSelect}
+              onSelectManyCases={selectManyCases}
+              onSetManualStatus={handleSetManualStatus}
+              getCaseStatus={getCaseStatus}
             />
           </div>
         </div>
 
-        <div className="cyr-col-right">
-          {active && (
-            <div className="cyr-card">
-              <h3>
-                <FolderOpen size={15} /> Live output — {active.specPath || 'all specs'} {active.headed ? '(headed)' : '(headless)'}
-              </h3>
-              <LogViewer text={logText} />
-            </div>
-          )}
-
-          <div className="cyr-card">
-            <div className="cyr-tree-actions">
-              <h3 style={{ margin: 0 }}>Runs</h3>
-              <div className="cyr-report-controls">
-                <input
-                  type="date"
-                  className="tcd-report-date-input"
-                  value={reportDate}
-                  max={todayDateKey()}
-                  onChange={(e) => setReportDate(e.target.value)}
-                  title="Report date"
-                />
-                <button type="button" className="cyr-btn small" title="Copy this date's report" onClick={handleCopyReport}>
-                  <Clipboard size={12} /> Copy report
-                </button>
+        {(active || !runsHidden) && (
+          <div className="cyr-col-right">
+            {active && (
+              <div className="cyr-card">
+                <h3>
+                  <FolderOpen size={15} /> Live output — {active.specPath || 'all specs'} {active.headed ? '(headed)' : '(headless)'}
+                </h3>
+                <LogViewer text={logText} />
               </div>
-            </div>
-            <RunsList
-              queue={runState.queue}
-              history={runState.history}
-              onDequeue={handleDequeue}
-              onViewLog={handleViewLog}
-              onViewScreenshots={handleViewScreenshots}
-              onSendTelegram={handleSendTelegram}
-            />
+            )}
+
+            {!runsHidden && (
+              <div className="cyr-card">
+                <div className="cyr-tree-actions">
+                  <h3 style={{ margin: 0 }}>
+                    Runs
+                    <span className="cyr-runs-count">{(runState.queue?.length || 0) + (runState.history?.length || 0)}</span>
+                  </h3>
+                  <div className="cyr-report-controls">
+                    <input
+                      type="date"
+                      className="tcd-report-date-input"
+                      value={reportDate}
+                      max={todayDateKey()}
+                      onChange={(e) => setReportDate(e.target.value)}
+                      title="Report date"
+                    />
+                    <button type="button" className="cyr-btn small" title="Copy this date's report" onClick={handleCopyReport}>
+                      <Clipboard size={12} /> Copy report
+                    </button>
+                  </div>
+                  <button
+                    type="button"
+                    className="cyr-btn small"
+                    title="Hide the Runs history panel — test cases expand to full width"
+                    onClick={() => setRunsHidden(true)}
+                  >
+                    <EyeOff size={12} /> Hide
+                  </button>
+                </div>
+                <RunsList
+                  queue={runState.queue}
+                  history={runState.history}
+                  onDequeue={handleDequeue}
+                  onViewLog={handleViewLog}
+                  onViewScreenshots={handleViewScreenshots}
+                  onSendTelegram={handleSendTelegram}
+                />
+              </div>
+            )}
           </div>
-        </div>
+        )}
       </div>
 
       {viewLog && (
@@ -652,6 +928,16 @@ const CypressRunner = () => {
 
       {lightbox && (
         <Lightbox images={lightbox.images} startIndex={lightbox.startIndex} onClose={() => setLightbox(null)} />
+      )}
+
+      {tagModal && (
+        <TagModal
+          caseId={tagModal.caseId}
+          caseTitle={tagModal.caseTitle}
+          existing={tags[tagModal.caseId]}
+          onClose={() => setTagModal(null)}
+          onSave={handleSaveTags}
+        />
       )}
     </div>
   );

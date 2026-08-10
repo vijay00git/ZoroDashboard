@@ -2,6 +2,11 @@
 
 import { numericId } from '../testcase-dashboard/helpers';
 
+// Manual status <-> TestRail status id, shared between the pill/tally display
+// and the "sync to TestRail" resultMap so a manual override syncs exactly
+// like an auto-detected one would.
+export const MANUAL_STATUS_TO_ID = { passed: 1, blocked: 2, retest: 4, failed: 5 };
+
 // Per-path variant of latestCaseResultsForPaths, but keeping the *overall*
 // verdict (h.status) of that file's most recent run instead of its
 // case-level results — used by localRunTally's fallback below.
@@ -36,7 +41,15 @@ export function latestRunStatusByPath(history) {
 // it would ride along on whatever verdict the rest of that file happened to
 // get via the overall-status fallback, crediting/blaming it for a test it
 // was never part of.
-export function localCaseStatus(r, caseResultsByPath, statusByPath) {
+// manualStatus (optional 4th arg) is the map fetched from
+// /api/testcases/manual-status, keyed by case id (e.g. "C12345") — a manual
+// override always wins over whatever an actual run detected, since it's an
+// explicit human decision (e.g. "blocked" or "retest", which no automated
+// run can ever produce on its own).
+export function localCaseStatus(r, caseResultsByPath, statusByPath, manualStatus) {
+  const manual = manualStatus ? manualStatus[r.id] : undefined;
+  if (manual) return manual.status;
+
   if (r.commented) return 'untested';
 
   const fileResults = caseResultsByPath ? caseResultsByPath[r.path] : undefined;
@@ -61,9 +74,12 @@ export function localCaseStatus(r, caseResultsByPath, statusByPath) {
 
 // Tallies the manifest's own case rows against each file's most recent local
 // Cypress result — same idea as the TestRail RunStatusCard's tallyFor.
-export function localRunTally(rows, caseResultsByPath, statusByPath) {
-  const tally = { passed: 0, failed: 0, untested: 0 };
-  (rows || []).forEach((r) => { tally[localCaseStatus(r, caseResultsByPath, statusByPath)]++; });
+// blocked/retest only ever come from manualStatus (no automated run produces
+// them), but they're tallied here rather than folded into "untested" so a
+// manually-blocked case is visibly distinct from one that's never run.
+export function localRunTally(rows, caseResultsByPath, statusByPath, manualStatus) {
+  const tally = { passed: 0, failed: 0, blocked: 0, retest: 0, untested: 0 };
+  (rows || []).forEach((r) => { tally[localCaseStatus(r, caseResultsByPath, statusByPath, manualStatus)]++; });
   return tally;
 }
 
@@ -122,6 +138,23 @@ export function latestCaseResultsForPaths(history, paths) {
     if (!h.specPath || !pathSet.has(h.specPath) || seenPaths.has(h.specPath)) return;
     seenPaths.add(h.specPath);
     if (h.caseResults) Object.assign(merged, h.caseResults);
+  });
+  return merged;
+}
+
+// Overlays manual overrides onto an auto-detected resultMap (case id ->
+// TestRail status id) before it's posted to TestRail — manual wins over
+// whatever the local run itself produced, matching localCaseStatus's
+// priority. `rows` should be the manifest rows the sync covers, so only
+// cases actually in scope get merged in.
+export function mergeManualIntoResultMap(resultMap, rows, manualStatus) {
+  if (!manualStatus) return resultMap;
+  const merged = { ...resultMap };
+  (rows || []).forEach((r) => {
+    const manual = manualStatus[r.id];
+    if (manual && MANUAL_STATUS_TO_ID[manual.status]) {
+      merged[numericId(r.id)] = MANUAL_STATUS_TO_ID[manual.status];
+    }
   });
   return merged;
 }

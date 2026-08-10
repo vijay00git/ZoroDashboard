@@ -1,9 +1,13 @@
-import { Image, Terminal, X, Send } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { Image, Terminal, X, Send, Search } from 'lucide-react';
 import RunStatusPill from './RunStatusPill';
-import { formatDuration, formatTime } from './helpers';
+import { formatDuration, formatTime, STATUS_LABEL } from './helpers';
 import { dateHeadingLabel } from '../testcase-dashboard/helpers';
 
-const HISTORY_LIMIT = 100;
+const PAGE_SIZE = 30;
+// Only statuses that can actually land in `history` (queued/running only ever
+// appear in the separate `queue` list) are offered in the filter dropdown.
+const HISTORY_STATUSES = ['passed', 'failed', 'killed', 'interrupted'];
 
 const TestRailSyncBadge = ({ sync }) => {
   if (!sync) return null;
@@ -62,18 +66,35 @@ const HistoryItem = ({ h, onViewLog, onViewScreenshots, onSendTelegram }) => (
 );
 
 const RunsList = ({ queue, history, onDequeue, onViewLog, onViewScreenshots, onSendTelegram }) => {
+  const [runSearch, setRunSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [visibleLimit, setVisibleLimit] = useState(PAGE_SIZE);
+
   const hasQueue = queue && queue.length > 0;
   const hasHistory = history && history.length > 0;
+
+  const term = runSearch.trim().toLowerCase();
+  const filtered = useMemo(() => (history || []).filter((h) => {
+    if (statusFilter !== 'all' && h.status !== statusFilter) return false;
+    if (term && !(h.specPath || 'all specs').toLowerCase().includes(term)) return false;
+    return true;
+  }), [history, statusFilter, term]);
+
+  // Any change to the search/filter invalidates how far the user had paged,
+  // so both handlers reset back to showing just the first page of results.
+  const handleSearchChange = (e) => { setRunSearch(e.target.value); setVisibleLimit(PAGE_SIZE); };
+  const handleStatusFilterChange = (e) => { setStatusFilter(e.target.value); setVisibleLimit(PAGE_SIZE); };
+
   if (!hasQueue && !hasHistory) {
     return <p className="cyr-empty">No local runs yet — configure a project above and hit Run, or queue files from the tree.</p>;
   }
 
-  const historyLen = history ? history.length : 0;
-  const shown = Math.min(historyLen, HISTORY_LIMIT);
+  const filteredLen = filtered.length;
+  const shown = Math.min(filteredLen, visibleLimit);
 
   let lastDateLabel = null;
   const historyEls = [];
-  (history || []).slice(0, HISTORY_LIMIT).forEach((h, i) => {
+  filtered.slice(0, visibleLimit).forEach((h, i) => {
     const label = dateHeadingLabel(h.completedAt || h.startedAt);
     if (label !== lastDateLabel) {
       historyEls.push(<h3 key={`d${i}`} className="tcd-run-date-heading">{label}</h3>);
@@ -85,8 +106,37 @@ const RunsList = ({ queue, history, onDequeue, onViewLog, onViewScreenshots, onS
   return (
     <div className="cyr-history-list">
       {hasQueue && queue.map((item) => <QueueItem key={item.id} item={item} onDequeue={onDequeue} />)}
+
+      {hasHistory && (
+        <div className="cyr-runs-filter-row">
+          <div className="cyr-runs-search">
+            <Search size={12} className="cyr-search-icon" />
+            <input
+              type="text"
+              className="tcd-search-input cyr-search-input small"
+              placeholder="Search runs by spec path…"
+              value={runSearch}
+              onChange={handleSearchChange}
+            />
+          </div>
+          <select className="tcd-sort-select" value={statusFilter} onChange={handleStatusFilterChange} title="Filter by status">
+            <option value="all">All statuses</option>
+            {HISTORY_STATUSES.map((s) => <option key={s} value={s}>{STATUS_LABEL[s] || s}</option>)}
+          </select>
+        </div>
+      )}
+
+      {hasHistory && filteredLen === 0 && (
+        <p className="cyr-empty">No runs match “{runSearch}”{statusFilter !== 'all' ? ` with status ${STATUS_LABEL[statusFilter] || statusFilter}` : ''}.</p>
+      )}
+
       {historyEls}
-      {shown < historyLen && <p className="cyr-empty">Showing {shown} of {historyLen} past runs.</p>}
+
+      {shown < filteredLen && (
+        <button type="button" className="cyr-btn small cyr-load-more" onClick={() => setVisibleLimit((v) => v + PAGE_SIZE)}>
+          Load more ({shown} of {filteredLen} shown)
+        </button>
+      )}
     </div>
   );
 };

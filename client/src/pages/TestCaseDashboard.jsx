@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   RefreshCw, ChevronsDown, ChevronsUp, Copy, Download, FilePlus2, AlertTriangle, Search,
@@ -16,12 +16,15 @@ import RunsPanel from './testcase-dashboard/RunsPanel';
 import AddManifestModal from './testcase-dashboard/AddManifestModal';
 import RunModal from './testcase-dashboard/RunModal';
 import NoteModal from './testcase-dashboard/NoteModal';
+import TagModal from './testcase-dashboard/TagModal';
+import BulkTagBar from './testcase-dashboard/BulkTagBar';
 import RunDetailsModal from './testcase-dashboard/RunDetailsModal';
 import SendReportModal, { ATTACHMENT_CAP } from './testcase-dashboard/SendReportModal';
 import ModalPortal from './testcase-dashboard/ModalPortal';
 import {
-  csvEscape, normCat, timeAgo, copyText, SORT_OPTIONS, isImageArtifact,
+  csvEscape, normCat, timeAgo, copyText, SORT_OPTIONS, isImageArtifact, numericId,
   todayDateKey, filterHistoryByDate, formatReportDateLabel, buildReportText, buildJobReportBlock,
+  STATUS_FILTER_KEYS, STATUS_FILTER_LABELS,
 } from './testcase-dashboard/helpers';
 import './testcase-dashboard/TestCaseDashboard.css';
 
@@ -70,6 +73,9 @@ const TestCaseDashboard = () => {
   const [jenkinsConfig, setJenkinsConfig] = useState({ jobs: { OFFLINE: [], ONLINE: [], E2E: [] }, defaultEnvironment: 'qa', environments: ['qa'], testrailUrl: null });
   const [runsState, setRunsState] = useState({ queue: [], running: [], history: [] });
   const [notes, setNotes] = useState({});
+  const [tags, setTags] = useState({});
+  const [manualStatus, setManualStatus] = useState({});
+  const [selectedCases, setSelectedCases] = useState(new Set());
 
   const [modal, setModal] = useState(null); // { type: 'addManifest'|'run'|'note'|'runDetails', ...props }
 
@@ -112,6 +118,14 @@ const TestCaseDashboard = () => {
     fetch('/api/testcases/notes', { cache: 'no-store' }).then((r) => r.json()).then(setNotes).catch(() => {});
   }, [setNotes]);
 
+  const fetchTags = useCallback(() => {
+    fetch('/api/testcases/tags', { cache: 'no-store' }).then((r) => r.json()).then(setTags).catch(() => {});
+  }, [setTags]);
+
+  const fetchManualStatus = useCallback(() => {
+    fetch('/api/testcases/manual-status', { cache: 'no-store' }).then((r) => r.json()).then(setManualStatus).catch(() => {});
+  }, [setManualStatus]);
+
   // Self-scheduling rather than a fixed setInterval so it can poll faster
   // (2s) while anything is actually queued/running — that's exactly when a
   // status transition (queued → building → done) is imminent — and back off
@@ -134,7 +148,7 @@ const TestCaseDashboard = () => {
   useEffect(() => { pollRunsRef.current = fetchRunsState; }, [fetchRunsState]);
 
   useEffect(() => {
-    fetchData(); fetchJenkinsConfig(); fetchNotes(); fetchRunsState(); fetchConnStatus();
+    fetchData(); fetchJenkinsConfig(); fetchNotes(); fetchTags(); fetchManualStatus(); fetchRunsState(); fetchConnStatus();
     const dData = setInterval(fetchData, 60000);
     const dTick = setInterval(() => setNow(Date.now()), 1000);
     const onVisible = () => { if (document.visibilityState === 'visible') fetchRunsState(); };
@@ -144,7 +158,7 @@ const TestCaseDashboard = () => {
       if (runsPollTimeoutRef.current) clearTimeout(runsPollTimeoutRef.current);
       document.removeEventListener('visibilitychange', onVisible);
     };
-  }, [fetchData, fetchJenkinsConfig, fetchNotes, fetchRunsState, fetchConnStatus]);
+  }, [fetchData, fetchJenkinsConfig, fetchNotes, fetchTags, fetchManualStatus, fetchRunsState, fetchConnStatus]);
 
   const pullRunStatus = useCallback((runId) => {
     if (!/^\d+$/.test(runId)) { searchInputRef.current?.focus(); return; }
@@ -309,6 +323,114 @@ const TestCaseDashboard = () => {
     }
   };
 
+  const saveTags = async (caseId, nextTags) => {
+    try {
+      const res = await fetch('/api/testcases/tags', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ caseId, tags: nextTags }),
+      });
+      const r = await res.json();
+      setTags((prev) => {
+        const next = { ...prev };
+        if (r.tags && r.tags.length > 0) next[caseId] = r.tags; else delete next[caseId];
+        return next;
+      });
+      setModal(null);
+      showToast(nextTags.length > 0 ? 'Tags saved' : 'Tags cleared', 'success');
+    } catch {
+      showToast("Couldn't save tags", 'error');
+    }
+  };
+
+  // One-click removal of a single tag straight from a row's chip — optimistic,
+  // fire-and-forget (mirrors handleRemoveTag on the Cypress Runner page).
+  const removeTag = (caseId, tag) => {
+    const next = (tags[caseId] || []).filter((t) => t !== tag);
+    setTags((prev) => {
+      const copy = { ...prev };
+      if (next.length > 0) copy[caseId] = next; else delete copy[caseId];
+      return copy;
+    });
+    fetch('/api/testcases/tags', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ caseId, tags: next }),
+    }).catch(() => {});
+  };
+
+  const toggleCaseSelect = (caseId) => {
+    setSelectedCases((prev) => {
+      const next = new Set(prev);
+      if (next.has(caseId)) next.delete(caseId); else next.add(caseId);
+      return next;
+    });
+  };
+
+  // File-wise / section-wise "select all" checkboxes both funnel through
+  // here with the full list of case ids they cover.
+  const selectManyCases = (caseIds, checked) => {
+    setSelectedCases((prev) => {
+      const next = new Set(prev);
+      caseIds.forEach((id) => { if (checked) next.add(id); else next.delete(id); });
+      return next;
+    });
+  };
+
+  // Applies (or removes) one tag across every currently-selected case in a
+  // single request, then merges the result into local state optimistically.
+  const handleBulkTag = (action, tag) => {
+    const caseIds = Array.from(selectedCases);
+    if (caseIds.length === 0) return;
+    setTags((prev) => {
+      const copy = { ...prev };
+      caseIds.forEach((caseId) => {
+        const current = copy[caseId] || [];
+        const next = action === 'add'
+          ? Array.from(new Set([...current, tag]))
+          : current.filter((t) => t !== tag);
+        if (next.length > 0) copy[caseId] = next; else delete copy[caseId];
+      });
+      return copy;
+    });
+    fetch('/api/testcases/tags/bulk', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ caseIds, action, tag }),
+    })
+      .then((res) => res.json().then((body) => ({ ok: res.ok, body })))
+      .then(({ ok, body }) => { if (!ok) showToast(body.error || 'Bulk tag update failed', 'error'); })
+      .catch((err) => showToast(err.message, 'error'));
+  };
+
+  // Union of tags already present on any currently-selected case — feeds the
+  // bulk toolbar's "remove" chips.
+  const selectedCasesTags = useMemo(() => {
+    const set = new Set();
+    selectedCases.forEach((caseId) => (tags[caseId] || []).forEach((t) => set.add(t)));
+    return Array.from(set).sort();
+  }, [selectedCases, tags]);
+
+  // Drives the filter bar's Passed/Failed/Blocked/Retest/Untested chips — a
+  // manual override (set from any page, since manual-status.json is shared)
+  // always wins as the "last" status regardless of what the pulled TestRail
+  // run says, same priority CypressRunner's localCaseStatus uses. Absent a
+  // manual mark, falls back to the pulled run's own status; a case not
+  // present in that run at all returns null rather than 'untested', so it's
+  // excluded from every status filter instead of being miscounted.
+  const getCaseStatus = useCallback((r) => {
+    const manual = manualStatus[r.id];
+    if (manual) return manual.status;
+    const entry = runStatus?.statuses[numericId(r.id)];
+    return entry ? String(entry.status).toLowerCase() : null;
+  }, [runStatus, manualStatus]);
+
+  const statusCounts = useMemo(() => {
+    const tally = { passed: 0, failed: 0, blocked: 0, retest: 0, untested: 0 };
+    data.rows.forEach((r) => {
+      const s = getCaseStatus(r);
+      if (s && Object.prototype.hasOwnProperty.call(tally, s)) tally[s]++;
+    });
+    return tally;
+  }, [data.rows, getCaseStatus]);
+
   const queueBuilds = async (items, environment, runId) => {
     try {
       const res = await fetch('/api/testcases/queue-jobs', {
@@ -472,19 +594,17 @@ const TestCaseDashboard = () => {
   const exportCsv = () => {
     const term = searchTerm.trim().toLowerCase();
     const unknownIdSet = new Set((data.unknownIds || []).map((u) => u.id));
-    const lines = [['ID', 'Title', 'Status', 'Tags', 'Notes']];
+    const lines = [['ID', 'Title', 'Status', 'Category', 'Path', 'Tags', 'Notes']];
     data.rows.forEach((r) => {
       const cat = normCat(r.cat);
       if (!activeCats[cat]) return;
       if (term && `${r.id} ${r.title} ${r.path} ${r.club || ''}`.toLowerCase().indexOf(term) === -1) return;
       if (issueFilter === 'commented' && !r.commented) return;
       if (issueFilter === 'unknown' && !unknownIdSet.has(r.id)) return;
-      let status = '';
-      if (runStatus) {
-        const entry = runStatus.statuses[String(r.id).replace(/^C/i, '')];
-        status = entry ? entry.status : 'Not in run';
-      }
-      lines.push([r.id, r.title, status, cat, r.path]);
+      const caseStatus = getCaseStatus(r);
+      if (STATUS_FILTER_KEYS.has(issueFilter) && caseStatus !== issueFilter) return;
+      const status = caseStatus ? STATUS_FILTER_LABELS[caseStatus] : (runStatus ? 'Not in run' : '');
+      lines.push([r.id, r.title, status, cat, r.path, (tags[r.id] || []).join('; '), notes[r.id]?.text || '']);
     });
     const csv = lines.map((row) => row.map(csvEscape).join(',')).join('\r\n');
     const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8;' });
@@ -595,7 +715,7 @@ const TestCaseDashboard = () => {
             <div className="tcd-skeleton" style={{ height: '28px', width: '100%' }} />
           </div>
         ) : (
-          <StatsBar data={data} activeCats={activeCats} onToggleCat={toggleCat} issueFilter={issueFilter} onToggleIssue={toggleIssue} />
+          <StatsBar data={data} activeCats={activeCats} onToggleCat={toggleCat} issueFilter={issueFilter} onToggleIssue={toggleIssue} statusCounts={statusCounts} />
         )}
       </div>
 
@@ -688,6 +808,13 @@ const TestCaseDashboard = () => {
               showToast={showToast}
               sortMode={sortMode}
               testrailUrl={jenkinsConfig.testrailUrl}
+              tags={tags}
+              onOpenTagModal={(caseId, caseTitle) => setModal({ type: 'tag', caseId, caseTitle })}
+              onRemoveTag={removeTag}
+              selectedCases={selectedCases}
+              onToggleCaseSelect={toggleCaseSelect}
+              onSelectManyCases={selectManyCases}
+              getCaseStatus={getCaseStatus}
             />
             <RunsPanel
               runsState={runsState}
@@ -724,6 +851,16 @@ const TestCaseDashboard = () => {
               </div>
             </ModalPortal>
           )}
+
+          {selectedCases.size > 0 && (
+            <BulkTagBar
+              count={selectedCases.size}
+              existingTags={selectedCasesTags}
+              onAddTag={(tag) => handleBulkTag('add', tag)}
+              onRemoveTag={(tag) => handleBulkTag('remove', tag)}
+              onClear={() => setSelectedCases(new Set())}
+            />
+          )}
         </>
       )}
 
@@ -755,6 +892,15 @@ const TestCaseDashboard = () => {
           existing={notes[modal.caseId]}
           onClose={() => setModal(null)}
           onSave={saveNote}
+        />
+      )}
+      {modal?.type === 'tag' && (
+        <TagModal
+          caseId={modal.caseId}
+          caseTitle={modal.caseTitle}
+          existing={tags[modal.caseId]}
+          onClose={() => setModal(null)}
+          onSave={saveTags}
         />
       )}
       {modal?.type === 'runDetails' && (

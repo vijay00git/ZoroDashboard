@@ -52,6 +52,20 @@
 .tcd-issue-chip { border-color: var(--accent-red); color: var(--accent-red); background: transparent; opacity: 0.6; }
 .tcd-issue-chip.active { opacity: 1; background: color-mix(in srgb, var(--accent-red) 12%, transparent); }
 
+.tcd-status-chip { background: transparent; opacity: 0.65; }
+.tcd-status-chip .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
+.tcd-status-chip.active { opacity: 1; }
+.tcd-status-chip.st-passed { color: var(--accent-green); border-color: color-mix(in srgb, var(--accent-green) 45%, var(--border-color)); }
+.tcd-status-chip.st-passed.active { background: color-mix(in srgb, var(--accent-green) 14%, transparent); border-color: var(--accent-green); }
+.tcd-status-chip.st-failed { color: var(--accent-red); border-color: color-mix(in srgb, var(--accent-red) 45%, var(--border-color)); }
+.tcd-status-chip.st-failed.active { background: color-mix(in srgb, var(--accent-red) 14%, transparent); border-color: var(--accent-red); }
+.tcd-status-chip.st-blocked { color: var(--accent-yellow); border-color: color-mix(in srgb, var(--accent-yellow) 45%, var(--border-color)); }
+.tcd-status-chip.st-blocked.active { background: color-mix(in srgb, var(--accent-yellow) 14%, transparent); border-color: var(--accent-yellow); }
+.tcd-status-chip.st-retest { color: var(--accent-purple); border-color: color-mix(in srgb, var(--accent-purple) 45%, var(--border-color)); }
+.tcd-status-chip.st-retest.active { background: color-mix(in srgb, var(--accent-purple) 14%, transparent); border-color: var(--accent-purple); }
+.tcd-status-chip.st-untested { color: var(--text-muted); }
+.tcd-status-chip.st-untested.active { background: var(--bg-tertiary); border-color: var(--border-hover); color: var(--text-secondary); }
+
 /* ── Filter bar (category + issue chips) ── */
 .tcd-filter-bar {
   display: flex; align-items: center; gap: 0.7rem; flex-wrap: wrap;
@@ -213,6 +227,72 @@
 .tcd-badge.club { background: color-mix(in srgb, var(--accent-cyan) 18%, transparent); color: var(--accent-cyan); }
 .tcd-badge.commented { background: color-mix(in srgb, var(--text-muted) 25%, transparent); color: var(--text-secondary); }
 .tcd-badge.unknown { background: color-mix(in srgb, var(--accent-red) 18%, transparent); color: var(--accent-red); }
+.tcd-badge.flaky {
+  display: inline-flex; align-items: center; gap: 0.2rem; flex-shrink: 0;
+  background: color-mix(in srgb, var(--accent-orange) 18%, transparent); color: var(--accent-orange);
+}
+
+/* ── Tags ── */
+.tcd-tag-chip {
+  display: inline-flex; align-items: center; gap: 0.22rem;
+  font-size: 0.66rem; font-weight: 600; padding: 0.08rem 0.4rem 0.08rem 0.5rem;
+  border-radius: 999px; white-space: nowrap;
+}
+.tcd-tag-chip button {
+  display: inline-flex; align-items: center; justify-content: center; background: none; border: none;
+  color: inherit; opacity: 0.65; cursor: pointer; padding: 0.1rem; border-radius: 50%;
+}
+.tcd-tag-chip button:hover { opacity: 1; background: rgba(0, 0, 0, 0.15); }
+.tcd-tag-chip.tag-c0 { background: color-mix(in srgb, var(--accent-purple) 18%, transparent); color: var(--accent-purple); }
+.tcd-tag-chip.tag-c1 { background: color-mix(in srgb, var(--accent-pink) 18%, transparent); color: var(--accent-pink); }
+.tcd-tag-chip.tag-c2 { background: color-mix(in srgb, var(--accent-cyan) 18%, transparent); color: var(--accent-cyan); }
+.tcd-tag-chip.tag-c3 { background: color-mix(in srgb, var(--accent-yellow) 18%, transparent); color: var(--accent-yellow); }
+.tcd-tag-chip.tag-c4 { background: color-mix(in srgb, var(--accent-orange) 18%, transparent); color: var(--accent-orange); }
+.tcd-tag-chip.tag-c5 { background: color-mix(in srgb, var(--accent-green) 18%, transparent); color: var(--accent-green); }
+
+.tcd-tag-btn { color: var(--text-muted); }
+.tcd-tag-btn.has-tags { color: var(--accent-cyan); }
+.tcd-tag-btn svg { width: 13px; height: 13px; }
+
+/* Round (vs. the square file/run-select checkboxes) so tag-selection reads
+   as visually distinct from run-queue selection at a glance. */
+.tcd-case-select {
+  -webkit-appearance: none; appearance: none;
+  flex-shrink: 0; width: 15px; height: 15px; margin: 0; border-radius: 50%;
+  border: 1.5px solid var(--border-hover); background: var(--bg-tertiary);
+  cursor: pointer; position: relative; transition: var(--transition-fast, 0.15s ease);
+}
+.tcd-case-select:hover { border-color: var(--accent-cyan); }
+.tcd-case-select:checked,
+.tcd-case-select:indeterminate {
+  background: var(--accent-cyan); border-color: var(--accent-cyan);
+}
+.tcd-case-select:checked::after {
+  content: ''; position: absolute; left: 50%; top: 45%;
+  width: 4px; height: 7px; border: solid var(--bg-primary); border-width: 0 1.5px 1.5px 0;
+  transform: translate(-50%, -50%) rotate(45deg);
+}
+.tcd-case-select:indeterminate::after {
+  content: ''; position: absolute; left: 50%; top: 50%; width: 7px; height: 1.5px;
+  background: var(--bg-primary); transform: translate(-50%, -50%);
+}
+
+.tcd-tag-input {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 0.3rem;
+  border: 1px solid var(--border-color); border-radius: var(--radius-sm);
+  background: var(--bg-tertiary); padding: 0.4rem 0.5rem; min-height: 2.4rem;
+}
+.tcd-tag-input:focus-within { border-color: var(--border-hover); }
+.tcd-tag-input input {
+  flex: 1; min-width: 80px; background: none; border: none; color: var(--text-primary);
+  font-size: 0.85rem; font-family: var(--font-sans); padding: 0.15rem 0.2rem;
+}
+.tcd-tag-input input:focus { outline: none; }
+
+.tcd-selection-bar--tags .tcd-selection-bar-inner { max-width: min(900px, 92vw); flex-wrap: wrap; }
+.tcd-bulk-bar-count { font-weight: 700; color: var(--accent-purple); white-space: nowrap; }
+.tcd-selection-bar--tags .tcd-tag-input { min-width: 180px; padding: 0.2rem 0.4rem; min-height: unset; border: none; background: var(--bg-tertiary); }
+.tcd-bulk-bar-existing { display: flex; align-items: center; gap: 0.3rem; flex-wrap: wrap; }
 
 .tcd-status-pill {
   font-size: 0.68rem; font-weight: 600; padding: 0.12rem 0.5rem; border-radius: 999px;
@@ -225,6 +305,19 @@
 .tcd-status-pill.st-retest { color: var(--accent-purple); background: color-mix(in srgb, var(--accent-purple) 15%, transparent); }
 .tcd-status-pill.st-untested, .tcd-status-pill.st-other { color: var(--text-secondary); background: var(--bg-tertiary); }
 .tcd-status-pill.st-missing { color: var(--text-muted); background: transparent; border: 1px dashed var(--border-color); }
+.tcd-status-pill.manual { box-shadow: inset 0 0 0 1px currentColor; }
+
+.tcd-manual-status { display: inline-flex; gap: 2px; flex-shrink: 0; }
+.tcd-manual-btn {
+  width: 18px; height: 18px; padding: 0; border-radius: var(--radius-xs); border: 1px solid var(--border-color);
+  background: none; color: var(--text-muted); font-size: 0.62rem; font-weight: 700; line-height: 1;
+  display: inline-flex; align-items: center; justify-content: center; cursor: pointer;
+}
+.tcd-manual-btn:hover { border-color: var(--text-secondary); color: var(--text-primary); }
+.tcd-manual-btn.active.passed { background: color-mix(in srgb, var(--accent-green) 20%, transparent); border-color: var(--accent-green); color: var(--accent-green); }
+.tcd-manual-btn.active.failed { background: color-mix(in srgb, var(--accent-red) 20%, transparent); border-color: var(--accent-red); color: var(--accent-red); }
+.tcd-manual-btn.active.blocked { background: color-mix(in srgb, var(--accent-yellow) 20%, transparent); border-color: var(--accent-yellow); color: var(--accent-yellow); }
+.tcd-manual-btn.active.retest { background: color-mix(in srgb, var(--accent-purple) 20%, transparent); border-color: var(--accent-purple); color: var(--accent-purple); }
 
 .tcd-note-btn { color: var(--text-muted); }
 .tcd-note-btn.has-note { color: var(--accent-yellow); }
