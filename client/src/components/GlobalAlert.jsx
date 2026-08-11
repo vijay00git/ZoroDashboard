@@ -77,7 +77,7 @@ export const GlobalAlert = () => {
             <AlertCircle size={24} color="#3b82f6" />
             <h3 style={{ margin: 0, fontSize: '1.2rem', color: 'var(--text-primary)' }}>Alert</h3>
           </div>
-          <p style={{ color: 'var(--text-secondary)', lineHeight: 1.5, marginBottom: '24px' }}>
+          <p style={{ color: 'var(--text-secondary)', lineHeight: 1.5, marginBottom: '24px', wordBreak: 'break-word', overflowWrap: 'anywhere' }}>
             {alertConfig.message}
           </p>
           <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
@@ -94,7 +94,7 @@ export const GlobalAlert = () => {
             <AlertCircle size={24} color="#f59e0b" />
             <h3 style={{ margin: 0, fontSize: '1.2rem', color: 'var(--text-primary)' }}>Confirm Action</h3>
           </div>
-          <p style={{ color: 'var(--text-secondary)', lineHeight: 1.5, marginBottom: '24px' }}>
+          <p style={{ color: 'var(--text-secondary)', lineHeight: 1.5, marginBottom: '24px', wordBreak: 'break-word', overflowWrap: 'anywhere' }}>
             {confirmConfig.message}
           </p>
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
@@ -114,7 +114,7 @@ export const GlobalAlert = () => {
             <AlertCircle size={24} color="#8b5cf6" />
             <h3 style={{ margin: 0, fontSize: '1.2rem', color: 'var(--text-primary)' }}>Input Required</h3>
           </div>
-          <p style={{ color: 'var(--text-secondary)', lineHeight: 1.5, marginBottom: '16px' }}>
+          <p style={{ color: 'var(--text-secondary)', lineHeight: 1.5, marginBottom: '16px', wordBreak: 'break-word', overflowWrap: 'anywhere' }}>
             {promptConfig.message}
           </p>
           <input

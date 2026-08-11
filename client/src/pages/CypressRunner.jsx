@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { PlayCircle, Square, FolderOpen, Terminal, ListChecks, SlidersHorizontal, Clipboard, Download, Eye, EyeOff, ChevronRight, Search, RotateCcw, FilePlus2, AlertTriangle, X } from 'lucide-react';
+import { PlayCircle, Square, FolderOpen, Terminal, ListChecks, SlidersHorizontal, Clipboard, Download, Eye, EyeOff, ChevronRight, Search, RotateCcw, FilePlus2, AlertTriangle } from 'lucide-react';
 import { useToast } from '../contexts/ToastContext';
 import { showConfirm, showPrompt } from '../utils/Alerts';
 import ModalPortal from './testcase-dashboard/ModalPortal';
 import FileTree from './testcase-dashboard/FileTree';
-import AddManifestModal from './testcase-dashboard/AddManifestModal';
+import ManifestModal from './testcase-dashboard/ManifestModal';
 import TagModal from './testcase-dashboard/TagModal';
 import BulkTagBar from './testcase-dashboard/BulkTagBar';
 import StatsBar from './testcase-dashboard/StatsBar';
@@ -623,7 +623,6 @@ const CypressRunner = () => {
       });
       const body = await res.json();
       if (!res.ok) { showToast(body.error || "Couldn't add to manifest", 'error'); return; }
-      setManifestModalOpen(false);
       showToast('Added to manifest', 'success');
       fetchManifestData();
     } catch (err) {
@@ -798,22 +797,8 @@ const CypressRunner = () => {
         <div className="tcd-banner">
           <AlertTriangle size={16} />
           <div>
-            <strong>{manifestData.missing.length} path{manifestData.missing.length === 1 ? '' : 's'} not found</strong> in the repo, skipped:{' '}
-            {manifestData.missing.map((m, i) => (
-              <span key={i} className="tcd-missing-entry">
-                <code>{m.path}</code>
-                <button
-                  type="button"
-                  className="tcd-icon-btn"
-                  title="Remove this path from the manifest"
-                  aria-label={`Remove ${m.path} from manifest`}
-                  onClick={() => removeManifestFile(normCat(m.cat), m.path)}
-                >
-                  <X size={11} />
-                </button>
-                {i < manifestData.missing.length - 1 ? ', ' : ''}
-              </span>
-            ))}
+            <strong>{manifestData.missing.length} path{manifestData.missing.length === 1 ? '' : 's'} not found</strong> in the repo, skipped — open{' '}
+            <button type="button" className="tcd-link-btn" onClick={() => setManifestModalOpen(true)}>Manifest</button> to remove them.
           </div>
         </div>
       )}
@@ -856,11 +841,8 @@ const CypressRunner = () => {
               >
                 <RotateCcw size={12} /> Retry failed {failedFileItems.length > 0 ? `(${failedFileItems.length})` : ''}
               </button>
-              <button type="button" className="cyr-btn small" title="Add a file path to the shared manifest" onClick={() => setManifestModalOpen(true)}>
-                <FilePlus2 size={12} /> Add to manifest
-              </button>
-              <button type="button" className="cyr-btn small" title="Download the manifest file (.md)" aria-label="Download the manifest file (.md)" onClick={handleDownloadManifest}>
-                <Download size={12} /> Manifest
+              <button type="button" className="cyr-btn small" title="View, add, remove, and download manifest entries" onClick={() => setManifestModalOpen(true)}>
+                <FilePlus2 size={12} /> Manifest
               </button>
               <button type="button" className="cyr-btn small" title="Export local run status for every test case" onClick={() => handleExportCsv('all')}>
                 <Download size={12} /> Export CSV (all)
@@ -931,7 +913,6 @@ const CypressRunner = () => {
               onSelectManyCases={selectManyCases}
               onSetManualStatus={handleSetManualStatus}
               getCaseStatus={getCaseStatus}
-              onRemoveFromManifest={(path, cat) => removeManifestFile(cat, path)}
             />
           </div>
         </div>
@@ -1020,7 +1001,7 @@ const CypressRunner = () => {
       )}
 
       {manifestModalOpen && (
-        <AddManifestModal data={manifestData} onClose={() => setManifestModalOpen(false)} onSubmit={addManifestFile} />
+        <ManifestModal data={manifestData} onClose={() => setManifestModalOpen(false)} onAdd={addManifestFile} onRemove={removeManifestFile} onDownload={handleDownloadManifest} />
       )}
     </div>
   );

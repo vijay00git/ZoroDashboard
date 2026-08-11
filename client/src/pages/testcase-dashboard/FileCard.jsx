@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Copy, Check, Play, ChevronRight, StickyNote, ExternalLink, UploadCloud, Tag as TagIcon, X, Zap, FileMinus } from 'lucide-react';
+import { Copy, Check, Play, ChevronRight, StickyNote, ExternalLink, UploadCloud, Tag as TagIcon, X, Zap } from 'lucide-react';
 import { splitPath, numericId, statusClass, tallyFor, trendDotClass, isFlakyTrend, formatDateTime, copyText, highlightParts, testRailCaseUrl, tagColorClass } from './helpers';
 import { MANUAL_STATUS_TO_ID } from '../cypress-runner/helpers';
 import SelectAllCasesCheckbox from './SelectAllCasesCheckbox';
@@ -25,7 +25,6 @@ const FileCard = ({
   notes, selectable, selected, onToggleSelect, onRun, canRun, onOpenNote, showToast, testrailUrl,
   runLabel = 'Run on Jenkins', onSync, runCaseResults, manualStatus, onSetManualStatus,
   tags, onOpenTagModal, onRemoveTag, selectedCases, onToggleCaseSelect, onSelectManyCases,
-  onRemoveFromManifest,
 }) => {
   const [copied, setCopied] = useState(false);
   const sp = splitPath(path);
@@ -145,17 +144,6 @@ const FileCard = ({
             onClick={(e) => { e.preventDefault(); e.stopPropagation(); onSync(path, cat); }}
           >
             <UploadCloud size={13} />
-          </button>
-        )}
-        {onRemoveFromManifest && (
-          <button
-            type="button"
-            className="tcd-icon-btn"
-            title="Remove from manifest"
-            aria-label="Remove from manifest"
-            onClick={(e) => { e.preventDefault(); e.stopPropagation(); onRemoveFromManifest(path, cat); }}
-          >
-            <FileMinus size={13} />
           </button>
         )}
       </div>

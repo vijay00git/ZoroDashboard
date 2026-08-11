@@ -13,7 +13,7 @@ import RunStatusCard from './testcase-dashboard/RunStatusCard';
 import JobActivityCard from './testcase-dashboard/JobActivityCard';
 import FileTree from './testcase-dashboard/FileTree';
 import RunsPanel from './testcase-dashboard/RunsPanel';
-import AddManifestModal from './testcase-dashboard/AddManifestModal';
+import ManifestModal from './testcase-dashboard/ManifestModal';
 import RunModal from './testcase-dashboard/RunModal';
 import NoteModal from './testcase-dashboard/NoteModal';
 import TagModal from './testcase-dashboard/TagModal';
@@ -296,7 +296,6 @@ const TestCaseDashboard = () => {
       });
       const body = await res.json();
       if (!res.ok) { showToast(body.error || "Couldn't add to manifest", 'error'); return; }
-      setModal(null);
       showToast('Added to manifest', 'success');
       fetchData();
     } catch (err) {
@@ -686,8 +685,7 @@ const TestCaseDashboard = () => {
             <button className="tcd-btn" title="Copy visible file paths" onClick={copyVisible}><Copy size={14} /> Copy</button>
             <button className="tcd-btn" title="Export filtered cases as CSV" onClick={exportCsv}><Download size={14} /> CSV</button>
           </div>
-          <button className="tcd-btn primary" onClick={() => setModal({ type: 'addManifest' })}><FilePlus2 size={14} /> Add to manifest</button>
-          <button className="tcd-btn" title="Download the manifest file (.md)" aria-label="Download the manifest file (.md)" onClick={handleDownloadManifest}><Download size={14} /> Manifest</button>
+          <button className="tcd-btn primary" title="View, add, remove, and download manifest entries" onClick={() => setModal({ type: 'manifest' })}><FilePlus2 size={14} /> Manifest</button>
           <button className="tcd-btn" title="TestRail, Jenkins &amp; Telegram credentials (Settings → Integrations)" aria-label="TestRail, Jenkins &amp; Telegram credentials (Settings → Integrations)" onClick={() => navigate('/settings?tab=integrations')}><SettingsIcon size={14} /></button>
         </div>
 
@@ -770,22 +768,8 @@ const TestCaseDashboard = () => {
         <div className="tcd-banner">
           <AlertTriangle size={16} />
           <div>
-            <strong>{data.missing.length} path{data.missing.length === 1 ? '' : 's'} not found</strong> in the repo, skipped:{' '}
-            {data.missing.map((m, i) => (
-              <span key={i} className="tcd-missing-entry">
-                <code>{m.path}</code>
-                <button
-                  type="button"
-                  className="tcd-icon-btn"
-                  title="Remove this path from the manifest"
-                  aria-label={`Remove ${m.path} from manifest`}
-                  onClick={() => removeManifestFile(normCat(m.cat), m.path)}
-                >
-                  <X size={11} />
-                </button>
-                {i < data.missing.length - 1 ? ', ' : ''}
-              </span>
-            ))}
+            <strong>{data.missing.length} path{data.missing.length === 1 ? '' : 's'} not found</strong> in the repo, skipped — open{' '}
+            <button type="button" className="tcd-link-btn" onClick={() => setModal({ type: 'manifest' })}>Manifest</button> to remove them.
           </div>
         </div>
       )}
@@ -852,7 +836,6 @@ const TestCaseDashboard = () => {
               onToggleCaseSelect={toggleCaseSelect}
               onSelectManyCases={selectManyCases}
               getCaseStatus={getCaseStatus}
-              onRemoveFromManifest={(path, cat) => removeManifestFile(cat, path)}
             />
             <RunsPanel
               runsState={runsState}
@@ -902,8 +885,8 @@ const TestCaseDashboard = () => {
         </>
       )}
 
-      {modal?.type === 'addManifest' && (
-        <AddManifestModal data={data} onClose={() => setModal(null)} onSubmit={addManifestFile} />
+      {modal?.type === 'manifest' && (
+        <ManifestModal data={data} onClose={() => setModal(null)} onAdd={addManifestFile} onRemove={removeManifestFile} onDownload={handleDownloadManifest} />
       )}
       {modal?.type === 'sendReport' && (
         <SendReportModal

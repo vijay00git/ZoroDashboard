@@ -15,7 +15,7 @@ const FileTree = ({
   onSyncFile, onSyncGroup, onSyncCategory, caseResultsByPath,
   manualStatus, onSetManualStatus,
   tags, onOpenTagModal, onRemoveTag, selectedCases, onToggleCaseSelect, onSelectManyCases,
-  getCaseStatus, onRemoveFromManifest,
+  getCaseStatus,
 }) => {
   const unknownIdSet = useMemo(() => new Set((data.unknownIds || []).map((u) => u.id)), [data.unknownIds]);
   const tree = useMemo(() => buildTree(data.rows), [data.rows]);
@@ -89,7 +89,6 @@ const FileTree = ({
             selectedCases={selectedCases}
             onToggleCaseSelect={onToggleCaseSelect}
             onSelectManyCases={onSelectManyCases}
-            onRemoveFromManifest={onRemoveFromManifest}
           />
         );
       });
