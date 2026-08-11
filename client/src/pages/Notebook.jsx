@@ -29,12 +29,15 @@ import {
   GripVertical,
   FileOutput,
   Eye,
-  Columns
+  Columns,
+  Search,
+  X
 } from 'lucide-react';
 import { showAlert, showConfirm } from '../utils/Alerts';
 
 const Notebook = () => {
   const textareaRef = useRef(null);
+  const searchInputRef = useRef(null);
 
   // --- State ---
   const [items, setItems] = useState([]);
@@ -42,7 +45,25 @@ const Notebook = () => {
   const [noteMode, setNoteMode] = useState('preview'); // 'edit', 'preview', 'split'
   const [editingTitleId, setEditingTitleId] = useState(null);
   const [renameValue, setRenameValue] = useState('');
-  
+  const [searchQuery, setSearchQuery] = useState('');
+
+  // "/" focuses the note search box (scoped to this page), Escape clears it
+  // — same shortcut convention Cypress Runner's search box already uses.
+  useEffect(() => {
+    const onKeyDown = (e) => {
+      const tag = document.activeElement?.tagName || '';
+      if (e.key === '/' && tag !== 'INPUT' && tag !== 'TEXTAREA') {
+        e.preventDefault();
+        searchInputRef.current?.focus();
+      } else if (e.key === 'Escape' && document.activeElement === searchInputRef.current) {
+        setSearchQuery('');
+        searchInputRef.current.blur();
+      }
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, []);
+
   // Drag & Drop
   const [draggedItemId, setDraggedItemId] = useState(null);
   const [dragOverItemId, setDragOverItemId] = useState(null);
@@ -448,6 +469,77 @@ const Notebook = () => {
 
   const rootItems = items.filter(i => i.parentId === null);
 
+  // --- Full-text search (title + content, across every note regardless of
+  // which folder it lives in) ---
+  const getFolderPath = (item) => {
+    const path = [];
+    let current = item;
+    while (current && current.parentId) {
+      const parent = items.find(i => i.id === current.parentId);
+      if (!parent) break;
+      path.unshift(parent.name);
+      current = parent;
+    }
+    return path.join(' / ');
+  };
+
+  const getMatchSnippet = (content, query, contextChars = 45) => {
+    const idx = content.toLowerCase().indexOf(query.toLowerCase());
+    if (idx === -1) return '';
+    const start = Math.max(0, idx - contextChars);
+    const end = Math.min(content.length, idx + query.length + contextChars);
+    let snippet = content.slice(start, end).replace(/\s+/g, ' ').trim();
+    if (start > 0) snippet = '…' + snippet;
+    if (end < content.length) snippet = snippet + '…';
+    return snippet;
+  };
+
+  const highlightMatch = (text, query) => {
+    if (!query) return text;
+    const idx = text.toLowerCase().indexOf(query.toLowerCase());
+    if (idx === -1) return text;
+    return (
+      <>
+        {text.slice(0, idx)}
+        <mark className="nb-search-highlight">{text.slice(idx, idx + query.length)}</mark>
+        {text.slice(idx + query.length)}
+      </>
+    );
+  };
+
+  const trimmedQuery = searchQuery.trim();
+  const searchResults = trimmedQuery
+    ? items
+        .filter(i => i.type === 'note')
+        .filter(i => i.name.toLowerCase().includes(trimmedQuery.toLowerCase()) || (i.content || '').toLowerCase().includes(trimmedQuery.toLowerCase()))
+        .map(item => {
+          const titleMatch = item.name.toLowerCase().includes(trimmedQuery.toLowerCase());
+          return {
+            item,
+            titleMatch,
+            folderPath: getFolderPath(item),
+            snippet: titleMatch ? '' : getMatchSnippet(item.content || '', trimmedQuery),
+          };
+        })
+    : [];
+
+  // Selecting a search result expands every ancestor folder so the note is
+  // visible in the tree afterward, instead of landing on a note buried
+  // inside a collapsed folder with no visual trace of where it went.
+  const handleSelectSearchResult = (note) => {
+    const ancestorIds = new Set();
+    let current = note;
+    while (current && current.parentId) {
+      ancestorIds.add(current.parentId);
+      current = items.find(i => i.id === current.parentId);
+    }
+    const updated = ancestorIds.size > 0
+      ? items.map(i => ancestorIds.has(i.id) ? { ...i, isExpanded: true } : i)
+      : items;
+    saveItemsList(updated, note.id);
+    setSearchQuery('');
+  };
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 120px)', overflow: 'hidden' }}>
       <div className="glass-panel" style={{ display: 'flex', height: '100%', minWidth: 0, overflow: 'hidden' }}>
@@ -469,13 +561,70 @@ const Notebook = () => {
             </div>
           </div>
 
-          <div 
-            className="custom-scrollbar" 
+          {/* Search — full-text across every note's title AND content,
+              regardless of which folder it's filed under. */}
+          <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border-color)' }}>
+            <div style={{ position: 'relative' }}>
+              <Search size={14} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
+              <input
+                ref={searchInputRef}
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search notes… (press /)"
+                style={{ width: '100%', background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: `8px ${searchQuery ? '30px' : '10px'} 8px 30px`, color: 'var(--text-primary)', fontSize: '0.82rem', outline: 'none' }}
+              />
+              {searchQuery && (
+                <button onClick={() => setSearchQuery('')} title="Clear search" aria-label="Clear search" style={{ position: 'absolute', right: '6px', top: '50%', transform: 'translateY(-50%)', background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '4px', display: 'flex' }}>
+                  <X size={13} />
+                </button>
+              )}
+            </div>
+          </div>
+
+          <div
+            className="custom-scrollbar"
             style={{ flexGrow: 1, padding: '16px 12px', overflowY: 'auto' }}
             onDragOver={(e) => { e.preventDefault(); }}
             onDrop={handleDropToRoot}
           >
-            {rootItems.length === 0 ? (
+            {trimmedQuery ? (
+              searchResults.length === 0 ? (
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '32px 12px', color: 'var(--text-muted)', textAlign: 'center' }}>
+                  <Search size={22} style={{ opacity: 0.4, marginBottom: '10px' }} />
+                  <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>No notes match "{trimmedQuery}"</p>
+                </div>
+              ) : (
+                <>
+                  <div style={{ fontSize: '0.66rem', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase', color: 'var(--text-muted)', padding: '2px 8px 10px' }}>
+                    {searchResults.length} result{searchResults.length === 1 ? '' : 's'}
+                  </div>
+                  {searchResults.map(({ item, titleMatch, folderPath, snippet }) => (
+                    <div
+                      key={item.id}
+                      onClick={() => handleSelectSearchResult(item)}
+                      className="nav-item-hover"
+                      style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', padding: '9px 10px', borderRadius: '8px', cursor: 'pointer', marginBottom: '3px' }}
+                    >
+                      <FileText size={14} style={{ color: 'var(--text-muted)', marginTop: '2px', flexShrink: 0 }} />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: '0.85rem', fontWeight: '600', color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          {highlightMatch(item.name, trimmedQuery)}
+                        </div>
+                        {folderPath && (
+                          <div style={{ fontSize: '0.66rem', color: 'var(--text-muted)', marginTop: '1px' }}>{folderPath}</div>
+                        )}
+                        {!titleMatch && snippet && (
+                          <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '3px', lineHeight: '1.4' }}>
+                            {highlightMatch(snippet, trimmedQuery)}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </>
+              )
+            ) : rootItems.length === 0 ? (
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '32px 12px', color: 'var(--text-muted)', textAlign: 'center' }}>
                 <div style={{ width: '56px', height: '56px', borderRadius: '50%', background: 'rgba(0,0,0,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '12px' }}>
                   <FilePlus size={22} style={{ opacity: 0.5 }} />

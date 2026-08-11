@@ -304,6 +304,28 @@ const TestCaseDashboard = () => {
     }
   };
 
+  // Shared with Cypress Runner — both pages read/write this exact same
+  // manifest file, so a removal here is reflected there on its next poll.
+  const removeManifestFile = async (category, relPath) => {
+    if (!(await showConfirm(`Remove "${relPath}" from the manifest? This only untracks it here — the file itself is unaffected.`))) return;
+    try {
+      const res = await fetch('/api/testcases/manifest/remove-file', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ category, path: relPath }),
+      });
+      const body = await res.json();
+      if (!res.ok) { showToast(body.error || "Couldn't remove from manifest", 'error'); return; }
+      showToast('Removed from manifest', 'success');
+      fetchData();
+    } catch (err) {
+      showToast(`Couldn't remove from manifest: ${err.message}`, 'error');
+    }
+  };
+
+  const handleDownloadManifest = () => {
+    window.open('/api/testcases/manifest/download', '_blank');
+  };
+
   const saveNote = async (caseId, text) => {
     try {
       const res = await fetch('/api/testcases/notes', {
@@ -665,6 +687,7 @@ const TestCaseDashboard = () => {
             <button className="tcd-btn" title="Export filtered cases as CSV" onClick={exportCsv}><Download size={14} /> CSV</button>
           </div>
           <button className="tcd-btn primary" onClick={() => setModal({ type: 'addManifest' })}><FilePlus2 size={14} /> Add to manifest</button>
+          <button className="tcd-btn" title="Download the manifest file (.md)" aria-label="Download the manifest file (.md)" onClick={handleDownloadManifest}><Download size={14} /> Manifest</button>
           <button className="tcd-btn" title="TestRail, Jenkins &amp; Telegram credentials (Settings → Integrations)" aria-label="TestRail, Jenkins &amp; Telegram credentials (Settings → Integrations)" onClick={() => navigate('/settings?tab=integrations')}><SettingsIcon size={14} /></button>
         </div>
 
@@ -748,7 +771,21 @@ const TestCaseDashboard = () => {
           <AlertTriangle size={16} />
           <div>
             <strong>{data.missing.length} path{data.missing.length === 1 ? '' : 's'} not found</strong> in the repo, skipped:{' '}
-            {data.missing.map((m, i) => <span key={i}><code>{m.path}</code>{i < data.missing.length - 1 ? ', ' : ''}</span>)}
+            {data.missing.map((m, i) => (
+              <span key={i} className="tcd-missing-entry">
+                <code>{m.path}</code>
+                <button
+                  type="button"
+                  className="tcd-icon-btn"
+                  title="Remove this path from the manifest"
+                  aria-label={`Remove ${m.path} from manifest`}
+                  onClick={() => removeManifestFile(normCat(m.cat), m.path)}
+                >
+                  <X size={11} />
+                </button>
+                {i < data.missing.length - 1 ? ', ' : ''}
+              </span>
+            ))}
           </div>
         </div>
       )}
@@ -815,6 +852,7 @@ const TestCaseDashboard = () => {
               onToggleCaseSelect={toggleCaseSelect}
               onSelectManyCases={selectManyCases}
               getCaseStatus={getCaseStatus}
+              onRemoveFromManifest={(path, cat) => removeManifestFile(cat, path)}
             />
             <RunsPanel
               runsState={runsState}

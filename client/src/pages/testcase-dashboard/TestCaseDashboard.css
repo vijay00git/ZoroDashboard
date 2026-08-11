@@ -86,6 +86,8 @@
 .tcd-banner code, .tcd-idcheck-banner code {
   background: var(--bg-tertiary); border-radius: var(--radius-xs); padding: 0.1rem 0.35rem; font-family: var(--font-mono); font-size: 0.75rem;
 }
+.tcd-missing-entry { display: inline-flex; align-items: center; gap: 0.15rem; }
+.tcd-missing-entry .tcd-icon-btn { width: 18px; height: 18px; padding: 0; }
 .tcd-idcheck-status { font-size: 0.8rem; color: var(--text-secondary); }
 .tcd-idlist { margin-top: 0.4rem; display: flex; flex-wrap: wrap; gap: 0.3rem; }
 .tcd-conn-banner {

@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { PlayCircle, Square, FolderOpen, Terminal, ListChecks, SlidersHorizontal, Clipboard, Download, Eye, EyeOff, ChevronRight, Search, RotateCcw } from 'lucide-react';
+import { PlayCircle, Square, FolderOpen, Terminal, ListChecks, SlidersHorizontal, Clipboard, Download, Eye, EyeOff, ChevronRight, Search, RotateCcw, FilePlus2, AlertTriangle, X } from 'lucide-react';
 import { useToast } from '../contexts/ToastContext';
 import { showConfirm, showPrompt } from '../utils/Alerts';
 import ModalPortal from './testcase-dashboard/ModalPortal';
 import FileTree from './testcase-dashboard/FileTree';
+import AddManifestModal from './testcase-dashboard/AddManifestModal';
 import TagModal from './testcase-dashboard/TagModal';
 import BulkTagBar from './testcase-dashboard/BulkTagBar';
 import StatsBar from './testcase-dashboard/StatsBar';
@@ -49,6 +50,7 @@ const CypressRunner = () => {
   const [tags, setTags] = useState({});
   const [selectedCases, setSelectedCases] = useState(new Set());
   const [tagModal, setTagModal] = useState(null); // { caseId, caseTitle }
+  const [manifestModalOpen, setManifestModalOpen] = useState(false);
   const [activeCats, setActiveCats] = useState({ OFFLINE: true, ONLINE: true, E2E: true });
   const [issueFilter, setIssueFilter] = useState(null);
   const [searchTerm, setSearchTerm] = useState(() => localStorage.getItem('cyr_search_term') || '');
@@ -105,14 +107,16 @@ const CypressRunner = () => {
     return () => document.removeEventListener('keydown', onKeyDown);
   }, []);
 
-  useEffect(() => {
-    // A non-2xx response (e.g. the manifest file isn't set up on this
-    // machine yet) still returns a JSON body ({ error: '...' }), which has
-    // none of the fields (rows, catCounts, ...) every child component here
-    // assumes exist — blindly setManifestData()-ing it crashes the whole
-    // page (StatsBar etc. reading .rows off it) instead of just showing an
-    // empty state. Checking res.ok keeps manifestData at its safe
-    // EMPTY_MANIFEST default and surfaces the real error as a toast instead.
+  // A non-2xx response (e.g. the manifest file isn't set up on this
+  // machine yet) still returns a JSON body ({ error: '...' }), which has
+  // none of the fields (rows, catCounts, ...) every child component here
+  // assumes exist — blindly setManifestData()-ing it crashes the whole
+  // page (StatsBar etc. reading .rows off it) instead of just showing an
+  // empty state. Checking res.ok keeps manifestData at its safe
+  // EMPTY_MANIFEST default and surfaces the real error as a toast instead.
+  // Also re-run after any manifest add/remove so this page and Jenkins
+  // Runner's manifest edits stay reflected without a manual page refresh.
+  const fetchManifestData = useCallback(() => {
     fetch('/api/testcases/data', { cache: 'no-store' })
       .then((r) => r.json().then((body) => ({ ok: r.ok, body })))
       .then(({ ok, body }) => {
@@ -120,6 +124,10 @@ const CypressRunner = () => {
         setManifestData(body);
       })
       .catch(() => {});
+  }, [showToast]);
+
+  useEffect(() => {
+    fetchManifestData();
     fetch('/api/testcases/manual-status', { cache: 'no-store' })
       .then((r) => r.json())
       .then(setManualStatus)
@@ -139,7 +147,7 @@ const CypressRunner = () => {
         setEnvironment((prev) => prev || json.defaultEnvironment || 'qa');
       })
       .catch(() => {});
-  }, []);
+  }, [fetchManifestData]);
 
   // Reuses the same TestRail Run ID field already collected for syncing
   // results, to also pull that run's live status — same endpoint/shape the
@@ -604,6 +612,45 @@ const CypressRunner = () => {
     showToast(`Exported ${rows.length} case${rows.length === 1 ? '' : 's'}`, 'success');
   };
 
+  // Shared with Jenkins Runner (TestCaseDashboard) — both pages read/write
+  // this exact same manifest file, so an edit here is reflected there on
+  // its next poll, and vice versa.
+  const addManifestFile = async (category, group, relPath) => {
+    try {
+      const res = await fetch('/api/testcases/manifest/add-file', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ category, group, path: relPath }),
+      });
+      const body = await res.json();
+      if (!res.ok) { showToast(body.error || "Couldn't add to manifest", 'error'); return; }
+      setManifestModalOpen(false);
+      showToast('Added to manifest', 'success');
+      fetchManifestData();
+    } catch (err) {
+      showToast(`Couldn't add to manifest: ${err.message}`, 'error');
+    }
+  };
+
+  const removeManifestFile = async (category, relPath) => {
+    if (!(await showConfirm(`Remove "${relPath}" from the manifest? This only untracks it here — the file itself is unaffected.`))) return;
+    try {
+      const res = await fetch('/api/testcases/manifest/remove-file', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ category, path: relPath }),
+      });
+      const body = await res.json();
+      if (!res.ok) { showToast(body.error || "Couldn't remove from manifest", 'error'); return; }
+      showToast('Removed from manifest', 'success');
+      fetchManifestData();
+    } catch (err) {
+      showToast(`Couldn't remove from manifest: ${err.message}`, 'error');
+    }
+  };
+
+  const handleDownloadManifest = () => {
+    window.open('/api/testcases/manifest/download', '_blank');
+  };
+
   const active = runState.active;
   const selectedCount = selectedFiles.size;
 
@@ -747,6 +794,30 @@ const CypressRunner = () => {
 
       <StatsBar data={manifestData} activeCats={activeCats} onToggleCat={toggleCat} issueFilter={issueFilter} onToggleIssue={toggleIssue} statusCounts={statusCounts} />
 
+      {manifestData.missing && manifestData.missing.length > 0 && (
+        <div className="tcd-banner">
+          <AlertTriangle size={16} />
+          <div>
+            <strong>{manifestData.missing.length} path{manifestData.missing.length === 1 ? '' : 's'} not found</strong> in the repo, skipped:{' '}
+            {manifestData.missing.map((m, i) => (
+              <span key={i} className="tcd-missing-entry">
+                <code>{m.path}</code>
+                <button
+                  type="button"
+                  className="tcd-icon-btn"
+                  title="Remove this path from the manifest"
+                  aria-label={`Remove ${m.path} from manifest`}
+                  onClick={() => removeManifestFile(normCat(m.cat), m.path)}
+                >
+                  <X size={11} />
+                </button>
+                {i < manifestData.missing.length - 1 ? ', ' : ''}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div className={`cyr-layout${(active || !runsHidden) ? '' : ' cyr-layout-single'}`}>
         <div className="cyr-col-left">
           <div className="cyr-card">
@@ -784,6 +855,12 @@ const CypressRunner = () => {
                 onClick={handleRetryFailed}
               >
                 <RotateCcw size={12} /> Retry failed {failedFileItems.length > 0 ? `(${failedFileItems.length})` : ''}
+              </button>
+              <button type="button" className="cyr-btn small" title="Add a file path to the shared manifest" onClick={() => setManifestModalOpen(true)}>
+                <FilePlus2 size={12} /> Add to manifest
+              </button>
+              <button type="button" className="cyr-btn small" title="Download the manifest file (.md)" aria-label="Download the manifest file (.md)" onClick={handleDownloadManifest}>
+                <Download size={12} /> Manifest
               </button>
               <button type="button" className="cyr-btn small" title="Export local run status for every test case" onClick={() => handleExportCsv('all')}>
                 <Download size={12} /> Export CSV (all)
@@ -854,6 +931,7 @@ const CypressRunner = () => {
               onSelectManyCases={selectManyCases}
               onSetManualStatus={handleSetManualStatus}
               getCaseStatus={getCaseStatus}
+              onRemoveFromManifest={(path, cat) => removeManifestFile(cat, path)}
             />
           </div>
         </div>
@@ -939,6 +1017,10 @@ const CypressRunner = () => {
           onClose={() => setTagModal(null)}
           onSave={handleSaveTags}
         />
+      )}
+
+      {manifestModalOpen && (
+        <AddManifestModal data={manifestData} onClose={() => setManifestModalOpen(false)} onSubmit={addManifestFile} />
       )}
     </div>
   );

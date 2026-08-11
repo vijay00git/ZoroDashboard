@@ -1471,6 +1471,15 @@ button {
   .cmdk-overlay, .cmdk-panel { animation: none; }
 }
 
+/* Notebook full-text search — highlighted match span (overrides the
+   browser's default yellow-on-black <mark> styling to fit the theme). */
+.nb-search-highlight {
+  background: color-mix(in srgb, var(--accent-purple) 35%, transparent);
+  color: var(--text-primary);
+  border-radius: 3px;
+  padding: 0 1px;
+}
+
 /* ─────────────────────────────────────────────
    MARKDOWN BODY
 ───────────────────────────────────────────── */

@@ -2012,6 +2012,74 @@ function tcdAddFileToManifest(md, category, group, relPath) {
     return lines.join('\n');
 }
 
+// Mirrors tcdAddFileToManifest's line-surgery approach in reverse — removes
+// the bullet for relPath from wherever it lives within the given category
+// (the caller doesn't need to know which group it's under), decrements that
+// group's "(N)" count, and removes the group heading entirely (plus the
+// blank-line gap it leaves behind) if that was its last file.
+function tcdRemoveFileFromManifest(md, category, relPath) {
+    const heading = TCD_CAT_HEADING[category];
+    if (!heading) throw new Error(`Unknown category "${category}"`);
+    relPath = relPath.trim();
+    if (!relPath) throw new Error('File path is required');
+
+    const lines = md.split('\n');
+    const catRe = new RegExp(`^##\\s+${heading}\\s*$`);
+    const catStart = lines.findIndex((l) => catRe.test(l.trim()));
+    if (catStart === -1) throw new Error(`Couldn't find "## ${heading}" section in the manifest`);
+
+    let catEnd = lines.length;
+    for (let i = catStart + 1; i < lines.length; i++) {
+        if (/^##\s+/.test(lines[i].trim())) { catEnd = i; break; }
+    }
+
+    const groupHeadRe = /^###\s*(\d+)\.\s*(.+?)\s*$/;
+    const countRe = /\s*\((\d+)\)\s*$/;
+
+    // Find the bullet for relPath and which group heading owns it.
+    let bulletIdx = -1;
+    let groupHeadingIdx = -1;
+    for (let i = catStart + 1; i < catEnd; i++) {
+        const trimmed = lines[i].trim();
+        if (groupHeadRe.test(trimmed)) { groupHeadingIdx = i; continue; }
+        const bullet = trimmed.match(/^-\s+(.+)$/);
+        if (bullet && bullet[1].trim() === relPath) { bulletIdx = i; break; }
+    }
+    if (bulletIdx === -1) throw new Error(`"${relPath}" was not found under ${heading}`);
+
+    lines.splice(bulletIdx, 1);
+
+    // Re-scan the group's remaining bullets from scratch rather than reusing
+    // any pre-splice indices/counts, since the splice above shifted every
+    // line index after bulletIdx down by one.
+    let remaining = 0;
+    for (let i = groupHeadingIdx + 1; i < lines.length; i++) {
+        const trimmed = lines[i].trim();
+        if (groupHeadRe.test(trimmed) || /^##\s+/.test(trimmed)) break;
+        if (/^-\s+\S/.test(trimmed)) remaining++;
+    }
+
+    if (remaining === 0) {
+        // Remove the now-empty heading itself, plus at most one blank line
+        // immediately before it — mirroring the single leading blank
+        // tcdAddFileToManifest inserts ahead of a new group's heading.
+        // Deliberately does NOT touch anything after the heading: that
+        // could be original spacing belonging to whatever follows (the
+        // next group, or the next "## " category) rather than anything
+        // this group owns, and swallowing it would corrupt formatting
+        // that had nothing to do with the file being removed.
+        let removeStart = groupHeadingIdx;
+        if (removeStart > catStart + 1 && lines[removeStart - 1].trim() === '') removeStart--;
+        lines.splice(removeStart, groupHeadingIdx - removeStart + 1);
+    } else {
+        const m = lines[groupHeadingIdx].trim().match(groupHeadRe);
+        const nameOnly = m[2].replace(countRe, '').trim();
+        lines[groupHeadingIdx] = `### ${m[1]}. ${nameOnly} (${remaining})`;
+    }
+
+    return lines.join('\n');
+}
+
 const TCD_IT_RE = /it\(\s*(['"`])((?:(?!\1).)*)\1/gs;
 const TCD_LEADING_ID_RE = /^\s*(C\d{5,})\s*/;
 // Some clubbed titles separate their leading IDs with "|"; others use a
@@ -2188,6 +2256,37 @@ app.post('/api/testcases/manifest/add-file', (req, res) => {
         res.json({ added: relPath });
     } catch (err) {
         res.status(400).json({ error: String(err && err.message || err) });
+    }
+});
+
+// Shared by both Cypress Runner and Jenkins Runner (Test Case Dashboard) —
+// both pages read/write this exact same manifest file, so a file removed
+// from one immediately disappears from the other's next /api/testcases/data
+// poll too.
+app.post('/api/testcases/manifest/remove-file', (req, res) => {
+    const { category, path: relPath } = req.body;
+    if (!category || !relPath) {
+        return res.status(400).json({ error: 'category and path are both required' });
+    }
+    try {
+        const md = fs.readFileSync(TCD_MANIFEST_PATH, 'utf8');
+        const updated = tcdRemoveFileFromManifest(md, category, relPath);
+        writeFileAtomic(TCD_MANIFEST_PATH, updated);
+        res.json({ removed: relPath });
+    } catch (err) {
+        res.status(400).json({ error: String(err && err.message || err) });
+    }
+});
+
+app.get('/api/testcases/manifest/download', (req, res) => {
+    try {
+        if (!fs.existsSync(TCD_MANIFEST_PATH)) return res.status(404).json({ error: 'Manifest file not found' });
+        const content = fs.readFileSync(TCD_MANIFEST_PATH, 'utf8');
+        res.setHeader('Content-Type', 'text/markdown; charset=utf-8');
+        res.setHeader('Content-Disposition', `attachment; filename="${path.basename(TCD_MANIFEST_PATH)}"`);
+        res.send(content);
+    } catch (e) {
+        res.status(500).json({ error: e.message });
     }
 });
 
