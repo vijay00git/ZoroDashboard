@@ -46,7 +46,7 @@ const BulkTagBar = ({ count, existingTags, onAddTag, onRemoveTag, onRun, onClear
               {existingTags.map((t) => (
                 <span key={t} className={`tcd-tag-chip ${tagColorClass(t)}`}>
                   {t}
-                  <button type="button" onClick={() => onRemoveTag(t)} title={`Remove "${t}" from selected cases`}>
+                  <button type="button" onClick={() => onRemoveTag(t)} title={`Remove "${t}" from selected cases`} aria-label={`Remove "${t}" from selected cases`}>
                     <X size={10} />
                   </button>
                 </span>

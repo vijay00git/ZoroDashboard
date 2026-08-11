@@ -102,9 +102,10 @@ const Water = () => {
     localStorage.setItem('tr-water-goal', String(newGoal));
   };
 
-  const handleDeleteLog = (id) => {
+  const handleDeleteLog = async (id) => {
     const logItem = logs.find(l => l.id === id);
     if (!logItem) return;
+    if (!(await showConfirm('Delete this hydration log entry?'))) return;
     const updatedIntake = Math.max(0, intake - logItem.amount);
     const updatedLogs = logs.filter(l => l.id !== id);
 
@@ -225,9 +226,9 @@ const Water = () => {
               onClick={handleReset}
               style={{
                 flex: 1,
-                background: 'rgba(239, 68, 68, 0.1)',
+                background: 'color-mix(in srgb, var(--accent-red) 10%, transparent)',
                 color: 'var(--accent-red)',
-                border: '1px solid rgba(239, 68, 68, 0.2)',
+                border: '1px solid color-mix(in srgb, var(--accent-red) 20%, transparent)',
                 borderRadius: '10px',
                 padding: '8px',
                 cursor: 'pointer',

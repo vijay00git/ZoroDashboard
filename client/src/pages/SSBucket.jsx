@@ -461,10 +461,10 @@ const SSBucket = () => {
                     {/* Hover actions */}
                     <div className="ssb-grp-actions" onClick={e => e.stopPropagation()} style={{ display: 'flex', gap: '2px', opacity: 0, transition: 'opacity var(--transition-fast)', flexShrink: 0 }}>
                       {depth === 0 && (
-                        <button onClick={() => addGroup(g.id)} title="Add sub-folder" style={iconBtnStyle}><FolderPlus size={10} /></button>
+                        <button onClick={() => addGroup(g.id)} title="Add sub-folder" aria-label="Add sub-folder" style={iconBtnStyle}><FolderPlus size={10} /></button>
                       )}
-                      <button onClick={() => startRenameGroup(g)} title="Rename" style={iconBtnStyle}><Edit2 size={10} /></button>
-                      <button onClick={() => deleteGroup(g.id)} title="Delete" style={{ ...iconBtnStyle, color: 'var(--accent-red)' }}><Trash2 size={10} /></button>
+                      <button onClick={() => startRenameGroup(g)} title="Rename" aria-label="Rename" style={iconBtnStyle}><Edit2 size={10} /></button>
+                      <button onClick={() => deleteGroup(g.id)} title="Delete" aria-label="Delete" style={{ ...iconBtnStyle, color: 'var(--accent-red)' }}><Trash2 size={10} /></button>
                     </div>
                   </div>
                 );
@@ -658,6 +658,7 @@ const SSBucket = () => {
               onMouseEnter={e => { if (lightboxIdx > 0) e.currentTarget.style.background = 'rgba(192,132,252,0.3)'; }}
               onMouseLeave={e => { e.currentTarget.style.background = lightboxIdx === 0 ? 'rgba(255,255,255,0.04)' : 'rgba(255,255,255,0.12)'; }}
               title="Previous (←)"
+              aria-label="Previous (←)"
             >
               <ChevronLeft size={22} />
             </button>
@@ -681,6 +682,7 @@ const SSBucket = () => {
               onMouseEnter={e => { if (lightboxIdx < filtered.length - 1) e.currentTarget.style.background = 'rgba(192,132,252,0.3)'; }}
               onMouseLeave={e => { e.currentTarget.style.background = lightboxIdx === filtered.length - 1 ? 'rgba(255,255,255,0.04)' : 'rgba(255,255,255,0.12)'; }}
               title="Next (→)"
+              aria-label="Next (→)"
             >
               <ChevronRight size={22} />
             </button>
@@ -900,12 +902,12 @@ const ScreenshotCard = ({
             {isCopied ? <><Check size={12} /> Copied</> : <><Copy size={12} /> Copy</>}
           </button>
 
-          <button className="ssb-action-btn" onClick={e => { e.stopPropagation(); onRenameStart(); }} title="Rename" style={cardActionBtn}><Edit2 size={12} /></button>
-          <button className="ssb-action-btn" onClick={e => { e.stopPropagation(); onDownload(); }} title="Download" style={cardActionBtn}><Download size={12} /></button>
+          <button className="ssb-action-btn" onClick={e => { e.stopPropagation(); onRenameStart(); }} title="Rename" aria-label="Rename" style={cardActionBtn}><Edit2 size={12} /></button>
+          <button className="ssb-action-btn" onClick={e => { e.stopPropagation(); onDownload(); }} title="Download" aria-label="Download" style={cardActionBtn}><Download size={12} /></button>
 
           {otherGroups.length > 0 && (
             <div style={{ position: 'relative' }}>
-              <button className="ssb-action-btn" onClick={e => { e.stopPropagation(); setMoveOpen(p => !p); }} title="Move to group" style={cardActionBtn}><Move size={12} /></button>
+              <button className="ssb-action-btn" onClick={e => { e.stopPropagation(); setMoveOpen(p => !p); }} title="Move to group" aria-label="Move to group" style={cardActionBtn}><Move size={12} /></button>
               {moveOpen && (
                 <div style={{ position: 'absolute', bottom: 'calc(100% + 6px)', right: 0, background: 'var(--bg-secondary)', border: '1px solid var(--border-color)', borderRadius: '10px', boxShadow: '0 12px 40px rgba(0,0,0,0.4)', zIndex: 200, minWidth: '154px', overflow: 'hidden', animation: 'ssbSlideUp 0.15s ease-out' }}>
                   <div style={{ padding: '6px 12px', fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 700, letterSpacing: '1.5px', textTransform: 'uppercase', borderBottom: '1px solid var(--border-color)' }}>Move to</div>
@@ -924,6 +926,7 @@ const ScreenshotCard = ({
             className="ssb-del-btn"
             onClick={e => { e.stopPropagation(); onDelete(); }}
             title="Delete"
+            aria-label="Delete"
             style={{ ...cardActionBtn, color: '#f05050', background: 'rgba(240,80,80,0.08)', borderColor: 'rgba(240,80,80,0.25)' }}
           >
             <Trash2 size={12} />

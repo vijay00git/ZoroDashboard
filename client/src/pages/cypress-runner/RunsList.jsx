@@ -28,7 +28,7 @@ const QueueItem = ({ item, onDequeue }) => (
     {item.browser && <span className="cyr-badge">{item.browser}</span>}
     <span className="cyr-badge">{item.headed ? 'headed' : 'headless'}</span>
     {item.environment && <span className="cyr-badge">{item.environment}</span>}
-    <button type="button" className="cyr-badge cyr-badge-btn" title="Remove from queue" onClick={() => onDequeue(item.id)}>
+    <button type="button" className="cyr-badge cyr-badge-btn" title="Remove from queue" aria-label="Remove from queue" onClick={() => onDequeue(item.id)}>
       <X size={11} />
     </button>
   </div>
@@ -50,7 +50,7 @@ const HistoryItem = ({ h, onViewLog, onViewScreenshots, onSendTelegram }) => (
     )}
     {h.duration ? <span className="cyr-badge">{formatDuration(h.duration)}</span> : null}
     {h.screenshots && h.screenshots.length > 0 && (
-      <button type="button" className="cyr-badge cyr-badge-btn" title="View screenshots" onClick={() => onViewScreenshots(h)}>
+      <button type="button" className="cyr-badge cyr-badge-btn" title="View screenshots" aria-label="View screenshots" onClick={() => onViewScreenshots(h)}>
         <Image size={11} /> {h.screenshots.length}
       </button>
     )}

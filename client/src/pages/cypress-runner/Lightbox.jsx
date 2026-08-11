@@ -31,9 +31,9 @@ const Lightbox = ({ images, startIndex, onClose }) => {
             {multi && <span className="cyr-lightbox-counter">{idx + 1} / {images.length}</span>}
           </h3>
           <div className="cyr-lightbox-img-wrap">
-            {multi && <button type="button" className="cyr-lightbox-nav cyr-lightbox-prev" title="Previous (←)" onClick={() => step(-1)}>‹</button>}
+            {multi && <button type="button" className="cyr-lightbox-nav cyr-lightbox-prev" title="Previous (←)" aria-label="Previous (←)" onClick={() => step(-1)}>‹</button>}
             <img src={a.url} alt={a.name} />
-            {multi && <button type="button" className="cyr-lightbox-nav cyr-lightbox-next" title="Next (→)" onClick={() => step(1)}>›</button>}
+            {multi && <button type="button" className="cyr-lightbox-nav cyr-lightbox-next" title="Next (→)" aria-label="Next (→)" onClick={() => step(1)}>›</button>}
           </div>
           <div className="cyr-modal-actions">
             <a className="cyr-btn" href={a.url} target="_blank" rel="noopener noreferrer">Open in new tab</a>

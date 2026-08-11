@@ -41,6 +41,7 @@ const SyncHub = () => {
 
   // States list from API
   const [states, setStates] = useState([]);
+  const [savedStatesError, setSavedStatesError] = useState(null);
   const [globalTags, setGlobalTags] = useState([]);
   const [selectedStateIds, setSelectedStateIds] = useState(() => {
     try {
@@ -197,6 +198,7 @@ const SyncHub = () => {
         const matrices = data.matrices || [];
         setStates(matrices);
         setGlobalTags(data.globalTags || []);
+        setSavedStatesError(null);
         // Auto-expand all folders so matrices are visible by default
         setExpandedFolders(prev => {
           if (matrices.length === 0) return prev;
@@ -207,9 +209,13 @@ const SyncHub = () => {
           localStorage.setItem('tr-sync-expandedFolders', JSON.stringify(next));
           return next;
         });
+      } else {
+        const body = await response.json().catch(() => null);
+        setSavedStatesError(body?.error || `Server returned ${response.status}`);
       }
     } catch (e) {
       console.error("Failed to load saved states:", e);
+      setSavedStatesError(e.message || 'Could not reach the server');
     }
   };
 
@@ -387,6 +393,7 @@ const SyncHub = () => {
       }
     } catch (e) {
       console.error(e);
+      addLog('Failed to save matrix state.', 'error');
     }
   };
 
@@ -403,6 +410,7 @@ const SyncHub = () => {
       }
     } catch (e) {
       console.error(e);
+      addLog('Failed to load state.', 'error');
     }
   };
 
@@ -418,7 +426,7 @@ const SyncHub = () => {
           allCases.push(...(data.testCases || []));
           names.push(data.name);
         }
-      } catch (e) { console.error(e); }
+      } catch (e) { console.error(e); addLog('Failed to load one of the selected states.', 'error'); }
     }
     const newCases = allCases.map((tc, idx) => ({ ...tc, _uid: Date.now() + '_' + idx }));
     setTestCases(newCases);
@@ -438,7 +446,7 @@ const SyncHub = () => {
       });
       fetchSavedStates();
       addLog(`Moved state to folder "${folderName}".`, 'success');
-    } catch (e) { console.error(e); }
+    } catch (e) { console.error(e); addLog('Failed to move state to folder.', 'error'); }
   };
 
   const handleRenameState = async (state, e) => {
@@ -453,7 +461,7 @@ const SyncHub = () => {
       });
       fetchSavedStates();
       addLog(`Renamed state to "${newName}".`, 'success');
-    } catch (e) { console.error(e); }
+    } catch (e) { console.error(e); addLog('Failed to rename state.', 'error'); }
   };
 
   const handleUpdateState = async (state, e) => {
@@ -471,7 +479,7 @@ const SyncHub = () => {
       });
       fetchSavedStates();
       addLog(`Updated matrix "${state.name}" with current test cases.`, 'success');
-    } catch (e) { console.error(e); }
+    } catch (e) { console.error(e); addLog('Failed to update matrix.', 'error'); }
   };
 
   const handleDeleteState = async (id, e) => {
@@ -487,6 +495,7 @@ const SyncHub = () => {
       }
     } catch (e) {
       console.error(e);
+      addLog('Failed to delete state.', 'error');
     }
   };
 
@@ -1065,6 +1074,7 @@ const SyncHub = () => {
                   <button
                     onClick={handleSaveRunId}
                     title="Save this Run ID"
+                    aria-label="Save this Run ID"
                     style={{
                       background: 'var(--bg-tertiary)',
                       border: '1px solid var(--border-color)',
@@ -1116,6 +1126,7 @@ const SyncHub = () => {
                           <button
                             onClick={() => handleRemoveSavedRunId(r.id)}
                             title="Remove saved Run ID"
+                            aria-label="Remove saved Run ID"
                             style={{
                               background: 'transparent', border: 'none',
                               color: 'var(--text-muted)', cursor: 'pointer',
@@ -1123,7 +1134,7 @@ const SyncHub = () => {
                               padding: '0', lineHeight: 1,
                               transition: 'color 0.15s'
                             }}
-                            onMouseOver={(e) => e.currentTarget.style.color = '#f43f5e'}
+                            onMouseOver={(e) => e.currentTarget.style.color = 'var(--accent-red)'}
                             onMouseOut={(e) => e.currentTarget.style.color = 'var(--text-muted)'}
                           >
                             <X size={11} />
@@ -1384,6 +1395,7 @@ const SyncHub = () => {
                 <button
                   onClick={() => setSelectedStateIds(new Set())}
                   title="Clear selection"
+                  aria-label="Clear selection"
                   style={{
                     background: 'transparent', border: '1px solid var(--border-color)', color: 'var(--text-muted)',
                     borderRadius: '8px', padding: '0 12px', cursor: 'pointer', fontSize: '0.8rem', flexShrink: 0,
@@ -1399,7 +1411,21 @@ const SyncHub = () => {
 
             {/* Folder List */}
             <div className="custom-scrollbar" style={{ display: 'flex', flexDirection: 'column', gap: '16px', overflowY: 'auto', paddingRight: '8px' }}>
-              {(() => {
+              {savedStatesError ? (
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '8px', padding: '32px 16px', color: 'var(--accent-red)', textAlign: 'center' }}>
+                  <AlertTriangle size={28} />
+                  <span style={{ fontSize: '0.85rem', fontWeight: '600' }}>Couldn't load saved matrices</span>
+                  <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>{savedStatesError}</span>
+                  <button onClick={fetchSavedStates} style={{ marginTop: '6px', background: 'transparent', border: '1px solid var(--border-color)', color: 'var(--text-primary)', borderRadius: '8px', padding: '6px 14px', cursor: 'pointer', fontSize: '0.78rem' }}>Retry</button>
+                </div>
+              ) : states.length === 0 ? (
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '8px', padding: '32px 16px', color: 'var(--text-secondary)', textAlign: 'center' }}>
+                  <FolderOpen size={28} />
+                  <span style={{ fontSize: '0.85rem' }}>No saved matrices yet</span>
+                  <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>Sync a TestRail run above to create your first one.</span>
+                </div>
+              ) : null}
+              {!savedStatesError && (() => {
                 const allFolders = Array.from(new Set([...customFolders, ...states.map(s => s.folder || 'Uncategorized')]));
                 const sortedFolders = [...allFolders].sort((a, b) => {
                   let idxA = folderOrder.indexOf(a);
@@ -1627,10 +1653,10 @@ const SyncHub = () => {
                               </div>
 
                               <div className="hover-actions" style={{ display: 'flex', gap: '4px' }}>
-                                <button title="Update" onClick={(e) => { e.stopPropagation(); handleUpdateState(state, e); }} style={{ background: 'transparent', border: 'none', color: 'var(--accent-purple)', padding: '4px', cursor: 'pointer' }}><RefreshCw size={12} /></button>
-                                <button title="Rename" onClick={(e) => { e.stopPropagation(); handleRenameState(state, e); }} style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', padding: '4px', cursor: 'pointer' }}><Edit2 size={12} /></button>
-                                <button title={isPinned ? "Unpin" : "Pin to top"} onClick={(e) => { e.stopPropagation(); handlePinState(state.id, e); }} style={{ background: 'transparent', border: 'none', color: isPinned ? 'var(--accent-pink)' : 'var(--text-muted)', padding: '4px', cursor: 'pointer' }}><Pin size={12} fill={isPinned ? "currentColor" : "none"} /></button>
-                                <button title="Delete" onClick={(e) => { e.stopPropagation(); handleDeleteState(state.id, e); }} style={{ background: 'transparent', border: 'none', color: 'var(--accent-red)', padding: '4px', cursor: 'pointer' }}><Trash2 size={12} /></button>
+                                <button title="Update" aria-label="Update" onClick={(e) => { e.stopPropagation(); handleUpdateState(state, e); }} style={{ background: 'transparent', border: 'none', color: 'var(--accent-purple)', padding: '4px', cursor: 'pointer' }}><RefreshCw size={12} /></button>
+                                <button title="Rename" aria-label="Rename" onClick={(e) => { e.stopPropagation(); handleRenameState(state, e); }} style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', padding: '4px', cursor: 'pointer' }}><Edit2 size={12} /></button>
+                                <button title={isPinned ? "Unpin" : "Pin to top"} aria-label={isPinned ? "Unpin" : "Pin to top"} onClick={(e) => { e.stopPropagation(); handlePinState(state.id, e); }} style={{ background: 'transparent', border: 'none', color: isPinned ? 'var(--accent-pink)' : 'var(--text-muted)', padding: '4px', cursor: 'pointer' }}><Pin size={12} fill={isPinned ? "currentColor" : "none"} /></button>
+                                <button title="Delete" aria-label="Delete" onClick={(e) => { e.stopPropagation(); handleDeleteState(state.id, e); }} style={{ background: 'transparent', border: 'none', color: 'var(--accent-red)', padding: '4px', cursor: 'pointer' }}><Trash2 size={12} /></button>
                               </div>
                             </div>
                           );
@@ -1717,7 +1743,7 @@ const SyncHub = () => {
             {[
               { label: 'Visible', value: fTotal, sub: filterActive ? `of ${totalCases} total` : 'all cases', accent: '#06b6d4', bg: 'rgba(6,182,212,0.08)' },
               { label: 'Passed',  value: fPassed,  sub: fTotal > 0 ? `${Math.round((fPassed/fTotal)*100)}% pass rate` : '—', accent: '#10b981', bg: 'rgba(16,185,129,0.08)' },
-              { label: 'Failed',  value: fFailed,  sub: fTotal > 0 ? `${Math.round((fFailed/fTotal)*100)}% fail rate` : '—', accent: '#f43f5e', bg: 'rgba(244,63,94,0.08)' },
+              { label: 'Failed',  value: fFailed,  sub: fTotal > 0 ? `${Math.round((fFailed/fTotal)*100)}% fail rate` : '—', accent: 'var(--accent-red)', bg: 'color-mix(in srgb, var(--accent-red) 8%, transparent)' },
               { label: 'Blocked', value: fBlocked, sub: 'blocked cases', accent: '#f59e0b', bg: 'rgba(245,158,11,0.08)' },
               { label: 'Ignored', value: fUnmapped, sub: "don't map", accent: '#8b5cf6', bg: 'rgba(139,92,246,0.08)' },
             ].map(card => (
@@ -1939,7 +1965,7 @@ const SyncHub = () => {
                         >
                           <MessageSquare size={12} /> Note ({selectedCaseUids.length})
                         </button>
-                        <button onClick={handleDeleteSelected} data-cy="delete-selected-btn" style={{ background: 'rgba(244,63,94,0.1)', border: '1px solid var(--accent-red)', color: 'var(--accent-red)', borderRadius: '8px', padding: '6px 12px', cursor: 'pointer', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '4px', fontWeight: 'bold' }}>
+                        <button onClick={handleDeleteSelected} data-cy="delete-selected-btn" style={{ background: 'color-mix(in srgb, var(--accent-red) 10%, transparent)', border: '1px solid var(--accent-red)', color: 'var(--accent-red)', borderRadius: '8px', padding: '6px 12px', cursor: 'pointer', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '4px', fontWeight: 'bold' }}>
                           <Trash2 size={12} /> Delete ({selectedCaseUids.length})
                         </button>
                         <button
@@ -2061,6 +2087,7 @@ const SyncHub = () => {
                                       setTestCases(testCases.map(c => c._uid === tc._uid ? { ...c, tags: remaining } : c));
                                     }}
                                     title={`Remove tag "${t}"`}
+                                    aria-label={`Remove tag "${t}"`}
                                     style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: 'transparent', border: 'none', color: 'var(--accent-purple)', cursor: 'pointer', padding: '0', lineHeight: 1, fontSize: '0.75rem', opacity: 0.6 }}
                                     onMouseOver={e => e.currentTarget.style.opacity = '1'}
                                     onMouseOut={e => e.currentTarget.style.opacity = '0.6'}
@@ -2080,10 +2107,10 @@ const SyncHub = () => {
                                 setTestCases(updated);
                               }}
                               style={{
-                                background: tc.status === 'PASSED' ? 'rgba(16, 185, 129, 0.15)' : tc.status === 'FAILED' ? 'rgba(244, 63, 94, 0.15)' : tc.status === 'BLOCKED' ? 'rgba(245, 158, 11, 0.15)' : 'rgba(255, 255, 255, 0.05)',
+                                background: tc.status === 'PASSED' ? 'rgba(16, 185, 129, 0.15)' : tc.status === 'FAILED' ? 'color-mix(in srgb, var(--accent-red) 15%, transparent)' : tc.status === 'BLOCKED' ? 'rgba(245, 158, 11, 0.15)' : 'rgba(255, 255, 255, 0.05)',
                                 border: '1px solid',
-                                borderColor: tc.status === 'PASSED' ? 'rgba(16, 185, 129, 0.3)' : tc.status === 'FAILED' ? 'rgba(244, 63, 94, 0.3)' : tc.status === 'BLOCKED' ? 'rgba(245, 158, 11, 0.3)' : 'rgba(255, 255, 255, 0.1)',
-                                color: tc.status === 'PASSED' ? '#10b981' : tc.status === 'FAILED' ? '#f43f5e' : tc.status === 'BLOCKED' ? '#f59e0b' : 'var(--text-secondary)',
+                                borderColor: tc.status === 'PASSED' ? 'rgba(16, 185, 129, 0.3)' : tc.status === 'FAILED' ? 'color-mix(in srgb, var(--accent-red) 30%, transparent)' : tc.status === 'BLOCKED' ? 'rgba(245, 158, 11, 0.3)' : 'rgba(255, 255, 255, 0.1)',
+                                color: tc.status === 'PASSED' ? '#10b981' : tc.status === 'FAILED' ? 'var(--accent-red)' : tc.status === 'BLOCKED' ? '#f59e0b' : 'var(--text-secondary)',
                                 padding: '4px 8px',
                                 borderRadius: '6px',
                                 fontSize: '0.75rem',
@@ -2094,7 +2121,7 @@ const SyncHub = () => {
                               }}
                             >
                               <option value="PASSED" style={{ color: '#10b981', background: 'var(--bg-tertiary)' }}>PASSED</option>
-                              <option value="FAILED" style={{ color: '#f43f5e', background: 'var(--bg-tertiary)' }}>FAILED</option>
+                              <option value="FAILED" style={{ color: 'var(--accent-red)', background: 'var(--bg-tertiary)' }}>FAILED</option>
                               <option value="UNTESTED" style={{ color: 'var(--text-secondary)', background: 'var(--bg-tertiary)' }}>UNTESTED</option>
                               <option value="BLOCKED" style={{ color: '#f59e0b', background: 'var(--bg-tertiary)' }}>BLOCKED</option>
                             </select>
@@ -2226,7 +2253,7 @@ const SyncHub = () => {
                 const base = fTotal > 0 ? fTotal : 1;
                 const rawSegs = [
                   { pct: (fPassed   / base) * 100, color: '#10b981', label: 'Passed',   count: fPassed },
-                  { pct: (fFailed   / base) * 100, color: '#f43f5e', label: 'Failed',   count: fFailed },
+                  { pct: (fFailed   / base) * 100, color: 'var(--accent-red)', label: 'Failed',   count: fFailed },
                   { pct: (fBlocked  / base) * 100, color: '#f59e0b', label: 'Blocked',  count: fBlocked },
                   { pct: (fUntested / base) * 100, color: '#6b7280', label: 'Untested', count: fUntested },
                   { pct: (fUnmapped / base) * 100, color: '#8b5cf6', label: 'Ignored',  count: fUnmapped },
@@ -2258,7 +2285,7 @@ const SyncHub = () => {
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px 14px', marginTop: '16px', justifyContent: 'center' }}>
               {[
                 { label: 'Passed',   count: fPassed,   color: '#10b981' },
-                { label: 'Failed',   count: fFailed,   color: '#f43f5e' },
+                { label: 'Failed',   count: fFailed,   color: 'var(--accent-red)' },
                 { label: 'Blocked',  count: fBlocked,  color: '#f59e0b' },
                 { label: 'Untested', count: fUntested, color: '#6b7280' },
                 { label: 'Ignored',  count: fUnmapped, color: '#8b5cf6' },
@@ -2279,7 +2306,7 @@ const SyncHub = () => {
               {filterActive && <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>{fTotal} visible</span>}
             </div>
             {tagList.length === 0 ? (
-              <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', textAlign: 'center', padding: '12px' }}>No tags in current view.</span>
+              <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', textAlign: 'center', padding: '12px' }}>No tags in current view.</span>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', maxHeight: '380px', overflowY: 'auto' }} className="custom-scrollbar">
                 {tagList.map(([tag, stats]) => {
@@ -2299,13 +2326,13 @@ const SyncHub = () => {
                       </div>
                       <div style={{ display: 'flex', width: '100%', height: '5px', borderRadius: '3px', overflow: 'hidden', background: 'var(--bg-tertiary)' }}>
                         <div style={{ width: `${passedPct}%`, background: '#10b981', transition: 'width 0.4s' }} />
-                        <div style={{ width: `${failedPct}%`, background: '#f43f5e', transition: 'width 0.4s' }} />
+                        <div style={{ width: `${failedPct}%`, background: 'var(--accent-red)', transition: 'width 0.4s' }} />
                         <div style={{ width: `${blockedPct}%`, background: '#f59e0b', transition: 'width 0.4s' }} />
                         <div style={{ width: `${untestedPct}%`, background: '#6b7280', transition: 'width 0.4s' }} />
                       </div>
                       <div style={{ display: 'flex', gap: '10px', fontSize: '0.62rem', fontWeight: '600' }}>
                         {stats.passed  > 0 && <span style={{ color: '#10b981' }}>✓{stats.passed}</span>}
-                        {stats.failed  > 0 && <span style={{ color: '#f43f5e' }}>✗{stats.failed}</span>}
+                        {stats.failed  > 0 && <span style={{ color: 'var(--accent-red)' }}>✗{stats.failed}</span>}
                         {stats.blocked > 0 && <span style={{ color: '#f59e0b' }}>⊘{stats.blocked}</span>}
                         {stats.untested > 0 && <span style={{ color: '#6b7280' }}>?{stats.untested}</span>}
                       </div>
@@ -2483,7 +2510,7 @@ const SyncHub = () => {
           justifyContent: 'center',
           zIndex: 100
         }}>
-          <div className="glass-panel" style={{ padding: '24px', width: '400px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          <div className="glass-panel" style={{ padding: '24px', width: '400px', maxWidth: '96vw', display: 'flex', flexDirection: 'column', gap: '16px' }}>
             <h3 style={{ fontSize: '1.1rem', fontWeight: 'bold' }}>Add Manual Test Entry</h3>
 
             <form onSubmit={handleAddManualTestCase} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
@@ -2591,7 +2618,7 @@ const SyncHub = () => {
               const total = compareData.matched.length + compareData.strictConflicts.length + compareData.needsSync.length + compareData.missingTr.length || 1;
               const cards = [
                 { key: 'matched',   label: 'Matched',       count: compareData.matched.length,         color: '#10b981', bg: 'rgba(16,185,129,0.09)',  icon: '✓', hint: 'Same status in both' },
-                { key: 'conflicts', label: 'Conflicts',      count: compareData.strictConflicts.length, color: '#f43f5e', bg: 'rgba(244,63,94,0.09)',   icon: '⚡', hint: 'Status mismatch' },
+                { key: 'conflicts', label: 'Conflicts',      count: compareData.strictConflicts.length, color: 'var(--accent-red)', bg: 'color-mix(in srgb, var(--accent-red) 9%, transparent)',   icon: '⚡', hint: 'Status mismatch' },
                 { key: 'needsSync', label: 'Needs Sync',     count: compareData.needsSync.length,       color: '#f59e0b', bg: 'rgba(245,158,11,0.09)',  icon: '↓', hint: 'Remote only' },
                 { key: 'missingTr', label: 'Missing Remote', count: compareData.missingTr.length,       color: '#6b7280', bg: 'rgba(107,114,128,0.09)', icon: '?', hint: 'Local only' },
               ];
@@ -2601,7 +2628,7 @@ const SyncHub = () => {
                     const pct = Math.round((s.count / total) * 100);
                     const active = activeCompareTab === s.key;
                     return (
-                      <button key={s.key} onClick={() => { setActiveCompareTab(s.key); setCompareSearch(''); }} style={{ background: active ? s.bg : 'rgba(255,255,255,0.02)', border: `1.5px solid ${active ? s.color + '70' : 'var(--border-color)'}`, borderRadius: '10px', padding: '12px 14px', textAlign: 'left', cursor: 'pointer', transition: 'all 0.2s ease', transform: active ? 'translateY(-1px)' : 'none', boxShadow: active ? `0 4px 16px ${s.color}20` : 'none' }}>
+                      <button key={s.key} onClick={() => { setActiveCompareTab(s.key); setCompareSearch(''); }} style={{ background: active ? s.bg : 'rgba(255,255,255,0.02)', border: `1.5px solid ${active ? `color-mix(in srgb, ${s.color} 44%, transparent)` : 'var(--border-color)'}`, borderRadius: '10px', padding: '12px 14px', textAlign: 'left', cursor: 'pointer', transition: 'all 0.2s ease', transform: active ? 'translateY(-1px)' : 'none', boxShadow: active ? `0 4px 16px color-mix(in srgb, ${s.color} 12.5%, transparent)` : 'none' }}>
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
                           <span style={{ fontSize: '1rem' }}>{s.icon}</span>
                           <span style={{ fontSize: '0.65rem', color: s.color, fontWeight: '700', background: s.bg, padding: '2px 6px', borderRadius: '4px' }}>{pct}%</span>
@@ -2626,13 +2653,13 @@ const SyncHub = () => {
                 <input type="text" placeholder="Search by case ID or title…" value={compareSearch} onChange={e => setCompareSearch(e.target.value)} style={{ width: '100%', boxSizing: 'border-box', background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', padding: '7px 10px 7px 32px', borderRadius: '8px', outline: 'none', fontSize: '0.8rem' }} />
               </div>
               {activeCompareTab === 'conflicts' && compareData.strictConflicts.length > 0 && (
-                <button onClick={() => { [...compareData.strictConflicts].forEach(c => handleApplyRemoteStatus(c.id, c.remote)); }} style={{ background: 'rgba(244,63,94,0.1)', border: '1px solid rgba(244,63,94,0.35)', color: '#f43f5e', borderRadius: '8px', padding: '7px 12px', cursor: 'pointer', fontSize: '0.78rem', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '5px', flexShrink: 0, whiteSpace: 'nowrap' }}>⚡ Apply All Remote</button>
+                <button onClick={() => { [...compareData.strictConflicts].forEach(c => handleApplyRemoteStatus(c.id, c.remote)); }} style={{ background: 'color-mix(in srgb, var(--accent-red) 10%, transparent)', border: '1px solid color-mix(in srgb, var(--accent-red) 35%, transparent)', color: 'var(--accent-red)', borderRadius: '8px', padding: '7px 12px', cursor: 'pointer', fontSize: '0.78rem', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '5px', flexShrink: 0, whiteSpace: 'nowrap' }}>⚡ Apply All Remote</button>
               )}
               {activeCompareTab === 'needsSync' && compareData.needsSync.length > 0 && (
                 <button onClick={() => { [...compareData.needsSync].forEach(c => handleAddToLocalFromRemote(c)); }} style={{ background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.35)', color: '#f59e0b', borderRadius: '8px', padding: '7px 12px', cursor: 'pointer', fontSize: '0.78rem', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '5px', flexShrink: 0, whiteSpace: 'nowrap' }}>↓ Import All</button>
               )}
               {activeCompareTab === 'missingTr' && missingTrSelected.size > 0 && (
-                <button onClick={() => handleDeleteMissingFromLocal([...missingTrSelected])} style={{ background: 'rgba(244,63,94,0.12)', border: '1px solid rgba(244,63,94,0.4)', color: '#f43f5e', borderRadius: '8px', padding: '7px 12px', cursor: 'pointer', fontSize: '0.78rem', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '5px', flexShrink: 0, whiteSpace: 'nowrap' }}>
+                <button onClick={() => handleDeleteMissingFromLocal([...missingTrSelected])} style={{ background: 'color-mix(in srgb, var(--accent-red) 12%, transparent)', border: '1px solid color-mix(in srgb, var(--accent-red) 40%, transparent)', color: 'var(--accent-red)', borderRadius: '8px', padding: '7px 12px', cursor: 'pointer', fontSize: '0.78rem', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '5px', flexShrink: 0, whiteSpace: 'nowrap' }}>
                   🗑 Delete Selected ({missingTrSelected.size})
                 </button>
               )}
@@ -2645,15 +2672,15 @@ const SyncHub = () => {
             {/* Table */}
             {(() => {
               const statusBadge = (status) => {
-                const map = { PASSED: '#10b981', FAILED: '#f43f5e', BLOCKED: '#f59e0b', UNTESTED: '#6b7280', RETEST: '#8b5cf6' };
+                const map = { PASSED: '#10b981', FAILED: 'var(--accent-red)', BLOCKED: '#f59e0b', UNTESTED: '#6b7280', RETEST: '#8b5cf6' };
                 const c = map[status] || '#6b7280';
-                return <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: '4px', fontSize: '0.68rem', fontWeight: '700', background: c + '20', color: c, border: `1px solid ${c}40` }}>{status || '—'}</span>;
+                return <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: '4px', fontSize: '0.68rem', fontWeight: '700', background: `color-mix(in srgb, ${c} 12.5%, transparent)`, color: c, border: `1px solid color-mix(in srgb, ${c} 25%, transparent)` }}>{status || '—'}</span>;
               };
               const s = compareSearch.trim().toLowerCase();
               const thSt = { textAlign: 'left', padding: '8px 12px', fontSize: '0.68rem', fontWeight: '700', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px', borderBottom: '1px solid var(--border-color)', background: 'var(--bg-tertiary)', position: 'sticky', top: 0, zIndex: 1 };
               const tdSt = { padding: '9px 12px', fontSize: '0.78rem', borderBottom: '1px solid var(--border-color)', verticalAlign: 'middle' };
-              const emptyState = (icon, msg) => <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '160px', gap: '8px', color: 'var(--text-muted)' }}><span style={{ fontSize: '2rem' }}>{icon}</span><span style={{ fontSize: '0.85rem' }}>{msg}</span></div>;
-              const banner = (color, bg, msg) => <div style={{ padding: '9px 16px', fontSize: '0.72rem', color, background: bg, borderBottom: `1px solid ${color}25` }} dangerouslySetInnerHTML={{ __html: msg }} />;
+              const emptyState = (icon, msg) => <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '160px', gap: '8px', color: 'var(--text-secondary)' }}><span style={{ fontSize: '2rem' }}>{icon}</span><span style={{ fontSize: '0.85rem' }}>{msg}</span></div>;
+              const banner = (color, bg, msg) => <div style={{ padding: '9px 16px', fontSize: '0.72rem', color, background: bg, borderBottom: `1px solid color-mix(in srgb, ${color} 14.5%, transparent)` }} dangerouslySetInnerHTML={{ __html: msg }} />;
 
               return (
                 <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
@@ -2665,7 +2692,7 @@ const SyncHub = () => {
                   {activeCompareTab === 'conflicts' && (() => {
                     const rows = compareData.strictConflicts.filter(c => !s || c.id.includes(s) || (c.title||'').toLowerCase().includes(s));
                     if (!rows.length) return emptyState('⚡', s ? 'No matches for your search.' : 'No conflicts — all shared cases match!');
-                    return <>{banner('#f43f5e','rgba(244,63,94,0.06)', 'Cases in <strong>both sources with different statuses</strong>. Use "Use Remote ↗" per row or bulk-apply all above.')}<table style={{ width: '100%', borderCollapse: 'collapse' }}><thead><tr><th style={thSt}>Case ID</th><th style={thSt}>Title</th><th style={thSt}>Local</th><th style={thSt}>Remote</th><th style={thSt}>Action</th></tr></thead><tbody>{rows.map((c,i)=><tr key={i} style={{ background: i%2?'rgba(255,255,255,0.01)':'transparent' }}><td style={{ ...tdSt, fontWeight:'700', color:'var(--text-secondary)', width:'90px' }}>C{c.id}</td><td style={tdSt}><span style={{ overflow:'hidden', textOverflow:'ellipsis', display:'block', whiteSpace:'nowrap', maxWidth:'340px' }}>{c.title}</span></td><td style={tdSt}>{statusBadge(c.local)}</td><td style={tdSt}>{statusBadge(c.remote)}</td><td style={{ ...tdSt, width:'130px' }}><button onClick={()=>handleApplyRemoteStatus(c.id,c.remote)} style={{ background:'rgba(244,63,94,0.1)', border:'1px solid rgba(244,63,94,0.3)', color:'#f43f5e', borderRadius:'6px', padding:'4px 10px', cursor:'pointer', fontSize:'0.72rem', fontWeight:'600', whiteSpace:'nowrap' }}>Use Remote ↗</button></td></tr>)}</tbody></table></>;
+                    return <>{banner('var(--accent-red)','color-mix(in srgb, var(--accent-red) 6%, transparent)', 'Cases in <strong>both sources with different statuses</strong>. Use "Use Remote ↗" per row or bulk-apply all above.')}<table style={{ width: '100%', borderCollapse: 'collapse' }}><thead><tr><th style={thSt}>Case ID</th><th style={thSt}>Title</th><th style={thSt}>Local</th><th style={thSt}>Remote</th><th style={thSt}>Action</th></tr></thead><tbody>{rows.map((c,i)=><tr key={i} style={{ background: i%2?'rgba(255,255,255,0.01)':'transparent' }}><td style={{ ...tdSt, fontWeight:'700', color:'var(--text-secondary)', width:'90px' }}>C{c.id}</td><td style={tdSt}><span style={{ overflow:'hidden', textOverflow:'ellipsis', display:'block', whiteSpace:'nowrap', maxWidth:'340px' }}>{c.title}</span></td><td style={tdSt}>{statusBadge(c.local)}</td><td style={tdSt}>{statusBadge(c.remote)}</td><td style={{ ...tdSt, width:'130px' }}><button onClick={()=>handleApplyRemoteStatus(c.id,c.remote)} style={{ background:'color-mix(in srgb, var(--accent-red) 10%, transparent)', border:'1px solid color-mix(in srgb, var(--accent-red) 30%, transparent)', color:'var(--accent-red)', borderRadius:'6px', padding:'4px 10px', cursor:'pointer', fontSize:'0.72rem', fontWeight:'600', whiteSpace:'nowrap' }}>Use Remote ↗</button></td></tr>)}</tbody></table></>;
                   })()}
                   {activeCompareTab === 'needsSync' && (() => {
                     const rows = compareData.needsSync.filter(c => !s || c.id.includes(s) || (c.title||'').toLowerCase().includes(s));
@@ -2692,7 +2719,7 @@ const SyncHub = () => {
                           <thead>
                             <tr>
                               <th style={{ ...thSt, width: '36px', textAlign: 'center' }}>
-                                <input type="checkbox" checked={allRowsSelected} ref={el => { if (el) el.indeterminate = someSelected && !allRowsSelected; }} onChange={toggleAll} style={{ cursor: 'pointer', accentColor: '#f43f5e' }} />
+                                <input type="checkbox" checked={allRowsSelected} ref={el => { if (el) el.indeterminate = someSelected && !allRowsSelected; }} onChange={toggleAll} style={{ cursor: 'pointer', accentColor: 'var(--accent-red)' }} />
                               </th>
                               <th style={thSt}>Case ID</th>
                               <th style={thSt}>Title</th>
@@ -2703,9 +2730,9 @@ const SyncHub = () => {
                             {rows.map((c, i) => {
                               const sel = missingTrSelected.has(c._uid);
                               return (
-                                <tr key={i} onClick={() => toggleRow(c._uid)} style={{ background: sel ? 'rgba(244,63,94,0.07)' : i%2 ? 'rgba(255,255,255,0.01)' : 'transparent', cursor: 'pointer', transition: 'background 0.1s' }}>
+                                <tr key={i} onClick={() => toggleRow(c._uid)} style={{ background: sel ? 'color-mix(in srgb, var(--accent-red) 7%, transparent)' : i%2 ? 'rgba(255,255,255,0.01)' : 'transparent', cursor: 'pointer', transition: 'background 0.1s' }}>
                                   <td style={{ ...tdSt, width: '36px', textAlign: 'center' }} onClick={e => e.stopPropagation()}>
-                                    <input type="checkbox" checked={sel} onChange={() => toggleRow(c._uid)} style={{ cursor: 'pointer', accentColor: '#f43f5e' }} />
+                                    <input type="checkbox" checked={sel} onChange={() => toggleRow(c._uid)} style={{ cursor: 'pointer', accentColor: 'var(--accent-red)' }} />
                                   </td>
                                   <td style={{ ...tdSt, fontWeight: '700', color: 'var(--text-secondary)', width: '90px' }}>C{c.id}</td>
                                   <td style={tdSt}><span style={{ overflow: 'hidden', textOverflow: 'ellipsis', display: 'block', whiteSpace: 'nowrap', maxWidth: '420px' }}>{c.title}</span></td>
@@ -2816,8 +2843,8 @@ const SyncHub = () => {
                           </div>
                           {selected && (
                             <div style={{ display: 'flex', gap: '4px', flexShrink: 0 }}>
-                              {[['PASSED', '#10b981'], ['FAILED', '#f43f5e'], ['UNTESTED', '#6b7280']].map(([st, col]) => m.statusCounts[st] > 0 && (
-                                <span key={st} style={{ fontSize: '0.65rem', padding: '1px 6px', borderRadius: '4px', background: col + '20', color: col, fontWeight: '700' }}>{m.statusCounts[st]}</span>
+                              {[['PASSED', '#10b981'], ['FAILED', 'var(--accent-red)'], ['UNTESTED', '#6b7280']].map(([st, col]) => m.statusCounts[st] > 0 && (
+                                <span key={st} style={{ fontSize: '0.65rem', padding: '1px 6px', borderRadius: '4px', background: `color-mix(in srgb, ${col} 12.5%, transparent)`, color: col, fontWeight: '700' }}>{m.statusCounts[st]}</span>
                               ))}
                             </div>
                           )}
@@ -2864,7 +2891,7 @@ const SyncHub = () => {
               const outside   = testCases.length - filteredCases.length;
               const byStatus  = { PASSED: 0, FAILED: 0, BLOCKED: 0, UNTESTED: 0, RETEST: 0 };
               toSync.forEach(tc => { const k = (tc.status || 'UNTESTED').toUpperCase(); if (byStatus[k] !== undefined) byStatus[k]++; });
-              const statusColor = { PASSED: '#10b981', FAILED: '#f43f5e', BLOCKED: '#f59e0b', UNTESTED: '#6b7280', RETEST: '#8b5cf6' };
+              const statusColor = { PASSED: '#10b981', FAILED: 'var(--accent-red)', BLOCKED: '#f59e0b', UNTESTED: '#6b7280', RETEST: '#8b5cf6' };
 
               const activeFilters = [];
               if (statusFilter !== 'ALL') activeFilters.push({ label: 'Status', value: statusFilter });
@@ -3059,7 +3086,7 @@ const SyncHub = () => {
       {/* Duplicate IDs Review Modal */}
       {duplicatesModalOpen && createPortal(
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
-          <div className="glass-panel" style={{ padding: '28px', width: '700px', maxHeight: '80vh', display: 'flex', flexDirection: 'column', gap: '20px', overflow: 'hidden' }}>
+          <div className="glass-panel" style={{ padding: '28px', width: '700px', maxWidth: '96vw', maxHeight: '80vh', display: 'flex', flexDirection: 'column', gap: '20px', overflow: 'hidden' }}>
 
             {/* Modal Header */}
             <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
@@ -3120,14 +3147,14 @@ const SyncHub = () => {
                           {i === 0 ? '1st' : `#${i + 1}`}
                         </span>
                         <span style={{ flex: 1, fontSize: '0.8rem', color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={tc.title}>
-                          {tc.title || <span style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>No title</span>}
+                          {tc.title || <span style={{ color: 'var(--text-secondary)', fontStyle: 'italic' }}>No title</span>}
                         </span>
                         {tc.tags && (
                           <span style={{ fontSize: '0.68rem', color: 'var(--accent-purple)', background: 'rgba(168,85,247,0.08)', padding: '2px 6px', borderRadius: '4px', maxWidth: '120px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={tc.tags}>
                             {tc.tags}
                           </span>
                         )}
-                        <span style={{ fontSize: '0.72rem', fontWeight: '700', minWidth: '64px', textAlign: 'center', color: tc.status === 'PASSED' ? '#10b981' : tc.status === 'FAILED' ? '#f43f5e' : tc.status === 'BLOCKED' ? '#f59e0b' : 'var(--text-muted)' }}>
+                        <span style={{ fontSize: '0.72rem', fontWeight: '700', minWidth: '64px', textAlign: 'center', color: tc.status === 'PASSED' ? '#10b981' : tc.status === 'FAILED' ? 'var(--accent-red)' : tc.status === 'BLOCKED' ? '#f59e0b' : 'var(--text-muted)' }}>
                           {tc.status}
                         </span>
                         <button
@@ -3136,7 +3163,7 @@ const SyncHub = () => {
                             addLog(`Deleted entry for ${tc.id}${tc.title ? ` — "${tc.title}"` : ''}.`, 'info');
                           }}
                           title="Delete this entry"
-                          style={{ background: 'rgba(244,63,94,0.08)', border: '1px solid rgba(244,63,94,0.22)', color: '#f43f5e', padding: '4px 12px', borderRadius: '6px', cursor: 'pointer', fontSize: '0.72rem', fontWeight: '700', whiteSpace: 'nowrap' }}
+                          style={{ background: 'color-mix(in srgb, var(--accent-red) 8%, transparent)', border: '1px solid color-mix(in srgb, var(--accent-red) 22%, transparent)', color: 'var(--accent-red)', padding: '4px 12px', borderRadius: '6px', cursor: 'pointer', fontSize: '0.72rem', fontWeight: '700', whiteSpace: 'nowrap' }}
                         >
                           Delete
                         </button>
@@ -3311,7 +3338,7 @@ const SyncHub = () => {
             {(() => {
               const STATUSES = [
                 { key: 'PASSED',   label: 'Passed',   color: '#10b981', glow: 'rgba(16,185,129,0.25)',  icon: '✓' },
-                { key: 'FAILED',   label: 'Failed',   color: '#f43f5e', glow: 'rgba(244,63,94,0.25)',  icon: '✕' },
+                { key: 'FAILED',   label: 'Failed',   color: 'var(--accent-red)', glow: 'color-mix(in srgb, var(--accent-red) 25%, transparent)',  icon: '✕' },
                 { key: 'BLOCKED',  label: 'Blocked',  color: '#f59e0b', glow: 'rgba(245,158,11,0.25)', icon: '⊘' },
                 { key: 'RETEST',   label: 'Retest',   color: '#8b5cf6', glow: 'rgba(139,92,246,0.25)', icon: '↺' },
                 { key: 'UNTESTED', label: 'Untested', color: '#6b7280', glow: 'rgba(107,114,128,0.2)',  icon: '–' },
@@ -3324,7 +3351,7 @@ const SyncHub = () => {
                     <div key={s.key} style={{
                       display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px',
                       background: 'rgba(255,255,255,0.04)',
-                      border: `1px solid ${s.color}40`,
+                      border: `1px solid color-mix(in srgb, ${s.color} 25%, transparent)`,
                       borderRadius: '14px',
                       padding: '14px 20px',
                       minWidth: '80px',
@@ -3347,7 +3374,7 @@ const SyncHub = () => {
             {/* Proportional stacked bar */}
             {syncSuccessAnim.total > 0 && (() => {
               const BARS = [
-                { key: 'PASSED', color: '#10b981' }, { key: 'FAILED', color: '#f43f5e' },
+                { key: 'PASSED', color: '#10b981' }, { key: 'FAILED', color: 'var(--accent-red)' },
                 { key: 'BLOCKED', color: '#f59e0b' }, { key: 'RETEST', color: '#8b5cf6' },
                 { key: 'UNTESTED', color: '#4b5563' },
               ];

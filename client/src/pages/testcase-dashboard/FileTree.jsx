@@ -122,6 +122,7 @@ const FileTree = ({
                 type="button"
                 className="tcd-icon-btn"
                 title="Sync this group's results to TestRail run…"
+                aria-label="Sync this group's results to TestRail run…"
                 onClick={(e) => { e.preventDefault(); e.stopPropagation(); onSyncGroup(groupSelectablePaths, cat); }}
               >
                 <UploadCloud size={12} />
@@ -155,6 +156,7 @@ const FileTree = ({
               type="button"
               className="tcd-icon-btn"
               title={`Sync all of ${CAT_LABELS[cat]}'s results to TestRail run…`}
+              aria-label={`Sync all of ${CAT_LABELS[cat]}'s results to TestRail run…`}
               onClick={() => onSyncCategory(catSelectablePaths, cat)}
             >
               <UploadCloud size={12} />

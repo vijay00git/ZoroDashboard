@@ -348,13 +348,13 @@ const Status = () => {
                 Report Template
               </h3>
               <div style={{ display: 'flex', gap: '8px' }}>
-                <button onClick={() => setTemplatePreviewOpen(true)} className="nav-item-hover" style={{ background: 'rgba(59,130,246,0.1)', color: '#3b82f6', border: '1px solid rgba(59,130,246,0.2)', borderRadius: '8px', padding: '6px', cursor: 'pointer' }} title="Preview Template">
+                <button onClick={() => setTemplatePreviewOpen(true)} className="nav-item-hover" style={{ background: 'rgba(59,130,246,0.1)', color: '#3b82f6', border: '1px solid rgba(59,130,246,0.2)', borderRadius: '8px', padding: '6px', cursor: 'pointer' }} title="Preview Template" aria-label="Preview Template">
                   <Eye size={16} />
                 </button>
-                <button onClick={() => setModalOpen(true)} className="nav-item-hover" style={{ background: 'transparent', border: '1px solid var(--border-color)', color: 'var(--text-primary)', borderRadius: '8px', padding: '6px', cursor: 'pointer' }} title="Create new">
+                <button onClick={() => setModalOpen(true)} className="nav-item-hover" style={{ background: 'transparent', border: '1px solid var(--border-color)', color: 'var(--text-primary)', borderRadius: '8px', padding: '6px', cursor: 'pointer' }} title="Create new" aria-label="Create new">
                   <Plus size={16} />
                 </button>
-                <button onClick={handleDeleteTemplate} className="nav-item-hover" style={{ background: 'rgba(239, 68, 68, 0.1)', color: 'var(--accent-red)', border: '1px solid rgba(239, 68, 68, 0.2)', borderRadius: '8px', padding: '6px', cursor: 'pointer' }} title="Delete">
+                <button onClick={handleDeleteTemplate} className="nav-item-hover" style={{ background: 'color-mix(in srgb, var(--accent-red) 10%, transparent)', color: 'var(--accent-red)', border: '1px solid color-mix(in srgb, var(--accent-red) 20%, transparent)', borderRadius: '8px', padding: '6px', cursor: 'pointer' }} title="Delete" aria-label="Delete">
                   <Trash2 size={16} />
                 </button>
               </div>
@@ -415,7 +415,7 @@ const Status = () => {
                 <button
                   onClick={() => { setRawNotes(''); localStorage.removeItem('tr-status-raw-notes'); }}
                   title="Clear input notes"
-                  style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', color: 'var(--accent-red)', borderRadius: '7px', padding: '4px 10px', cursor: 'pointer', fontSize: '0.75rem', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '4px' }}
+                  style={{ background: 'color-mix(in srgb, var(--accent-red) 8%, transparent)', border: '1px solid color-mix(in srgb, var(--accent-red) 20%, transparent)', color: 'var(--accent-red)', borderRadius: '7px', padding: '4px 10px', cursor: 'pointer', fontSize: '0.75rem', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '4px' }}
                 >
                   <X size={13} /> Clear Notes
                 </button>
@@ -530,9 +530,9 @@ const Status = () => {
               <button
                 onClick={handleClear}
                 title="Clear all notes and report"
-                style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', color: 'var(--accent-red)', borderRadius: '12px', padding: '0 18px', cursor: 'pointer', fontWeight: '700', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0, transition: 'all 0.2s ease' }}
-                onMouseOver={(e) => { e.currentTarget.style.background = 'rgba(239,68,68,0.18)'; }}
-                onMouseOut={(e) => { e.currentTarget.style.background = 'rgba(239,68,68,0.08)'; }}
+                style={{ background: 'color-mix(in srgb, var(--accent-red) 8%, transparent)', border: '1px solid color-mix(in srgb, var(--accent-red) 20%, transparent)', color: 'var(--accent-red)', borderRadius: '12px', padding: '0 18px', cursor: 'pointer', fontWeight: '700', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0, transition: 'all 0.2s ease' }}
+                onMouseOver={(e) => { e.currentTarget.style.background = 'color-mix(in srgb, var(--accent-red) 18%, transparent)'; }}
+                onMouseOut={(e) => { e.currentTarget.style.background = 'color-mix(in srgb, var(--accent-red) 8%, transparent)'; }}
               >
                 <Trash2 size={16} /> Clear All
               </button>
@@ -607,14 +607,15 @@ const Status = () => {
                 {telegramSent ? <Check size={18} /> : <Send size={18} className={sendingTelegram ? 'spinner' : ''} />} {telegramSent ? 'Sent!' : sendingTelegram ? 'Sending…' : 'Send to Telegram'}
               </button>
 
-              <button onClick={handleExportMarkdown} style={{ background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', padding: '12px', borderRadius: '10px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }} className="nav-item-hover" title="Download .md file">
+              <button onClick={handleExportMarkdown} style={{ background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', padding: '12px', borderRadius: '10px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }} className="nav-item-hover" title="Download .md file" aria-label="Download .md file">
                 <Download size={18} />
               </button>
 
               <button
                 onClick={() => { setReport(''); localStorage.removeItem('tr-status-report'); }}
                 title="Clear report"
-                style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', color: 'var(--accent-red)', padding: '12px', borderRadius: '10px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                aria-label="Clear report"
+                style={{ background: 'color-mix(in srgb, var(--accent-red) 8%, transparent)', border: '1px solid color-mix(in srgb, var(--accent-red) 20%, transparent)', color: 'var(--accent-red)', padding: '12px', borderRadius: '10px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                 className="nav-item-hover"
               >
                 <Trash2 size={18} />
@@ -627,7 +628,7 @@ const Status = () => {
       {/* New Template Modal */}
       {modalOpen && createPortal(
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
-          <div className="glass-panel" style={{ padding: '30px', width: '500px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+          <div className="glass-panel" style={{ padding: '30px', width: '500px', maxWidth: '96vw', display: 'flex', flexDirection: 'column', gap: '20px' }}>
             <h3 style={{ fontSize: '1.2rem', fontWeight: '800' }}>Create Custom Template</h3>
             <form onSubmit={handleSaveTemplate} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -651,7 +652,7 @@ const Status = () => {
       {/* Template Preview Modal */}
       {templatePreviewOpen && createPortal(
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
-          <div className="glass-panel" style={{ padding: '30px', width: '800px', height: '80vh', display: 'flex', flexDirection: 'column', gap: '20px', position: 'relative' }}>
+          <div className="glass-panel" style={{ padding: '30px', width: '800px', maxWidth: '96vw', height: '80vh', display: 'flex', flexDirection: 'column', gap: '20px', position: 'relative' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-color)', paddingBottom: '16px' }}>
               <h3 style={{ fontSize: '1.2rem', fontWeight: '800', display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <Eye size={20} color="#3b82f6" />

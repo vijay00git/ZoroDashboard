@@ -58,12 +58,12 @@ const RunItem = ({ item, isHistory, onRemove, onOpenDetails, selectable, selecte
       {triggeredAt && <span className="tcd-run-testrail-badge">{triggeredAt}</span>}
       {cancelling && <span className="tcd-run-testrail-badge">Cancelling…</span>}
       {isHistory && item.id && !selectable && (
-        <button type="button" className="tcd-run-remove-btn" title="Remove from history" onClick={(e) => { e.preventDefault(); e.stopPropagation(); onRemove(item.id); }}>
+        <button type="button" className="tcd-run-remove-btn" title="Remove from history" aria-label="Remove from history" onClick={(e) => { e.preventDefault(); e.stopPropagation(); onRemove(item.id); }}>
           <X size={12} />
         </button>
       )}
       {!isHistory && onCancel && !cancelling && (
-        <button type="button" className="tcd-run-cancel-btn" title={statusCls === 'rp-building' ? 'Stop this build' : 'Remove from queue'} onClick={(e) => { e.preventDefault(); e.stopPropagation(); onCancel(item); }}>
+        <button type="button" className="tcd-run-cancel-btn" title={statusCls === 'rp-building' ? 'Stop this build' : 'Remove from queue'} aria-label={statusCls === 'rp-building' ? 'Stop this build' : 'Remove from queue'} onClick={(e) => { e.preventDefault(); e.stopPropagation(); onCancel(item); }}>
           <Ban size={12} />
         </button>
       )}
@@ -114,13 +114,13 @@ const RunsPanel = ({
       <div className="tcd-runs-header">
         <h3>Job runs</h3>
         <span className="tcd-runs-sub">{items.length > 0 ? (activeCount > 0 ? `${activeCount} active · ` : '') + pastLabel : ''}</span>
-        <button type="button" className="tcd-icon-btn" title={`Copy report (${reportTitle})`} onClick={onCopyTodayReport}>
+        <button type="button" className="tcd-icon-btn" title={`Copy report (${reportTitle})`} aria-label={`Copy report (${reportTitle})`} onClick={onCopyTodayReport}>
           <Clipboard size={14} />
         </button>
-        <button type="button" className="tcd-icon-btn" title={`Send report to Telegram (${reportTitle})…`} onClick={onSendTelegramReport}>
+        <button type="button" className="tcd-icon-btn" title={`Send report to Telegram (${reportTitle})…`} aria-label={`Send report to Telegram (${reportTitle})…`} onClick={onSendTelegramReport}>
           <Send size={14} />
         </button>
-        <button type="button" className="tcd-icon-btn" title={collapsed ? 'Expand' : 'Collapse'} onClick={onToggleCollapsed}>
+        <button type="button" className="tcd-icon-btn" title={collapsed ? 'Expand' : 'Collapse'} aria-label={collapsed ? 'Expand' : 'Collapse'} onClick={onToggleCollapsed}>
           {collapsed ? <ChevronDown size={14} /> : <ChevronUp size={14} />}
         </button>
       </div>
@@ -129,7 +129,7 @@ const RunsPanel = ({
         {selectedJobIds.size > 0 ? (
           <span className="tcd-report-selection-note">
             {selectedJobIds.size} job{selectedJobIds.size === 1 ? '' : 's'} selected for the report
-            <button type="button" onClick={onClearJobSelection} title="Clear selection"><X size={12} /></button>
+            <button type="button" onClick={onClearJobSelection} title="Clear selection" aria-label="Clear selection"><X size={12} /></button>
           </span>
         ) : (
           <input

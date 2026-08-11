@@ -8,6 +8,8 @@ import {
 } from 'lucide-react';
 import html2pdf from 'html2pdf.js';
 import { getAIConfig, noKeyMessage } from '../utils/ai';
+import { showAlert, showConfirm } from '../utils/Alerts';
+import { calcCompleteness } from '../utils/resume';
 
 /* ─── helpers ─────────────────────────────────────────────── */
 const GithubIcon = ({ size = 24, ...props }) => (
@@ -48,27 +50,6 @@ const LinkedinIcon = ({ size = 24, ...props }) => (
 );
 
 const skillLevels = ['Beginner', 'Intermediate', 'Advanced', 'Expert'];
-
-const calcCompleteness = (d) => {
-  const checks = [
-    !!d.personalInfo.name,
-    !!d.personalInfo.title,
-    !!d.personalInfo.email,
-    !!d.personalInfo.phone,
-    !!d.personalInfo.location,
-    !!d.personalInfo.linkedin || !!d.personalInfo.website,
-    !!d.summary && d.summary.length > 60,
-    d.workExperience.length > 0,
-    d.workExperience.length > 1,
-    d.workExperience.some(e => e.description?.length > 40),
-    d.education.length > 0,
-    d.projects.length > 0,
-    d.skills.length >= 4,
-    d.certificates.length > 0,
-    d.languages.length > 0,
-  ];
-  return Math.round((checks.filter(Boolean).length / checks.length) * 100);
-};
 
 const countWords = (d) => {
   const text = [
@@ -184,8 +165,12 @@ const ResumeUp = () => {
       [cat]: prev[cat].map(item => item.id === id ? { ...item, [field]: val } : item)
     }));
 
-  const deleteArrayItem = (cat, id) =>
+  const ARRAY_ITEM_LABEL = { workExperience: 'work experience', education: 'education', projects: 'project', certificates: 'certificate' };
+
+  const deleteArrayItem = async (cat, id) => {
+    if (!(await showConfirm(`Delete this ${ARRAY_ITEM_LABEL[cat] || 'entry'}?`))) return;
     updateActiveResumeData(prev => ({ ...prev, [cat]: prev[cat].filter(i => i.id !== id) }));
+  };
 
   const moveArrayItem = (cat, idx, dir) => {
     const ti = idx + dir;
@@ -209,8 +194,9 @@ const ResumeUp = () => {
     setActiveResumeId(newId);
   };
 
-  const deleteResume = (id) => {
-    if (resumes.length <= 1) return alert('Must keep at least one resume.');
+  const deleteResume = async (id) => {
+    if (resumes.length <= 1) return showAlert('Must keep at least one resume.');
+    if (!(await showConfirm('Delete this resume permanently?'))) return;
     const filtered = resumes.filter(r => r.id !== id);
     setResumes(filtered);
     if (activeResumeId === id) setActiveResumeId(filtered[0].id);
@@ -243,12 +229,12 @@ const ResumeUp = () => {
         'You are an expert resume writer. Rewrite summaries to be punchy, professional and impactful. No fluff.'
       );
       updateTopLevelState('summary', result.replace(/^["']|["']$/g, '').trim());
-    } catch (e) { alert(e.message); }
+    } catch (e) { showAlert(e.message); }
     setIsAiLoading(false);
   };
 
   const tailorForJobDescription = async () => {
-    if (!aiJobDescription.trim()) return alert('Paste a job description first.');
+    if (!aiJobDescription.trim()) return showAlert('Paste a job description first.');
     setIsAiLoading(true);
     setAtsScore(null);
     try {
@@ -269,7 +255,7 @@ const ResumeUp = () => {
   };
 
   const generateCoverLetter = async () => {
-    if (!aiJobDescription.trim()) return alert('Paste a job description first.');
+    if (!aiJobDescription.trim()) return showAlert('Paste a job description first.');
     setIsAiLoading(true);
     try {
       const result = await callAI(
@@ -278,7 +264,7 @@ const ResumeUp = () => {
       );
       setAiCoverLetter(result);
       setCoverLetterOpen(true);
-    } catch (e) { alert(e.message); }
+    } catch (e) { showAlert(e.message); }
     setIsAiLoading(false);
   };
 
@@ -292,7 +278,7 @@ const ResumeUp = () => {
         'You are a resume expert. Rewrite bullet points to be achievement-focused and quantified.'
       );
       updateArrayItem('workExperience', expId, 'description', result.trim());
-    } catch (e) { alert(e.message); }
+    } catch (e) { showAlert(e.message); }
     setEnhancingExp(null);
   };
 
@@ -351,7 +337,7 @@ const ResumeUp = () => {
   ];
 
   const appStatuses  = ['Applied','Phone Screen','Interview','Offer','Rejected','Ghosted'];
-  const statusColors = { Applied:'#6366f1', 'Phone Screen':'#0d9488', Interview:'#d97706', Offer:'#10b981', Rejected:'#ef4444', Ghosted:'#6b7280' };
+  const statusColors = { Applied:'#6366f1', 'Phone Screen':'#0d9488', Interview:'#d97706', Offer:'#10b981', Rejected:'var(--accent-red)', Ghosted:'#6b7280' };
 
   /* ─────────────────────────────────────────────────────────
      SETTINGS PANELS
@@ -707,7 +693,7 @@ const ResumeUp = () => {
             {sections.map(s => (
               <button key={s.key} onClick={() => setEditingContentSection(s.key)} style={{
                 padding: '13px 16px', background: 'var(--bg-secondary)', borderRadius: '10px',
-                border: `1px solid ${s.filled ? 'var(--border-color)' : 'rgba(239,68,68,0.3)'}`,
+                border: `1px solid ${s.filled ? 'var(--border-color)' : 'color-mix(in srgb, var(--accent-red) 30%, transparent)'}`,
                 display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                 color: 'var(--text-primary)', cursor: 'pointer', transition: 'all 0.15s'
               }}>
@@ -718,7 +704,7 @@ const ResumeUp = () => {
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                   {s.filled
                     ? <CheckCircle2 size={15} style={{ color: 'var(--accent-green)' }} />
-                    : <Circle size={15} style={{ color: '#ef4444', opacity: 0.6 }} />}
+                    : <Circle size={15} style={{ color: 'var(--accent-red)', opacity: 0.6 }} />}
                   <Edit2 size={13} style={{ color: 'var(--text-muted)' }} />
                 </div>
               </button>
@@ -788,7 +774,7 @@ const ResumeUp = () => {
                   style={{ display:'flex', alignItems:'center', gap:'4px', background:'rgba(99,102,241,0.1)', border:'1px solid var(--accent-purple)', color:'var(--accent-purple)', padding:'3px 8px', borderRadius:'5px', cursor:'pointer', fontSize:'0.7rem', fontWeight:'700' }}>
                   {enhancingExp===exp.id ? <RefreshCw size={11} className="spin" /> : <Wand2 size={11} />} AI
                 </button>
-                <button onClick={()=>deleteArrayItem('workExperience',exp.id)} style={{ background:'transparent',border:'none',color:'#ef4444',cursor:'pointer' }}><Trash2 size={14}/></button>
+                <button onClick={()=>deleteArrayItem('workExperience',exp.id)} style={{ background:'transparent',border:'none',color:'var(--accent-red)',cursor:'pointer' }}><Trash2 size={14}/></button>
               </div>
             </div>
             <div style={{ display:'flex', flexDirection:'column', gap:'8px' }}>
@@ -823,7 +809,7 @@ const ResumeUp = () => {
                 <button disabled={idx===0} onClick={()=>moveArrayItem('education',idx,-1)} style={{ background:'transparent',border:'none',color:'var(--text-muted)',cursor:'pointer' }}><ArrowUp size={14}/></button>
                 <button disabled={idx===resumeData.education.length-1} onClick={()=>moveArrayItem('education',idx,1)} style={{ background:'transparent',border:'none',color:'var(--text-muted)',cursor:'pointer' }}><ArrowDown size={14}/></button>
               </div>
-              <button onClick={()=>deleteArrayItem('education',edu.id)} style={{ background:'transparent',border:'none',color:'#ef4444',cursor:'pointer' }}><Trash2 size={14}/></button>
+              <button onClick={()=>deleteArrayItem('education',edu.id)} style={{ background:'transparent',border:'none',color:'var(--accent-red)',cursor:'pointer' }}><Trash2 size={14}/></button>
             </div>
             <div style={{ display:'flex', flexDirection:'column', gap:'8px' }}>
               <input type="text" value={edu.degree} onChange={e=>updateArrayItem('education',edu.id,'degree',e.target.value)} placeholder="Degree" style={{ ...inputStyle, padding:'7px 10px', fontSize:'0.85rem' }} />
@@ -855,7 +841,7 @@ const ResumeUp = () => {
                 <button disabled={idx===0} onClick={()=>moveArrayItem('projects',idx,-1)} style={{ background:'transparent',border:'none',color:'var(--text-muted)',cursor:'pointer' }}><ArrowUp size={14}/></button>
                 <button disabled={idx===resumeData.projects.length-1} onClick={()=>moveArrayItem('projects',idx,1)} style={{ background:'transparent',border:'none',color:'var(--text-muted)',cursor:'pointer' }}><ArrowDown size={14}/></button>
               </div>
-              <button onClick={()=>deleteArrayItem('projects',proj.id)} style={{ background:'transparent',border:'none',color:'#ef4444',cursor:'pointer' }}><Trash2 size={14}/></button>
+              <button onClick={()=>deleteArrayItem('projects',proj.id)} style={{ background:'transparent',border:'none',color:'var(--accent-red)',cursor:'pointer' }}><Trash2 size={14}/></button>
             </div>
             <div style={{ display:'flex', flexDirection:'column', gap:'8px' }}>
               <input type="text" value={proj.name} onChange={e=>updateArrayItem('projects',proj.id,'name',e.target.value)} placeholder="Project Name" style={{ ...inputStyle, padding:'7px 10px', fontSize:'0.85rem' }} />
@@ -881,7 +867,7 @@ const ResumeUp = () => {
         {resumeData.certificates.map((cert) => (
           <div key={cert.id} style={{ padding:'14px', background:'var(--bg-secondary)', borderRadius:'10px', border:'1px solid var(--border-color)', marginBottom:'12px' }}>
             <div style={{ display:'flex', justifyContent:'flex-end', marginBottom:'8px' }}>
-              <button onClick={()=>deleteArrayItem('certificates',cert.id)} style={{ background:'transparent',border:'none',color:'#ef4444',cursor:'pointer' }}><Trash2 size={14}/></button>
+              <button onClick={()=>deleteArrayItem('certificates',cert.id)} style={{ background:'transparent',border:'none',color:'var(--accent-red)',cursor:'pointer' }}><Trash2 size={14}/></button>
             </div>
             <div style={{ display:'flex', flexDirection:'column', gap:'8px' }}>
               <input type="text" value={cert.name} onChange={e=>updateArrayItem('certificates',cert.id,'name',e.target.value)} placeholder="Certificate Name" style={{ ...inputStyle, padding:'7px 10px', fontSize:'0.85rem' }} />
@@ -918,7 +904,7 @@ const ResumeUp = () => {
                 }} style={{ ...inputStyle, flex: 1.2, padding: '7px 8px', fontSize: '0.78rem' }}>
                   {skillLevels.map(l => <option key={l}>{l}</option>)}
                 </select>
-                <button onClick={() => updateTopLevelState('skills', normalizedSkills.filter(s => s.id !== skill.id))} style={{ background:'transparent',border:'none',color:'#ef4444',cursor:'pointer',flexShrink:0 }}>
+                <button onClick={() => updateTopLevelState('skills', normalizedSkills.filter(s => s.id !== skill.id))} style={{ background:'transparent',border:'none',color:'var(--accent-red)',cursor:'pointer',flexShrink:0 }}>
                   <Trash2 size={14}/>
                 </button>
               </div>
@@ -1097,7 +1083,7 @@ const ResumeUp = () => {
       { label: '4+ Skills',        ok: resumeData.skills.length >= 4 },
       { label: 'Certificate',      ok: resumeData.certificates.length > 0 },
     ];
-    const scoreColor = completeness >= 80 ? '#10b981' : completeness >= 50 ? '#f59e0b' : '#ef4444';
+    const scoreColor = completeness >= 80 ? '#10b981' : completeness >= 50 ? '#f59e0b' : 'var(--accent-red)';
 
     return (
       <div>
@@ -1108,7 +1094,7 @@ const ResumeUp = () => {
             <span style={{ fontFamily:'var(--font-mono)', fontSize:'1.3rem', fontWeight:'800', color: scoreColor }}>{completeness}%</span>
           </div>
           <div style={{ height:'6px', background:'var(--bg-primary)', borderRadius:'4px', overflow:'hidden', marginBottom:'8px' }}>
-            <div style={{ height:'100%', width:`${completeness}%`, background: `linear-gradient(90deg, ${scoreColor}, ${scoreColor}99)`, transition:'width 0.5s' }} />
+            <div style={{ height:'100%', width:`${completeness}%`, background: `linear-gradient(90deg, ${scoreColor}, color-mix(in srgb, ${scoreColor} 60%, transparent))`, transition:'width 0.5s' }} />
           </div>
           <p style={{ fontSize:'0.72rem', color:'var(--text-muted)', margin:0 }}>
             {completeness >= 80 ? 'Excellent! Your resume is highly optimized.' : completeness >= 50 ? 'Good start. Fill in the highlighted sections below.' : 'Add more content to improve visibility.'}
@@ -1140,7 +1126,7 @@ const ResumeUp = () => {
             <div key={c.label} style={{ display:'flex', alignItems:'center', gap:'8px', padding:'5px 0', borderBottom:'1px solid var(--border-color)' }}>
               {c.ok
                 ? <CheckCircle2 size={14} style={{ color:'#10b981', flexShrink:0 }} />
-                : <Circle size={14} style={{ color:'#ef4444', opacity:0.5, flexShrink:0 }} />}
+                : <Circle size={14} style={{ color:'var(--accent-red)', opacity:0.5, flexShrink:0 }} />}
               <span style={{ fontSize:'0.82rem', color: c.ok ? 'var(--text-secondary)' : 'var(--text-primary)', fontWeight: c.ok ? '400' : '600' }}>{c.label}</span>
             </div>
           ))}
@@ -1176,7 +1162,7 @@ const ResumeUp = () => {
                   {app.role && <span style={{ fontSize:'0.72rem', color:'var(--text-muted)', marginLeft:'6px' }}>{app.role}</span>}
                 </div>
                 <div style={{ display:'flex', alignItems:'center', gap:'6px' }}>
-                  <span style={{ fontSize:'0.65rem', fontWeight:'700', padding:'2px 7px', borderRadius:'10px', background: `${statusColors[app.status]}20`, color: statusColors[app.status] }}>{app.status}</span>
+                  <span style={{ fontSize:'0.65rem', fontWeight:'700', padding:'2px 7px', borderRadius:'10px', background: `color-mix(in srgb, ${statusColors[app.status]} 12.5%, transparent)`, color: statusColors[app.status] }}>{app.status}</span>
                   <button onClick={()=>setApplications(p=>p.filter(a=>a.id!==app.id))} style={{ background:'transparent',border:'none',color:'var(--text-muted)',cursor:'pointer',padding:'2px' }}><Trash2 size={11}/></button>
                 </div>
               </div>
@@ -1226,10 +1212,10 @@ const ResumeUp = () => {
         <div style={{ background:'var(--bg-secondary)', borderRadius:'12px', border:'1px solid var(--border-color)', padding:'14px', marginBottom:'12px' }}>
           <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'10px' }}>
             <span style={{ fontSize:'0.82rem', fontWeight:'700', color:'var(--text-primary)' }}>ATS Compatibility</span>
-            <span style={{ fontFamily:'var(--font-mono)', fontWeight:'800', fontSize:'1.2rem', color: atsScore >= 75 ? '#10b981' : atsScore >= 50 ? '#f59e0b' : '#ef4444' }}>{atsScore}%</span>
+            <span style={{ fontFamily:'var(--font-mono)', fontWeight:'800', fontSize:'1.2rem', color: atsScore >= 75 ? '#10b981' : atsScore >= 50 ? '#f59e0b' : 'var(--accent-red)' }}>{atsScore}%</span>
           </div>
           <div style={{ height:'5px', background:'var(--bg-primary)', borderRadius:'4px', overflow:'hidden', marginBottom:'12px' }}>
-            <div style={{ height:'100%', width:`${atsScore}%`, background: atsScore >= 75 ? '#10b981' : atsScore >= 50 ? '#f59e0b' : '#ef4444', transition:'width 0.5s' }} />
+            <div style={{ height:'100%', width:`${atsScore}%`, background: atsScore >= 75 ? '#10b981' : atsScore >= 50 ? '#f59e0b' : 'var(--accent-red)', transition:'width 0.5s' }} />
           </div>
           {aiSuggestions?.found?.length > 0 && (
             <div style={{ marginBottom:'10px' }}>
@@ -1241,10 +1227,10 @@ const ResumeUp = () => {
           )}
           {aiSuggestions?.missing?.length > 0 && (
             <div style={{ marginBottom:'10px' }}>
-              <div style={{ fontSize:'0.7rem', fontWeight:'700', color:'#ef4444', marginBottom:'5px' }}>+ Missing Keywords (click to add)</div>
+              <div style={{ fontSize:'0.7rem', fontWeight:'700', color:'var(--accent-red)', marginBottom:'5px' }}>+ Missing Keywords (click to add)</div>
               <div style={{ display:'flex', flexWrap:'wrap', gap:'5px' }}>
                 {aiSuggestions.missing.map(s=>(
-                  <button key={s} onClick={()=>addMissingSkill(s)} style={{ fontSize:'0.7rem', background:'rgba(239,68,68,0.08)', border:'1px solid rgba(239,68,68,0.25)', padding:'3px 8px', borderRadius:'4px', color:'#ef4444', cursor:'pointer', fontWeight:'600' }}>+ {s}</button>
+                  <button key={s} onClick={()=>addMissingSkill(s)} style={{ fontSize:'0.7rem', background:'color-mix(in srgb, var(--accent-red) 8%, transparent)', border:'1px solid color-mix(in srgb, var(--accent-red) 25%, transparent)', padding:'3px 8px', borderRadius:'4px', color:'var(--accent-red)', cursor:'pointer', fontWeight:'600' }}>+ {s}</button>
                 ))}
               </div>
             </div>
@@ -1316,9 +1302,9 @@ const ResumeUp = () => {
               <select value={activeResumeId} onChange={e=>setActiveResumeId(e.target.value)} style={{ ...inputStyle, width:'180px', padding:'7px 10px', fontSize:'0.83rem' }}>
                 {resumes.map(r=><option key={r.id} value={r.id}>{r.name}</option>)}
               </select>
-              <button onClick={()=>{setRenameText(activeResume.name);setIsRenaming(true);}} title="Rename" style={{ background:'var(--bg-primary)', border:'1px solid var(--border-color)', borderRadius:'7px', padding:'7px', color:'var(--text-secondary)', cursor:'pointer' }}><Edit2 size={13}/></button>
-              <button onClick={createNewResume} title="New Resume" style={{ background:'var(--bg-primary)', border:'1px solid var(--border-color)', borderRadius:'7px', padding:'7px', color:'var(--accent-purple)', cursor:'pointer' }}><PlusCircle size={13}/></button>
-              <button onClick={()=>deleteResume(activeResumeId)} title="Delete" style={{ background:'var(--bg-primary)', border:'1px solid var(--border-color)', borderRadius:'7px', padding:'7px', color:'#ef4444', cursor:'pointer' }}><Trash2 size={13}/></button>
+              <button onClick={()=>{setRenameText(activeResume.name);setIsRenaming(true);}} title="Rename" aria-label="Rename" style={{ background:'var(--bg-primary)', border:'1px solid var(--border-color)', borderRadius:'7px', padding:'7px', color:'var(--text-secondary)', cursor:'pointer' }}><Edit2 size={13}/></button>
+              <button onClick={createNewResume} title="New Resume" aria-label="New Resume" style={{ background:'var(--bg-primary)', border:'1px solid var(--border-color)', borderRadius:'7px', padding:'7px', color:'var(--accent-purple)', cursor:'pointer' }}><PlusCircle size={13}/></button>
+              <button onClick={()=>deleteResume(activeResumeId)} title="Delete" aria-label="Delete" style={{ background:'var(--bg-primary)', border:'1px solid var(--border-color)', borderRadius:'7px', padding:'7px', color:'var(--accent-red)', cursor:'pointer' }}><Trash2 size={13}/></button>
             </>
           )}
           <button onClick={handleExportPDF} disabled={isExporting} style={{ padding:'7px 16px', borderRadius:'8px', background:'linear-gradient(135deg, var(--accent-purple), var(--accent-pink))', color:'white', fontWeight:'700', border:'none', cursor:'pointer', display:'flex', alignItems:'center', gap:'6px', fontSize:'0.83rem', opacity: isExporting ? 0.7 : 1 }}>

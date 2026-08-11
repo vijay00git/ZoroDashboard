@@ -31,9 +31,9 @@ const Lightbox = ({ images, startIndex, onClose }) => {
           {multi && <span className="tcd-lightbox-counter">{idx + 1} / {images.length}</span>}
         </h3>
         <div className="tcd-lightbox-img-wrap">
-          {multi && <button type="button" className="tcd-lightbox-nav tcd-lightbox-prev" title="Previous (←)" onClick={() => step(-1)}>‹</button>}
+          {multi && <button type="button" className="tcd-lightbox-nav tcd-lightbox-prev" title="Previous (←)" aria-label="Previous (←)" onClick={() => step(-1)}>‹</button>}
           <img src={proxiedUrl} alt={a.name} />
-          {multi && <button type="button" className="tcd-lightbox-nav tcd-lightbox-next" title="Next (→)" onClick={() => step(1)}>›</button>}
+          {multi && <button type="button" className="tcd-lightbox-nav tcd-lightbox-next" title="Next (→)" aria-label="Next (→)" onClick={() => step(1)}>›</button>}
         </div>
         <div className="tcd-modal-actions">
           <a className="tcd-btn" href={proxiedUrl} target="_blank" rel="noopener noreferrer">Open in new tab</a>

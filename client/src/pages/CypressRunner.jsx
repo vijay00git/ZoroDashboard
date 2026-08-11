@@ -585,7 +585,7 @@ const CypressRunner = () => {
       : manifestData.rows;
     if (rows.length === 0) { showToast('No test cases selected', 'warning'); return; }
 
-    const lines = [['ID', 'Description', 'Status', 'Tags']];
+    const lines = [['ID', 'Title', 'Status', 'Tags']];
     rows.forEach((r) => {
       const status = STATUS_LABEL_CSV[localCaseStatus(r, caseResultsByPath, runStatusByPath, manualStatus)];
       lines.push([r.id, r.title, status, (tags[r.id] || []).join('; ')]);

@@ -388,20 +388,23 @@ const QuickLaunch = () => {
                           onClick={() => handleOpenLinkModal(folder.id)}
                           style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)' }}
                           title="Add link"
+                          aria-label="Add link"
                         >
                           <Plus size={16} />
                         </button>
-                        <button 
+                        <button
                           onClick={() => handleOpenFolderModal(folder.id)}
                           style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)' }}
                           title="Edit Folder"
+                          aria-label="Edit Folder"
                         >
                           <Edit3 size={14} />
                         </button>
-                        <button 
+                        <button
                           onClick={() => handleDeleteFolder(folder.id)}
                           style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--accent-red)' }}
                           title="Delete Folder"
+                          aria-label="Delete Folder"
                         >
                           <Trash2 size={14} />
                         </button>

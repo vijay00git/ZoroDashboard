@@ -487,9 +487,9 @@ const LearnSkills = () => {
                 <button
                   onClick={handleDeleteGoal}
                   style={{
-                    background: 'rgba(239, 68, 68, 0.1)',
+                    background: 'color-mix(in srgb, var(--accent-red) 10%, transparent)',
                     color: 'var(--accent-red)',
-                    border: '1px solid rgba(239, 68, 68, 0.2)',
+                    border: '1px solid color-mix(in srgb, var(--accent-red) 20%, transparent)',
                     borderRadius: '10px',
                     padding: '10px',
                     cursor: 'pointer',
@@ -498,6 +498,7 @@ const LearnSkills = () => {
                     justifyContent: 'center'
                   }}
                   title="Delete Quest"
+                  aria-label="Delete Quest"
                 >
                   <Trash2 size={18} />
                 </button>

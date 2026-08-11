@@ -483,7 +483,7 @@ const Timesheet = () => {
   const donutData = [
     { label: 'Office', count: totalWorking, color: '#10b981' },
     { label: 'WFH', count: totalWFH, color: '#f59e0b' },
-    { label: 'Leave', count: totalLeave, color: '#ef4444' },
+    { label: 'Leave', count: totalLeave, color: 'var(--accent-red)' },
     { label: 'WeekEnd', count: totalWeekends, color: '#8b5cf6' },
     { label: 'Holiday', count: totalHoliday, color: '#06b6d4' }
   ];
@@ -491,14 +491,14 @@ const Timesheet = () => {
   const getRowStyle = (type) => {
     const t = type.toLowerCase();
     if (t.includes('weekend')) return { bg: 'rgba(255,255,255,0.02)', color: 'var(--text-muted)' };
-    if (t.includes('leave') || t.includes('holiday') || t.includes('comp')) return { bg: 'rgba(244,63,94,0.05)', color: 'var(--accent-red)' };
+    if (t.includes('leave') || t.includes('holiday') || t.includes('comp')) return { bg: 'color-mix(in srgb, var(--accent-red) 5%, transparent)', color: 'var(--accent-red)' };
     return { bg: 'transparent', color: '#10b981' };
   };
 
   const getStatusBadgeStyle = (type) => {
     const t = type.toLowerCase();
     if (t.includes('weekend')) return { bg: 'rgba(255,255,255,0.05)', color: 'var(--text-muted)' };
-    if (t.includes('leave')) return { bg: 'rgba(239,68,68,0.15)', color: '#ef4444' };
+    if (t.includes('leave')) return { bg: 'color-mix(in srgb, var(--accent-red) 15%, transparent)', color: 'var(--accent-red)' };
     if (t.includes('holiday')) return { bg: 'rgba(6,182,212,0.15)', color: '#06b6d4' };
     if (t.includes('comp')) return { bg: 'rgba(139,92,246,0.15)', color: '#8b5cf6' };
     if (t.includes('wfh')) return { bg: 'rgba(245,158,11,0.15)', color: '#f59e0b' };
@@ -693,7 +693,7 @@ const Timesheet = () => {
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-color)', paddingBottom: '10px' }}>
               <span style={{ fontWeight: 'bold', color: 'var(--text-secondary)', fontSize: '0.9rem' }}>Leave</span>
-              <span style={{ background: 'rgba(239,68,68,0.15)', color: '#ef4444', padding: '2px 8px', borderRadius: '12px', fontWeight: 'bold', fontSize: '0.85rem' }}>{totalLeave}</span>
+              <span style={{ background: 'color-mix(in srgb, var(--accent-red) 15%, transparent)', color: 'var(--accent-red)', padding: '2px 8px', borderRadius: '12px', fontWeight: 'bold', fontSize: '0.85rem' }}>{totalLeave}</span>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-color)', paddingBottom: '10px' }}>
               <span style={{ fontWeight: 'bold', color: 'var(--text-secondary)', fontSize: '0.9rem' }}>WFH</span>
@@ -804,7 +804,7 @@ const Timesheet = () => {
                         <select
                           value={row.type}
                           onChange={(e) => handleRowChange(index, 'type', e.target.value)}
-                          style={{ background: badge.bg, border: `1px solid ${badge.color}40`, color: badge.color, padding: '4px 24px 4px 8px', borderRadius: '12px', outline: 'none', fontSize: '0.75rem', fontWeight: 'bold', cursor: 'pointer', appearance: 'none', WebkitAppearance: 'none', width: '100%', textAlign: 'center' }}
+                          style={{ background: badge.bg, border: `1px solid color-mix(in srgb, ${badge.color} 25%, transparent)`, color: badge.color, padding: '4px 24px 4px 8px', borderRadius: '12px', outline: 'none', fontSize: '0.75rem', fontWeight: 'bold', cursor: 'pointer', appearance: 'none', WebkitAppearance: 'none', width: '100%', textAlign: 'center' }}
                         >
                           <option value="Office" style={{ background: 'var(--bg-tertiary)', color: 'var(--text-primary)' }}>Office</option>
                           <option value="WFH" style={{ background: 'var(--bg-tertiary)', color: 'var(--text-primary)' }}>WFH</option>

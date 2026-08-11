@@ -122,7 +122,7 @@ const FileCard = ({
         {fileTallyEl}
         {caseResultTallyEl}
         <span className="tcd-file-count">{visibleRows.length}{visibleRows.length === rows.length ? '' : ` / ${rows.length}`} case{rows.length === 1 ? '' : 's'}</span>
-        <button type="button" className={`tcd-icon-btn${copied ? ' copied' : ''}`} title="Copy file path" onClick={handleCopy}>
+        <button type="button" className={`tcd-icon-btn${copied ? ' copied' : ''}`} title="Copy file path" aria-label="Copy file path" onClick={handleCopy}>
           {copied ? <Check size={13} /> : <Copy size={13} />}
         </button>
         <button
@@ -130,6 +130,7 @@ const FileCard = ({
           className="tcd-icon-btn"
           disabled={!canRun}
           title={canRun ? runLabel : `No Jenkins job configured for ${cat} yet`}
+          aria-label={canRun ? runLabel : `No Jenkins job configured for ${cat} yet`}
           onClick={(e) => { e.preventDefault(); e.stopPropagation(); if (canRun) onRun(path, cat); }}
         >
           <Play size={13} fill="currentColor" />
@@ -139,6 +140,7 @@ const FileCard = ({
             type="button"
             className="tcd-icon-btn"
             title="Sync results to TestRail run…"
+            aria-label="Sync results to TestRail run…"
             onClick={(e) => { e.preventDefault(); e.stopPropagation(); onSync(path, cat); }}
           >
             <UploadCloud size={13} />
@@ -186,7 +188,7 @@ const FileCard = ({
                         <span key={t} className={`tcd-tag-chip ${tagColorClass(t)}`}>
                           {t}
                           {onRemoveTag && (
-                            <button type="button" onClick={() => onRemoveTag(r.id, t)} title={`Remove "${t}"`}>
+                            <button type="button" onClick={() => onRemoveTag(r.id, t)} title={`Remove "${t}"`} aria-label={`Remove "${t}"`}>
                               <X size={10} />
                             </button>
                           )}
@@ -197,6 +199,7 @@ const FileCard = ({
                           type="button"
                           className={`tcd-icon-btn tcd-note-btn${note ? ' has-note' : ''}`}
                           title={note ? note.text : 'Add a note'}
+                          aria-label={note ? note.text : 'Add a note'}
                           onClick={() => onOpenNote(r.id, r.title)}
                         >
                           <StickyNote size={13} />
@@ -207,6 +210,7 @@ const FileCard = ({
                           type="button"
                           className={`tcd-icon-btn tcd-tag-btn${caseTags.length ? ' has-tags' : ''}`}
                           title={caseTags.length ? `Edit tags (${caseTags.join(', ')})` : 'Add tags'}
+                          aria-label={caseTags.length ? `Edit tags (${caseTags.join(', ')})` : 'Add tags'}
                           onClick={() => onOpenTagModal(r.id, r.title)}
                         >
                           <TagIcon size={13} />

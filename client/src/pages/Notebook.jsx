@@ -432,10 +432,10 @@ const Notebook = () => {
           {!isEditing && (
             <div className="hover-actions" style={{ display: 'flex', gap: '4px' }}>
               {item.type === 'folder' && (
-                <button title="New Note" onClick={(e) => { e.stopPropagation(); handleCreateNote(item.id); }} style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', padding: '4px', cursor: 'pointer' }}><Plus size={12} /></button>
+                <button title="New Note" aria-label="New Note" onClick={(e) => { e.stopPropagation(); handleCreateNote(item.id); }} style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', padding: '4px', cursor: 'pointer' }}><Plus size={12} /></button>
               )}
-              <button title="Rename" onClick={(e) => handleStartRename(e, item.id, item.name)} style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', padding: '4px', cursor: 'pointer' }}><Edit3 size={12} /></button>
-              <button title="Delete" onClick={(e) => handleDeleteItem(e, item.id)} style={{ background: 'transparent', border: 'none', color: 'var(--accent-red)', padding: '4px', cursor: 'pointer' }}><Trash2 size={12} /></button>
+              <button title="Rename" aria-label="Rename" onClick={(e) => handleStartRename(e, item.id, item.name)} style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', padding: '4px', cursor: 'pointer' }}><Edit3 size={12} /></button>
+              <button title="Delete" aria-label="Delete" onClick={(e) => handleDeleteItem(e, item.id)} style={{ background: 'transparent', border: 'none', color: 'var(--accent-red)', padding: '4px', cursor: 'pointer' }}><Trash2 size={12} /></button>
             </div>
           )}
         </div>
@@ -460,10 +460,10 @@ const Notebook = () => {
               Notebook
             </h2>
             <div style={{ display: 'flex', gap: '4px' }}>
-              <button onClick={() => handleCreateNote(null)} title="New Note" style={{ background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)', borderRadius: '6px', padding: '6px', cursor: 'pointer', color: 'var(--text-primary)' }} className="nav-item-hover">
+              <button onClick={() => handleCreateNote(null)} title="New Note" aria-label="New Note" style={{ background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)', borderRadius: '6px', padding: '6px', cursor: 'pointer', color: 'var(--text-primary)' }} className="nav-item-hover">
                 <FilePlus size={14} />
               </button>
-              <button onClick={handleCreateFolder} title="New Folder" style={{ background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)', borderRadius: '6px', padding: '6px', cursor: 'pointer', color: 'var(--text-primary)' }} className="nav-item-hover">
+              <button onClick={handleCreateFolder} title="New Folder" aria-label="New Folder" style={{ background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)', borderRadius: '6px', padding: '6px', cursor: 'pointer', color: 'var(--text-primary)' }} className="nav-item-hover">
                 <FolderPlus size={14} />
               </button>
             </div>
@@ -475,8 +475,20 @@ const Notebook = () => {
             onDragOver={(e) => { e.preventDefault(); }}
             onDrop={handleDropToRoot}
           >
-            {rootItems.map(item => renderItem(item))}
-            
+            {rootItems.length === 0 ? (
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '32px 12px', color: 'var(--text-muted)', textAlign: 'center' }}>
+                <div style={{ width: '56px', height: '56px', borderRadius: '50%', background: 'rgba(0,0,0,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '12px' }}>
+                  <FilePlus size={22} style={{ opacity: 0.5 }} />
+                </div>
+                <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '12px', lineHeight: '1.5' }}>No notes yet</p>
+                <button onClick={() => handleCreateNote(null)} style={{ background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '8px 14px', cursor: 'pointer', color: 'var(--text-primary)', fontSize: '0.82rem', display: 'flex', alignItems: 'center', gap: '6px' }} className="nav-item-hover">
+                  <FilePlus size={13} /> Create your first note
+                </button>
+              </div>
+            ) : (
+              rootItems.map(item => renderItem(item))
+            )}
+
             {/* Empty drop zone for root */}
             <div style={{ height: '50px', marginTop: '10px' }} />
           </div>
@@ -508,10 +520,10 @@ const Notebook = () => {
 
                   {/* Exports */}
                   <div style={{ display: 'flex', gap: '8px' }}>
-                    <button onClick={handleExportMarkdown} title="Export Markdown" style={{ background: 'var(--bg-primary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', padding: '8px', borderRadius: '8px', cursor: 'pointer' }} className="nav-item-hover">
+                    <button onClick={handleExportMarkdown} title="Export Markdown" aria-label="Export Markdown" style={{ background: 'var(--bg-primary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', padding: '8px', borderRadius: '8px', cursor: 'pointer' }} className="nav-item-hover">
                       <Download size={16} />
                     </button>
-                    <button onClick={handleExportPDF} title="Export as PDF" style={{ background: 'rgba(59,130,246,0.1)', border: '1px solid rgba(59,130,246,0.2)', color: '#3b82f6', padding: '8px', borderRadius: '8px', cursor: 'pointer' }} className="nav-item-hover">
+                    <button onClick={handleExportPDF} title="Export as PDF" aria-label="Export as PDF" style={{ background: 'rgba(59,130,246,0.1)', border: '1px solid rgba(59,130,246,0.2)', color: '#3b82f6', padding: '8px', borderRadius: '8px', cursor: 'pointer' }} className="nav-item-hover">
                       <FileOutput size={16} />
                     </button>
                   </div>

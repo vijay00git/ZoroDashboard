@@ -30,7 +30,7 @@ const TagChipInput = ({ tags, onChange, placeholder = 'Add a tag…', autoFocus 
       {tags.map((t) => (
         <span key={t} className={`tcd-tag-chip ${tagColorClass(t)}`}>
           {t}
-          <button type="button" onClick={() => onChange(tags.filter((x) => x !== t))} title={`Remove "${t}"`}>
+          <button type="button" onClick={() => onChange(tags.filter((x) => x !== t))} title={`Remove "${t}"`} aria-label={`Remove "${t}"`}>
             <X size={10} />
           </button>
         </span>

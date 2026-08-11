@@ -106,6 +106,7 @@ export default function CSVOrganizer() {
   const [fileName,    setFileName]    = useState('untitled');
   const [activeId,    setActiveId]    = useState(null);
   const [dirty,       setDirty]       = useState(false);
+  const [isSaving,    setIsSaving]    = useState(false);
   const [savedFiles,  setSavedFiles]  = useState([]);
   const [request, loadingList] = useApi(true); // the mount effect below fetches immediately
 
@@ -302,27 +303,33 @@ export default function CSVOrganizer() {
   };
 
   const handleSave = async (forceName) => {
-    let name = forceName || fileName;
-    if (!name || name === 'untitled') {
-      const n = await showPrompt('Name this CSV file:', '');
-      if (!n?.trim()) return;
-      name = n.trim(); setFileName(name);
-    }
-    const content = serializeCSV(headers, rows);
-    if (activeId) {
-      const { ok } = await request(`${API}/api/csvfiles/${activeId}`, {
-        method: 'PUT', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content })
-      });
-      if (ok) { setDirty(false); fetchFiles(); }
-      else showAlert('Save failed.');
-    } else {
-      const { ok, body } = await request(`${API}/api/csvfiles`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, content })
-      });
-      if (ok) { setActiveId(body.id); setDirty(false); fetchFiles(); }
-      else showAlert('Save failed.');
+    if (isSaving) return; // a save is already in flight — a double-click or click+Ctrl-S must not fire a second concurrent request
+    setIsSaving(true);
+    try {
+      let name = forceName || fileName;
+      if (!name || name === 'untitled') {
+        const n = await showPrompt('Name this CSV file:', '');
+        if (!n?.trim()) return;
+        name = n.trim(); setFileName(name);
+      }
+      const content = serializeCSV(headers, rows);
+      if (activeId) {
+        const { ok } = await request(`${API}/api/csvfiles/${activeId}`, {
+          method: 'PUT', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ content })
+        });
+        if (ok) { setDirty(false); fetchFiles(); }
+        else showAlert('Save failed.');
+      } else {
+        const { ok, body } = await request(`${API}/api/csvfiles`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name, content })
+        });
+        if (ok) { setActiveId(body.id); setDirty(false); fetchFiles(); }
+        else showAlert('Save failed.');
+      }
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -373,7 +380,7 @@ export default function CSVOrganizer() {
     if (val === null || val === undefined) return null;
     const s = String(val);
     if (s === 'PASSED') return '#10b981';
-    if (s === 'FAILED') return '#f43f5e';
+    if (s === 'FAILED') return 'var(--accent-red)';
     if (s === 'BLOCKED') return '#f59e0b';
     if (s === 'UNTESTED') return '#6b7280';
     return null;
@@ -394,7 +401,7 @@ export default function CSVOrganizer() {
             <FileSpreadsheet size={15} style={{ color: 'var(--accent-purple)' }} />
             <span style={{ fontWeight: '700', fontSize: '0.85rem' }}>CSV Files</span>
           </div>
-          <button onClick={fetchFiles} title="Refresh" style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '2px' }}>
+          <button onClick={fetchFiles} title="Refresh" aria-label="Refresh" style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '2px' }}>
             <RefreshCw size={13} style={{ animation: loadingList ? 'spin 1s linear infinite' : 'none' }} />
           </button>
         </div>
@@ -433,8 +440,8 @@ export default function CSVOrganizer() {
                     <div style={{ fontSize: '0.62rem', color: 'var(--text-muted)' }}>{fmtDate(f.mtime)}</div>
                   </div>
                   <div className="hover-actions" style={{ display: 'flex', flexDirection: 'column', gap: '2px', marginLeft: '4px' }}>
-                    <button onClick={(e) => { e.stopPropagation(); handleRename(f.id, f.name); }} title="Rename" style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '2px' }}><Edit2 size={11} /></button>
-                    <button onClick={(e) => handleDelete(f.id, e)} title="Delete" style={{ background: 'transparent', border: 'none', color: '#f43f5e', cursor: 'pointer', padding: '2px' }}><Trash2 size={11} /></button>
+                    <button onClick={(e) => { e.stopPropagation(); handleRename(f.id, f.name); }} title="Rename" aria-label="Rename" style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '2px' }}><Edit2 size={11} /></button>
+                    <button onClick={(e) => handleDelete(f.id, e)} title="Delete" aria-label="Delete" style={{ background: 'transparent', border: 'none', color: 'var(--accent-red)', cursor: 'pointer', padding: '2px' }}><Trash2 size={11} /></button>
                   </div>
                 </div>
               </div>
@@ -463,8 +470,8 @@ export default function CSVOrganizer() {
           <div style={{ width: '1px', height: '24px', background: 'var(--border-color)', flexShrink: 0 }} />
 
           {/* Undo / Redo */}
-          <button onClick={undo} disabled={!undoStack.length} title="Undo (Ctrl+Z)" style={{ background: 'transparent', border: 'none', color: undoStack.length ? 'var(--text-primary)' : 'var(--text-muted)', cursor: undoStack.length ? 'pointer' : 'not-allowed', padding: '4px', display: 'flex' }}><Undo2 size={16} /></button>
-          <button onClick={redo} disabled={!redoStack.length} title="Redo (Ctrl+Y)" style={{ background: 'transparent', border: 'none', color: redoStack.length ? 'var(--text-primary)' : 'var(--text-muted)', cursor: redoStack.length ? 'pointer' : 'not-allowed', padding: '4px', display: 'flex' }}><Redo2 size={16} /></button>
+          <button onClick={undo} disabled={!undoStack.length} title="Undo (Ctrl+Z)" aria-label="Undo (Ctrl+Z)" style={{ background: 'transparent', border: 'none', color: undoStack.length ? 'var(--text-primary)' : 'var(--text-muted)', cursor: undoStack.length ? 'pointer' : 'not-allowed', padding: '4px', display: 'flex' }}><Undo2 size={16} /></button>
+          <button onClick={redo} disabled={!redoStack.length} title="Redo (Ctrl+Y)" aria-label="Redo (Ctrl+Y)" style={{ background: 'transparent', border: 'none', color: redoStack.length ? 'var(--text-primary)' : 'var(--text-muted)', cursor: redoStack.length ? 'pointer' : 'not-allowed', padding: '4px', display: 'flex' }}><Redo2 size={16} /></button>
 
           <div style={{ width: '1px', height: '24px', background: 'var(--border-color)', flexShrink: 0 }} />
 
@@ -472,7 +479,7 @@ export default function CSVOrganizer() {
           <button onClick={addRow} title="Add row" style={{ display: 'flex', alignItems: 'center', gap: '4px', background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', borderRadius: '7px', padding: '5px 10px', cursor: 'pointer', fontSize: '0.75rem', fontWeight: '600' }}><Rows size={13} /> + Row</button>
           <button onClick={addColumn} title="Add column" style={{ display: 'flex', alignItems: 'center', gap: '4px', background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', borderRadius: '7px', padding: '5px 10px', cursor: 'pointer', fontSize: '0.75rem', fontWeight: '600' }}><Columns size={13} /> + Col</button>
           {selRows.size > 0 && (
-            <button onClick={deleteSelRows} style={{ display: 'flex', alignItems: 'center', gap: '4px', background: 'rgba(244,63,94,0.1)', border: '1px solid var(--accent-red)', color: 'var(--accent-red)', borderRadius: '7px', padding: '5px 10px', cursor: 'pointer', fontSize: '0.75rem', fontWeight: '600' }}>
+            <button onClick={deleteSelRows} style={{ display: 'flex', alignItems: 'center', gap: '4px', background: 'color-mix(in srgb, var(--accent-red) 10%, transparent)', border: '1px solid var(--accent-red)', color: 'var(--accent-red)', borderRadius: '7px', padding: '5px 10px', cursor: 'pointer', fontSize: '0.75rem', fontWeight: '600' }}>
               <Trash2 size={13} /> Delete ({selRows.size})
             </button>
           )}
@@ -480,13 +487,13 @@ export default function CSVOrganizer() {
           <div style={{ flex: 1 }} />
 
           {/* Search */}
-          <button onClick={() => setShowSearch(s => !s)} title="Search/Filter" style={{ background: showSearch ? 'rgba(168,85,247,0.15)' : 'transparent', border: `1px solid ${showSearch ? 'var(--accent-purple)' : 'var(--border-color)'}`, color: showSearch ? 'var(--accent-purple)' : 'var(--text-secondary)', borderRadius: '7px', padding: '5px 8px', cursor: 'pointer', display: 'flex' }}><Search size={14} /></button>
-          <button onClick={() => setShowPanel(s => !s)} title="Column stats" style={{ background: showPanel ? 'rgba(168,85,247,0.15)' : 'transparent', border: `1px solid ${showPanel ? 'var(--accent-purple)' : 'var(--border-color)'}`, color: showPanel ? 'var(--accent-purple)' : 'var(--text-secondary)', borderRadius: '7px', padding: '5px 8px', cursor: 'pointer', display: 'flex' }}><BarChart2 size={14} /></button>
+          <button onClick={() => setShowSearch(s => !s)} title="Search/Filter" aria-label="Search/Filter" style={{ background: showSearch ? 'rgba(168,85,247,0.15)' : 'transparent', border: `1px solid ${showSearch ? 'var(--accent-purple)' : 'var(--border-color)'}`, color: showSearch ? 'var(--accent-purple)' : 'var(--text-secondary)', borderRadius: '7px', padding: '5px 8px', cursor: 'pointer', display: 'flex' }}><Search size={14} /></button>
+          <button onClick={() => setShowPanel(s => !s)} title="Column stats" aria-label="Column stats" style={{ background: showPanel ? 'rgba(168,85,247,0.15)' : 'transparent', border: `1px solid ${showPanel ? 'var(--accent-purple)' : 'var(--border-color)'}`, color: showPanel ? 'var(--accent-purple)' : 'var(--text-secondary)', borderRadius: '7px', padding: '5px 8px', cursor: 'pointer', display: 'flex' }}><BarChart2 size={14} /></button>
 
           <div style={{ width: '1px', height: '24px', background: 'var(--border-color)', flexShrink: 0 }} />
 
           {/* File ops */}
-          <button onClick={() => handleSave()} className="glow-btn" style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '5px 12px', fontSize: '0.78rem' }}><Save size={13} /> Save</button>
+          <button onClick={() => handleSave()} disabled={isSaving} className="glow-btn" style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '5px 12px', fontSize: '0.78rem', opacity: isSaving ? 0.6 : 1, cursor: isSaving ? 'not-allowed' : 'pointer' }}>{isSaving ? <RefreshCw size={13} style={{ animation: 'spin 1s linear infinite' }} /> : <Save size={13} />} {isSaving ? 'Saving...' : 'Save'}</button>
           <button onClick={handleExport} title="Download CSV" style={{ display: 'flex', alignItems: 'center', gap: '5px', background: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.3)', color: '#10b981', borderRadius: '7px', padding: '5px 10px', cursor: 'pointer', fontSize: '0.75rem', fontWeight: '600' }}><Download size={13} /> Export</button>
         </div>
 
@@ -565,7 +572,7 @@ export default function CSVOrganizer() {
                       ) : (
                         <div style={{ padding: '7px 8px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '4px', cursor: 'default' }} title="Double-click to rename">
                           <span style={{ fontWeight: '700', fontSize: '0.78rem', color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{h}</span>
-                          <button onClick={e => { e.stopPropagation(); deleteColumn(ci); }} title={`Delete column "${h}"`}
+                          <button onClick={e => { e.stopPropagation(); deleteColumn(ci); }} title={`Delete column "${h}"`} aria-label={`Delete column "${h}"`}
                             style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '1px', opacity: 0, transition: 'opacity 0.15s', flexShrink: 0 }}
                             className="col-del-btn"
                           ><X size={10} /></button>
@@ -629,7 +636,7 @@ export default function CSVOrganizer() {
                                 style={{ width: '100%', height: '100%', background: 'var(--bg-primary)', border: 'none', outline: '2px solid var(--accent-purple)', color: 'var(--text-primary)', padding: '5px 8px', fontSize: '0.8rem', boxSizing: 'border-box' }}
                               />
                             ) : badge ? (
-                              <span style={{ display: 'inline-block', background: `${badge}18`, border: `1px solid ${badge}40`, color: badge, borderRadius: '4px', padding: '2px 7px', fontSize: '0.72rem', fontWeight: '700' }}>{val}</span>
+                              <span style={{ display: 'inline-block', background: `color-mix(in srgb, ${badge} 9%, transparent)`, border: `1px solid color-mix(in srgb, ${badge} 25%, transparent)`, color: badge, borderRadius: '4px', padding: '2px 7px', fontSize: '0.72rem', fontWeight: '700' }}>{val}</span>
                             ) : (
                               <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block', color: val ? 'var(--text-primary)' : 'var(--text-muted)' }} title={val}>
                                 {val || ''}

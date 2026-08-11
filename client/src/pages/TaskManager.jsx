@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { showConfirm } from '../utils/Alerts';
 import {
   Plus,
   Trash2,
@@ -274,7 +275,8 @@ const TaskManager = () => {
     saveTasks(updatedTasks);
   };
 
-  const handleDeleteTask = (id) => {
+  const handleDeleteTask = async (id) => {
+    if (!(await showConfirm('Delete this task permanently?'))) return;
     saveTasks(tasks.filter(t => t.id !== id));
   };
 
@@ -440,8 +442,8 @@ const TaskManager = () => {
             {leaveType && (
               <span style={{
                 fontSize: '0.6rem',
-                background: leaveType === 'WFH' ? 'rgba(245,158,11,0.15)' : 'rgba(239,68,68,0.15)',
-                color: leaveType === 'WFH' ? '#f59e0b' : '#ef4444',
+                background: leaveType === 'WFH' ? 'rgba(245,158,11,0.15)' : 'color-mix(in srgb, var(--accent-red) 15%, transparent)',
+                color: leaveType === 'WFH' ? '#f59e0b' : 'var(--accent-red)',
                 padding: '2px 4px',
                 borderRadius: '4px',
                 fontWeight: 'bold',
@@ -484,7 +486,7 @@ const TaskManager = () => {
                 fontSize: '0.65rem',
                 padding: '4px 6px',
                 borderRadius: '6px',
-                background: `rgba(${isHigh ? '244,63,94' : (isLow ? '16,185,129' : '245,158,11')}, 0.15)`,
+                background: isHigh ? 'color-mix(in srgb, var(--accent-red) 15%, transparent)' : `rgba(${isLow ? '16,185,129' : '245,158,11'}, 0.15)`,
                 color: badgeColor,
                 fontWeight: '600',
                 whiteSpace: 'nowrap',
@@ -523,7 +525,7 @@ const TaskManager = () => {
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
               {leaveType && (
-                <div style={{ fontSize: '0.75rem', padding: '6px 8px', borderRadius: '6px', background: 'rgba(239,68,68,0.15)', color: '#ef4444', fontWeight: 'bold', borderLeft: '2px solid #ef4444' }}>
+                <div style={{ fontSize: '0.75rem', padding: '6px 8px', borderRadius: '6px', background: 'color-mix(in srgb, var(--accent-red) 15%, transparent)', color: 'var(--accent-red)', fontWeight: 'bold', borderLeft: '2px solid var(--accent-red)' }}>
                   {leaveType.toUpperCase()}
                 </div>
               )}
@@ -541,7 +543,7 @@ const TaskManager = () => {
                     fontSize: '0.75rem',
                     padding: '6px 8px',
                     borderRadius: '6px',
-                    background: `rgba(${isHigh ? '244,63,94' : (isLow ? '16,185,129' : '245,158,11')}, 0.15)`,
+                    background: isHigh ? 'color-mix(in srgb, var(--accent-red) 15%, transparent)' : `rgba(${isLow ? '16,185,129' : '245,158,11'}, 0.15)`,
                     color: badgeColor,
                     fontWeight: '600',
                     textDecoration: task.completed ? 'line-through' : 'none',
@@ -696,7 +698,7 @@ const TaskManager = () => {
                 value={newTaskPriority}
                 onChange={setNewTaskPriority}
                 icon={Flag}
-                iconColor={newTaskPriority === 'high' ? '#f43f5e' : (newTaskPriority === 'medium' ? '#f59e0b' : '#10b981')}
+                iconColor={newTaskPriority === 'high' ? 'var(--accent-red)' : (newTaskPriority === 'medium' ? '#f59e0b' : '#10b981')}
                 options={[
                   { value: 'high', label: 'High Priority' },
                   { value: 'medium', label: 'Medium Priority' },
@@ -853,7 +855,7 @@ const TaskManager = () => {
                 onClick={handleClearCompleted}
                 style={{
                   background: 'transparent',
-                  border: '1px solid rgba(244,63,94,0.3)',
+                  border: '1px solid color-mix(in srgb, var(--accent-red) 30%, transparent)',
                   color: 'var(--accent-red)',
                   fontSize: '0.75rem',
                   padding: '6px 12px',
@@ -865,8 +867,8 @@ const TaskManager = () => {
                   alignItems: 'center',
                   gap: '4px'
                 }}
-                onMouseOver={(e) => { e.currentTarget.style.background = 'rgba(244,63,94,0.1)'; e.currentTarget.style.borderColor = 'var(--accent-red)'; }}
-                onMouseOut={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.borderColor = 'rgba(244,63,94,0.3)'; }}
+                onMouseOver={(e) => { e.currentTarget.style.background = 'color-mix(in srgb, var(--accent-red) 10%, transparent)'; e.currentTarget.style.borderColor = 'var(--accent-red)'; }}
+                onMouseOut={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.borderColor = 'color-mix(in srgb, var(--accent-red) 30%, transparent)'; }}
               >
                 <Trash2 size={12} /> Clear Done
               </button>
@@ -942,7 +944,7 @@ const TaskManager = () => {
                               {new Date(task.deadline).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}
                             </span>
                           )}
-                          <span style={{ fontSize: '0.65rem', fontWeight: 'bold', color: task.completed ? 'var(--text-muted)' : badgeColor, textTransform: 'uppercase', letterSpacing: '1px', display: 'flex', alignItems: 'center', gap: '6px', background: task.completed ? 'transparent' : `rgba(${isHigh ? '244,63,94' : (isLow ? '16,185,129' : '245,158,11')}, 0.1)`, padding: '2px 8px', borderRadius: '12px', border: task.completed ? '1px solid var(--border-color)' : `1px solid ${badgeColor}` }}>
+                          <span style={{ fontSize: '0.65rem', fontWeight: 'bold', color: task.completed ? 'var(--text-muted)' : badgeColor, textTransform: 'uppercase', letterSpacing: '1px', display: 'flex', alignItems: 'center', gap: '6px', background: task.completed ? 'transparent' : (isHigh ? 'color-mix(in srgb, var(--accent-red) 10%, transparent)' : `rgba(${isLow ? '16,185,129' : '245,158,11'}, 0.1)`), padding: '2px 8px', borderRadius: '12px', border: task.completed ? '1px solid var(--border-color)' : `1px solid ${badgeColor}` }}>
                             {!task.completed && <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: badgeColor, boxShadow: `0 0 8px ${badgeColor}` }} />}
                             {task.completed ? 'Done' : `${task.priority} Priority`}
                           </span>
@@ -973,9 +975,10 @@ const TaskManager = () => {
                           alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s ease',
                           flexShrink: 0, marginTop: '-2px', marginRight: '-4px'
                         }}
-                        onMouseOver={(e) => { e.currentTarget.style.color = 'var(--accent-red)'; e.currentTarget.style.background = 'rgba(244,63,94,0.1)'; }}
+                        onMouseOver={(e) => { e.currentTarget.style.color = 'var(--accent-red)'; e.currentTarget.style.background = 'color-mix(in srgb, var(--accent-red) 10%, transparent)'; }}
                         onMouseOut={(e) => { e.currentTarget.style.color = 'var(--text-muted)'; e.currentTarget.style.background = 'transparent'; }}
                         title="Delete Task"
+                        aria-label="Delete Task"
                       >
                         <Trash2 size={14} />
                       </button>

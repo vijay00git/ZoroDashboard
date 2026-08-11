@@ -1,39 +1,7 @@
 import { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import {
-  LayoutDashboard,
-  RefreshCw,
-  NotebookPen,
-  CheckSquare,
-  CalendarDays,
-  Droplets,
-  Rocket,
-  FileText,
-  GraduationCap,
-  Briefcase,
-  FileSpreadsheet,
-  GalleryHorizontalEnd,
-  ListChecks,
-  TerminalSquare,
-  Settings,
-} from 'lucide-react';
-
-const MAIN_NAV = [
-  { path: '/',               label: 'Dashboard',     icon: LayoutDashboard },
-  { path: '/synchub',        label: 'Sync Hub',      icon: RefreshCw },
-  { path: '/notebook',       label: 'Notebook',      icon: NotebookPen },
-  { path: '/task-manager',   label: 'Task Manager',  icon: CheckSquare },
-  { path: '/timesheet',      label: 'Timesheet',     icon: CalendarDays },
-  { path: '/water',          label: 'Hydration',     icon: Droplets },
-  { path: '/quicklaunch',    label: 'Quick Launch',  icon: Rocket },
-  { path: '/status',         label: 'Daily Status',  icon: FileText },
-  { path: '/goal',           label: 'Learn Skills',  icon: GraduationCap },
-  { path: '/resume',         label: 'Resume Up',     icon: Briefcase },
-  { path: '/csv-organizer',  label: 'CSV Organizer', icon: FileSpreadsheet },
-  { path: '/ss-bucket',      label: 'SS Bucket',     icon: GalleryHorizontalEnd },
-  { path: '/testcase-dashboard', label: 'Jenkins Runner', icon: ListChecks },
-  { path: '/cypress-runner', label: 'Cypress Runner', icon: TerminalSquare },
-];
+import { Settings } from 'lucide-react';
+import { MAIN_NAV } from '../navigation';
 
 const Navbar = () => {
   const location = useLocation();

@@ -5,6 +5,7 @@ import PomodoroTimer from './components/PomodoroTimer';
 import FocusMode from './components/FocusMode';
 import GlobalClock from './components/GlobalClock';
 import { GlobalAlert } from './components/GlobalAlert';
+import CommandPalette from './components/CommandPalette';
 import { PomodoroProvider } from './contexts/PomodoroContext';
 
 // Lazy-loaded per route so navigating to one page doesn't also download
@@ -104,6 +105,7 @@ function App() {
     <div className="app-shell">
       <GlobalAlert />
       <FocusMode />
+      <CommandPalette theme={theme} onToggleTheme={toggleTheme} />
       <Navbar />
 
       <div className="app-main">

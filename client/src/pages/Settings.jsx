@@ -27,6 +27,7 @@ import {
 } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
 import { showAlert, showConfirm } from '../utils/Alerts';
+import { DEFAULT_WIDGET_ORDER, WIDGET_NAMES } from '../dashboardWidgets';
 
 const EMPTY_INTEGRATIONS_FORM = {
   TESTRAIL_URL: '', TESTRAIL_USERNAME: '', TESTRAIL_API_KEY: '', TESTRAIL_PROJECT_ID: '', TESTRAIL_SUITE_ID: '',
@@ -58,7 +59,7 @@ const JobsPillEditor = ({ label, jobs, onChange }) => {
         {jobs.map((j) => (
           <span key={j} style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'var(--bg-primary)', border: '1px solid var(--border-glow)', color: 'var(--text-primary)', padding: '4px 8px', borderRadius: '20px', fontSize: '0.8rem' }}>
             {j}
-            <button type="button" onClick={() => onChange(jobs.filter((x) => x !== j))} title={`Remove ${j}`} style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', display: 'flex' }}>
+            <button type="button" onClick={() => onChange(jobs.filter((x) => x !== j))} title={`Remove ${j}`} aria-label={`Remove ${j}`} style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', display: 'flex' }}>
               <X size={11} />
             </button>
           </span>
@@ -70,7 +71,7 @@ const JobsPillEditor = ({ label, jobs, onChange }) => {
           placeholder="Add job name…"
           style={{ flex: 1, minWidth: '120px', background: 'transparent', border: 'none', color: 'var(--text-primary)', outline: 'none', fontSize: '0.85rem' }}
         />
-        <button type="button" onClick={add} title="Add job" style={{ background: 'var(--bg-primary)', border: '1px solid var(--border-color)', color: 'var(--accent-cyan)', borderRadius: '6px', padding: '4px 6px', cursor: 'pointer', display: 'flex' }}>
+        <button type="button" onClick={add} title="Add job" aria-label="Add job" style={{ background: 'var(--bg-primary)', border: '1px solid var(--border-color)', color: 'var(--accent-cyan)', borderRadius: '6px', padding: '4px 6px', cursor: 'pointer', display: 'flex' }}>
           <Plus size={13} />
         </button>
       </div>
@@ -154,18 +155,14 @@ const Settings = () => {
 
   const [widgetsConfig, setWidgetsConfig] = useState(() => {
     const saved = localStorage.getItem('tr-dash-widgets');
-    if (saved) return JSON.parse(saved);
-    return [
-      { id: 'learning', enabled: true },
-      { id: 'events', enabled: true },
-      { id: 'scratchpad', enabled: true },
-      { id: 'tasks', enabled: true },
-      { id: 'draft', enabled: true },
-      { id: 'status_mini_grid', enabled: true },
-      { id: 'matrix', enabled: true },
-      { id: 'links', enabled: true },
-      { id: 'clocks', enabled: true }
-    ];
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      // Same "append newly-shipped widgets" migration Dashboard.jsx runs,
+      // so a widget doesn't just silently fail to show up in this list.
+      DEFAULT_WIDGET_ORDER.forEach(({ id }) => { if (!parsed.find((w) => w.id === id)) parsed.push({ id, enabled: true }); });
+      return parsed;
+    }
+    return DEFAULT_WIDGET_ORDER;
   });
 
   const toggleWidget = (id) => {
@@ -176,17 +173,7 @@ const Settings = () => {
     localStorage.setItem('tr-dash-widgets', JSON.stringify(newConfig));
   };
 
-  const widgetNames = {
-    learning: 'Active Learning',
-    events: 'Upcoming Events',
-    scratchpad: 'Notebook Scratchpad',
-    tasks: 'Status Checklist',
-    draft: 'Daily Status Draft',
-    status_mini_grid: 'Hydration & Timesheet',
-    matrix: 'Pinned Matrix',
-    links: 'Frequently Visited Links',
-    clocks: 'World Clocks'
-  };
+  const widgetNames = WIDGET_NAMES;
 
   const [shortcuts, setShortcuts] = useState(() => {
     const saved = localStorage.getItem('tr-shortcuts');
@@ -449,7 +436,7 @@ const Settings = () => {
   ];
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '24px', height: '100%' }}>
+    <div className="settings-page" style={{ display: 'flex', flexDirection: 'column', gap: '24px', height: '100%' }}>
 
       {/* Header */}
       <div>
@@ -646,7 +633,21 @@ const Settings = () => {
                   <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: '4px' }}>Customize your quick-jump navigation keys. Uses Ctrl modifier.</p>
                 </div>
               </div>
-              
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '16px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'var(--bg-primary)', padding: '6px 10px', borderRadius: '8px', border: '1px solid var(--border-glow)', flexShrink: 0 }}>
+                  <kbd style={{ fontFamily: 'var(--font-mono)', fontSize: '0.78rem', color: 'var(--accent-cyan)', fontWeight: 'bold' }}>Ctrl</kbd>
+                  <span style={{ color: 'var(--text-muted)' }}>+</span>
+                  <kbd style={{ fontFamily: 'var(--font-mono)', fontSize: '0.78rem', color: 'var(--accent-cyan)', fontWeight: 'bold' }}>K</kbd>
+                </div>
+                <div>
+                  <span style={{ fontSize: '0.88rem', fontWeight: '700', color: 'var(--text-primary)' }}>Command Palette</span>
+                  <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: '2px' }}>
+                    Press <strong>Ctrl+K</strong> (or <strong>Cmd+K</strong> on Mac) from anywhere in the app to jump to any page, switch themes, or open Focus Mode — no need to reach for the mouse.
+                  </p>
+                </div>
+              </div>
+
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: '16px' }}>
                 {shortcuts.map((shortcut, idx) => (
                   <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--bg-tertiary)', padding: '16px', borderRadius: '12px', border: '1px solid var(--border-color)' }}>
@@ -1029,7 +1030,7 @@ const Settings = () => {
                 {/* Restore Card */}
                 <div style={{ background: 'var(--bg-tertiary)', padding: '24px', borderRadius: '16px', border: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', gap: '16px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                    <div style={{ background: 'rgba(239, 68, 68, 0.1)', padding: '12px', borderRadius: '12px', color: 'var(--accent-red)' }}>
+                    <div style={{ background: 'color-mix(in srgb, var(--accent-red) 10%, transparent)', padding: '12px', borderRadius: '12px', color: 'var(--accent-red)' }}>
                       <Upload size={24} />
                     </div>
                     <div>
@@ -1056,9 +1057,22 @@ const Settings = () => {
               </div>
             </div>
           )}
-          
+
         </div>
       </div>
+      <style dangerouslySetInnerHTML={{__html: `
+        /* Every field on this page sets outline:none inline (to remove the
+           default browser ring in favor of a themed one), which an inline
+           style attribute always wins over a stylesheet rule regardless of
+           selector specificity — !important is required here to win back
+           a visible focus ring for keyboard navigation. */
+        .settings-page input:focus-visible,
+        .settings-page select:focus-visible,
+        .settings-page textarea:focus-visible {
+          outline: 2px solid var(--accent-purple) !important;
+          outline-offset: 1px;
+        }
+      `}} />
     </div>
   );
 };

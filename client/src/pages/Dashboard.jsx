@@ -4,11 +4,15 @@ import {
   ChevronLeft, ChevronRight, Clock, Activity, CheckCircle,
   Compass, Droplet, Plus, ClipboardList, Globe, Calendar,
   FileText, Database, Layers, CheckSquare, Sparkles, Terminal, User,
-  Rocket
+  Rocket, FileSpreadsheet, Image, Briefcase, PlayCircle
 } from 'lucide-react';
 import { useToast } from '../contexts/ToastContext';
 import { usePomo } from '../contexts/PomodoroContext';
 import { getAIConfig } from '../utils/ai';
+import { calcCompleteness } from '../utils/resume';
+import { cyrRecentRunStats, latestCaseResultsByPath, latestRunStatusByPath, localRunTally } from './cypress-runner/helpers';
+import { CAT_ORDER, CAT_LABELS, normCat } from './testcase-dashboard/helpers';
+import { DEFAULT_WIDGET_ORDER } from '../dashboardWidgets';
 
 /* ─────────────────────────────────────────────────────────────
    WORLD CLOCK (sub-component)
@@ -35,6 +39,21 @@ const WorldClockItem = ({ label, flag, tz, color }) => {
     </div>
   );
 };
+
+/* Pure relative-time formatter — takes "now" as an argument (rather than
+   calling Date.now() internally) so it stays a deterministic function of
+   its inputs; callers pass the already-ticking `currentTime` clock state. */
+function formatRelativeTime(ms, nowMs) {
+  if (!ms) return '';
+  const diff = Math.max(0, nowMs - ms);
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.floor(hrs / 24);
+  return `${days}d ago`;
+}
 
 /* ─────────────────────────────────────────────────────────────
    WIDGET HEADER (consistent pattern)
@@ -69,6 +88,12 @@ const Dashboard = () => {
   const [quote, setQuote] = useState('Loading daily wisdom...');
   const [quoteLoading, setQuoteLoading] = useState(false);
   const [pinnedMatrix, setPinnedMatrix] = useState(null);
+  const [csvStats, setCsvStats] = useState({ count: 0, lastModified: null });
+  const [ssStats, setSsStats] = useState({ count: 0, groups: 0, lastAdded: null });
+  const [resumeStats, setResumeStats] = useState({ completeness: 0, resumeCount: 0, appCount: 0, activeName: '' });
+  const [cypressStats, setCypressStats] = useState({ recent: [], success: 0, failed: 0, rate: null, lastAt: null, activeNow: false, queueLen: 0 });
+  const [coverageStats, setCoverageStats] = useState({ totalCases: 0, totalFiles: 0, catCounts: {}, commented: 0, unknown: 0 });
+  const [localRunStats, setLocalRunStats] = useState({ tally: { passed: 0, failed: 0, blocked: 0, retest: 0, untested: 0 }, totalCases: 0 });
   const [upcomingEvents, setUpcomingEvents] = useState([]);
   const [quickLinks, setQuickLinks] = useState([]);
   const [tasks, setTasks] = useState([]);
@@ -94,23 +119,12 @@ const Dashboard = () => {
         parsed.splice(miniIdx, 1, { id: 'hydration', enabled: true }, { id: 'timesheet_widget', enabled: true });
       }
       if (!parsed.find(w => w.id === 'profile_widget')) parsed.unshift({ id: 'profile_widget', enabled: true });
+      // Append any widgets shipped after this layout was first saved
+      DEFAULT_WIDGET_ORDER.forEach(({ id }) => { if (!parsed.find((w) => w.id === id)) parsed.push({ id, enabled: true }); });
       localStorage.setItem('tr-dash-widgets', JSON.stringify(parsed));
       return parsed;
     }
-    return [
-      { id: 'profile_widget',   enabled: true },
-      { id: 'tasks',            enabled: true },
-      { id: 'pomodoro_widget',  enabled: true },
-      { id: 'learning',         enabled: true },
-      { id: 'matrix',           enabled: true },
-      { id: 'scratchpad',       enabled: true },
-      { id: 'draft',            enabled: true },
-      { id: 'links',            enabled: true },
-      { id: 'hydration',        enabled: true },
-      { id: 'timesheet_widget', enabled: true },
-      { id: 'events',           enabled: true },
-      { id: 'clocks',           enabled: true },
-    ];
+    return DEFAULT_WIDGET_ORDER;
   });
 
   /* ── Drag handlers ── */
@@ -290,7 +304,95 @@ const Dashboard = () => {
     } catch (e) { console.warn('Failed to fetch pinned matrix:', e); }
   };
 
-  useEffect(() => { loadAllStates(); fetchPinnedMatrix(); }, []);
+  const fetchCsvStats = async () => {
+    try {
+      const res = await fetch('http://localhost:3000/api/csvfiles');
+      if (res.ok) {
+        const data = await res.json();
+        const files = data.files || [];
+        const lastModified = files.reduce((max, f) => Math.max(max, f.mtime || 0), 0);
+        setCsvStats({ count: files.length, lastModified: lastModified || null });
+      }
+    } catch (e) { console.warn('Failed to fetch CSV Organizer stats:', e); }
+  };
+
+  const fetchSsStats = async () => {
+    try {
+      const res = await fetch('http://localhost:3000/api/screenshots/meta');
+      if (res.ok) {
+        const data = await res.json();
+        const groups = data.groups || [];
+        let count = 0, lastAdded = 0;
+        groups.forEach((g) => (g.screenshots || []).forEach((s) => {
+          count++;
+          if (s.timestamp > lastAdded) lastAdded = s.timestamp;
+        }));
+        setSsStats({ count, groups: groups.length, lastAdded: lastAdded || null });
+      }
+    } catch (e) { console.warn('Failed to fetch SS Bucket stats:', e); }
+  };
+
+  const loadResumeStats = () => {
+    try {
+      const resumes = JSON.parse(localStorage.getItem('tr-resumes-list-v2') || '[]');
+      const apps = JSON.parse(localStorage.getItem('tr-resume-apps') || '[]');
+      const active = Array.isArray(resumes) ? resumes[0] : null;
+      setResumeStats({
+        completeness: active?.data ? calcCompleteness(active.data) : 0,
+        resumeCount: Array.isArray(resumes) ? resumes.length : 0,
+        appCount: Array.isArray(apps) ? apps.length : 0,
+        activeName: active?.name || '',
+      });
+    } catch (e) { console.warn('Failed to load resume stats:', e); }
+  };
+
+  // Feeds three widgets (Cypress Runs, Test Coverage, Local Run Status) —
+  // all three mirror cards already on the Cypress Runner page — from one
+  // shared fetch of /api/cypress/state, rather than each widget re-fetching
+  // the same run history independently.
+  const fetchCypressWidgetsData = async () => {
+    try {
+      const [stateRes, manifestRes, manualRes] = await Promise.all([
+        fetch('http://localhost:3000/api/cypress/state'),
+        fetch('http://localhost:3000/api/testcases/data'),
+        fetch('http://localhost:3000/api/testcases/manual-status'),
+      ]);
+      if (!stateRes.ok) return;
+      const state = await stateRes.json();
+      setCypressStats({
+        ...cyrRecentRunStats(state.history, 20),
+        activeNow: !!state.active,
+        queueLen: (state.queue || []).length,
+      });
+
+      if (!manifestRes.ok) return;
+      const manifest = await manifestRes.json();
+      const manual = manualRes.ok ? await manualRes.json() : {};
+
+      const commented = (manifest.rows || []).filter((r) => r.commented).length;
+      setCoverageStats({
+        totalCases: manifest.totalCases || 0,
+        totalFiles: manifest.totalFiles || 0,
+        catCounts: manifest.catCounts || {},
+        commented,
+        unknown: (manifest.unknownIds || []).length,
+      });
+
+      const caseResultsByPath = latestCaseResultsByPath(state.history);
+      const runStatusByPath = latestRunStatusByPath(state.history);
+      const tally = localRunTally(manifest.rows, caseResultsByPath, runStatusByPath, manual);
+      setLocalRunStats({ tally, totalCases: manifest.totalCases || 0 });
+    } catch (e) { console.warn('Failed to fetch Cypress Runner widget data:', e); }
+  };
+
+  useEffect(() => {
+    loadAllStates();
+    fetchPinnedMatrix();
+    fetchCsvStats();
+    fetchSsStats();
+    loadResumeStats();
+    fetchCypressWidgetsData();
+  }, []);
 
   /* ── Actions ── */
   const handleToggleTask = (id) => {
@@ -351,6 +453,8 @@ const Dashboard = () => {
   const untested = pinnedMatrix?.statusCounts?.UNTESTED || 0;
   const total    = passed + failed + untested;
   const passPct  = total > 0 ? Math.round((passed / total) * 100) : 0;
+
+  const CAT_TIER_COLOR = { OFFLINE: 'var(--accent-cyan)', ONLINE: 'var(--accent-purple)', E2E: 'var(--accent-pink)' };
 
   const widgetsMap = {
 
@@ -486,6 +590,7 @@ const Dashboard = () => {
           onChange={e => { setScratchpadContent(e.target.value); localStorage.setItem('tr-dash-scratchpad', e.target.value); }}
           placeholder="Jot down quick thoughts, commands, or snippets..."
         />
+        <div className="wgt-textarea-meta">{scratchpadContent.length} characters</div>
       </div>
     ),
 
@@ -506,7 +611,7 @@ const Dashboard = () => {
                 if (due) try { const d = new Date(due); if (!isNaN(d)) due = d.toLocaleDateString('en-US',{month:'short',day:'numeric'}); } catch (e) { console.warn('Failed to format task deadline:', e); }
                 return (
                   <div key={task.id} className="task-item" onClick={() => handleToggleTask(task.id)}>
-                    <div className="task-check" />
+                    <div className={`task-check${task.priority ? ` task-check--${task.priority}` : ''}`} title={task.priority ? `${task.priority} priority` : undefined} />
                     <div className="task-body">
                       <span className="task-name">{task.title}</span>
                       {due && <span className="task-due"><Clock size={9} /> {due}</span>}
@@ -536,6 +641,7 @@ const Dashboard = () => {
           onChange={e => { setStatusDraft(e.target.value); localStorage.setItem('tr-status-draft', e.target.value); }}
           placeholder="What did you work on today? Draft it here before your 5 PM standup..."
         />
+        <div className="wgt-textarea-meta">{statusDraft.length} characters</div>
         <button onClick={() => navigate('/status')} className="glow-btn" style={{ width:'100%', justifyContent:'center', background:'var(--bg-tertiary)', border:'1px solid var(--border-color)', color:'var(--text-secondary)', boxShadow:'none' }}>
           <Activity size={13} /> Open Daily Status
         </button>
@@ -693,6 +799,228 @@ const Dashboard = () => {
         </div>
       </div>
     ),
+
+    /* ── CSV Organizer ── */
+    csv_organizer_widget: (
+      <div className="glass-panel wgt wgt--cyan">
+        <WgtHeader icon={FileSpreadsheet} iconColor="var(--accent-cyan)" title="CSV Organizer"
+          badge={csvStats.count > 0 ? `${csvStats.count} files` : null} badgeVariant="cyan" />
+        {csvStats.count === 0 ? (
+          <div className="wgt-empty">
+            <div className="wgt-empty-icon" style={{ background:'rgba(91,196,245,0.1)', color:'var(--accent-cyan)' }}><FileSpreadsheet size={18} /></div>
+            <span className="wgt-empty-title">No CSV files yet</span>
+            <span className="wgt-empty-sub">Import or create one to get started</span>
+          </div>
+        ) : (
+          <div className="wgt-stat-row">
+            <span className="wgt-stat-big" style={{ color:'var(--accent-cyan)' }}>{csvStats.count}</span>
+            <div style={{ flex:1, minWidth:0 }}>
+              <div style={{ fontSize:'0.78rem', color:'var(--text-primary)', fontWeight:600 }}>saved spreadsheet{csvStats.count === 1 ? '' : 's'}</div>
+              {csvStats.lastModified && <div className="wgt-meta-line">Last edited {formatRelativeTime(csvStats.lastModified, currentTime.getTime())}</div>}
+            </div>
+          </div>
+        )}
+        <button onClick={() => navigate('/csv-organizer')} className="glow-btn" style={{ width:'100%', justifyContent:'center', background:'var(--bg-tertiary)', border:'1px solid var(--border-color)', color:'var(--text-secondary)', boxShadow:'none' }}>
+          Open CSV Organizer
+        </button>
+      </div>
+    ),
+
+    /* ── Screenshot Vault (SS Bucket) ── */
+    ss_bucket_widget: (
+      <div className="glass-panel wgt wgt--pink">
+        <WgtHeader icon={Image} iconColor="var(--accent-pink)" title="Screenshot Vault"
+          badge={ssStats.count > 0 ? `${ssStats.count} shots` : null} />
+        {ssStats.count === 0 ? (
+          <div className="wgt-empty">
+            <div className="wgt-empty-icon" style={{ background:'rgba(232,83,138,0.1)', color:'var(--accent-pink)' }}><Image size={18} /></div>
+            <span className="wgt-empty-title">No screenshots yet</span>
+            <span className="wgt-empty-sub">Paste an image in SS Bucket to save one</span>
+          </div>
+        ) : (
+          <>
+            <div style={{ display:'flex', gap:'8px' }}>
+              <div className="wgt-mini-stat">
+                <div className="wgt-mini-stat-val" style={{ color:'var(--accent-pink)' }}>{ssStats.count}</div>
+                <div className="wgt-mini-stat-label">Screenshots</div>
+              </div>
+              <div className="wgt-mini-stat">
+                <div className="wgt-mini-stat-val">{ssStats.groups}</div>
+                <div className="wgt-mini-stat-label">Folders</div>
+              </div>
+            </div>
+            {ssStats.lastAdded && <div className="wgt-meta-line">Last added {formatRelativeTime(ssStats.lastAdded, currentTime.getTime())}</div>}
+          </>
+        )}
+        <button onClick={() => navigate('/ss-bucket')} className="glow-btn" style={{ width:'100%', justifyContent:'center', background:'var(--bg-tertiary)', border:'1px solid var(--border-color)', color:'var(--text-secondary)', boxShadow:'none' }}>
+          Open Screenshot Vault
+        </button>
+      </div>
+    ),
+
+    /* ── Resume Tracker ── */
+    resume_widget: (
+      <div className="glass-panel wgt wgt--orange">
+        <WgtHeader icon={Briefcase} iconColor="var(--accent-orange)" title="Resume Tracker"
+          badge={resumeStats.resumeCount > 0 ? `${resumeStats.completeness}%` : null} />
+        {resumeStats.resumeCount === 0 ? (
+          <div className="wgt-empty">
+            <div className="wgt-empty-icon" style={{ background:'rgba(240,120,48,0.1)', color:'var(--accent-orange)' }}><Briefcase size={18} /></div>
+            <span className="wgt-empty-title">No resume yet</span>
+            <span className="wgt-empty-sub">Build one in Resume Up</span>
+          </div>
+        ) : (
+          <>
+            <p className="wgt-subtitle" style={{ marginTop: 0 }}>{resumeStats.activeName}</p>
+            <div className="prog-bar"><div className="prog-fill" style={{ width:`${resumeStats.completeness}%`, background:'linear-gradient(90deg, var(--accent-orange), var(--accent-yellow))' }} /></div>
+            <div style={{ display:'flex', gap:'8px' }}>
+              <div className="wgt-mini-stat">
+                <div className="wgt-mini-stat-val" style={{ color:'var(--accent-orange)' }}>{resumeStats.resumeCount}</div>
+                <div className="wgt-mini-stat-label">Resumes</div>
+              </div>
+              <div className="wgt-mini-stat">
+                <div className="wgt-mini-stat-val">{resumeStats.appCount}</div>
+                <div className="wgt-mini-stat-label">Applications</div>
+              </div>
+            </div>
+          </>
+        )}
+        <button onClick={() => navigate('/resume')} className="glow-btn" style={{ width:'100%', justifyContent:'center', background:'var(--bg-tertiary)', border:'1px solid var(--border-color)', color:'var(--text-secondary)', boxShadow:'none' }}>
+          Open Resume Up
+        </button>
+      </div>
+    ),
+
+    /* ── Cypress Runs ── */
+    cypress_widget: (
+      <div className="glass-panel wgt wgt--green">
+        <WgtHeader icon={PlayCircle} iconColor="var(--accent-green)" title="Cypress Runs"
+          badge={cypressStats.rate != null ? `${cypressStats.rate}% pass` : null} badgeVariant={cypressStats.rate != null && cypressStats.rate >= 80 ? 'green' : null} />
+        {(cypressStats.activeNow || cypressStats.queueLen > 0) && (
+          <div className="punch-status" style={{ padding: '10px 14px' }}>
+            <div className="punch-dot punch-dot--on" />
+            <span className="punch-state-label">{cypressStats.activeNow ? 'Running' : 'Queued'}</span>
+            {cypressStats.queueLen > 0 && <span className="punch-time" style={{ fontSize: '0.72rem' }}>{cypressStats.queueLen} queued</span>}
+          </div>
+        )}
+        {cypressStats.recent.length === 0 ? (
+          <div className="wgt-empty">
+            <div className="wgt-empty-icon" style={{ background:'rgba(45,232,134,0.1)', color:'var(--accent-green)' }}><PlayCircle size={18} /></div>
+            <span className="wgt-empty-title">No runs yet</span>
+            <span className="wgt-empty-sub">Trigger a run in Cypress Runner</span>
+          </div>
+        ) : (
+          <>
+            <div className="wgt-stat-row">
+              <span className="wgt-stat-big" style={{ color:'var(--accent-green)' }}>{cypressStats.rate}%</span>
+              <div style={{ flex:1, minWidth:0 }}>
+                <div style={{ fontSize:'0.78rem', color:'var(--text-primary)', fontWeight:600 }}>{cypressStats.success} passed · {cypressStats.failed} failed</div>
+                {cypressStats.lastAt && <div className="wgt-meta-line">Last run {formatRelativeTime(cypressStats.lastAt, currentTime.getTime())}</div>}
+              </div>
+            </div>
+            <div className="run-trend-strip">
+              {cypressStats.recent.slice(0, 20).reverse().map((h, i) => (
+                <span key={i} className={`run-trend-seg ${h.status === 'passed' ? 'is-pass' : (h.status === 'failed' || h.status === 'killed') ? 'is-fail' : 'is-other'}`}
+                  title={`${h.specPath || 'all specs'} — ${h.status}`} />
+              ))}
+            </div>
+          </>
+        )}
+        <button onClick={() => navigate('/cypress-runner')} className="glow-btn" style={{ width:'100%', justifyContent:'center', background:'var(--bg-tertiary)', border:'1px solid var(--border-color)', color:'var(--text-secondary)', boxShadow:'none' }}>
+          Open Cypress Runner
+        </button>
+      </div>
+    ),
+
+    /* ── Test Coverage (mirrors Cypress Runner's "Coverage by tier" card) ── */
+    cypress_coverage_widget: (
+      <div className="glass-panel wgt wgt--purple">
+        <WgtHeader icon={Layers} iconColor="var(--accent-purple)" title="Test Coverage"
+          badge={coverageStats.totalCases > 0 ? `${coverageStats.totalCases} cases` : null} />
+        {coverageStats.totalCases === 0 ? (
+          <div className="wgt-empty">
+            <div className="wgt-empty-icon" style={{ background:'rgba(232,168,37,0.1)', color:'var(--accent-purple)' }}><Layers size={18} /></div>
+            <span className="wgt-empty-title">No manifest configured</span>
+            <span className="wgt-empty-sub">Set up the E2E manifest in Cypress Runner</span>
+          </div>
+        ) : (
+          <>
+            <div className="cov-tier-bar">
+              {CAT_ORDER.map((cat) => {
+                let count = 0;
+                Object.keys(coverageStats.catCounts).forEach((k) => { if (normCat(k) === cat) count += coverageStats.catCounts[k]; });
+                const pct = coverageStats.totalCases ? (count / coverageStats.totalCases) * 100 : 0;
+                if (pct === 0) return null;
+                return <div key={cat} className="cov-tier-seg" style={{ background: CAT_TIER_COLOR[cat], flexBasis: `${pct}%` }} />;
+              })}
+            </div>
+            <div style={{ display:'flex', gap:'8px' }}>
+              {CAT_ORDER.map((cat) => {
+                let count = 0;
+                Object.keys(coverageStats.catCounts).forEach((k) => { if (normCat(k) === cat) count += coverageStats.catCounts[k]; });
+                return (
+                  <div key={cat} className="wgt-mini-stat">
+                    <div className="wgt-mini-stat-val" style={{ color: CAT_TIER_COLOR[cat] }}>{count}</div>
+                    <div className="wgt-mini-stat-label">{CAT_LABELS[cat]}</div>
+                  </div>
+                );
+              })}
+            </div>
+            <div className="wgt-meta-line">
+              {coverageStats.totalFiles} files{coverageStats.unknown > 0 ? ` · ${coverageStats.unknown} not in TestRail` : ''}
+            </div>
+          </>
+        )}
+        <button onClick={() => navigate('/cypress-runner')} className="glow-btn" style={{ width:'100%', justifyContent:'center', background:'var(--bg-tertiary)', border:'1px solid var(--border-color)', color:'var(--text-secondary)', boxShadow:'none' }}>
+          Open Cypress Runner
+        </button>
+      </div>
+    ),
+
+    /* ── Local Run Status (mirrors Cypress Runner's "Local run status" card) ── */
+    cypress_local_status_widget: (() => {
+      const t = localRunStats.tally;
+      const run = t.passed + t.failed + t.blocked + t.retest;
+      return (
+        <div className="glass-panel wgt wgt--cyan">
+          <WgtHeader icon={CheckSquare} iconColor="var(--accent-cyan)" title="Local Run Status"
+            badge={localRunStats.totalCases > 0 ? `${run}/${localRunStats.totalCases} run` : null} badgeVariant="cyan" />
+          {localRunStats.totalCases === 0 ? (
+            <div className="wgt-empty">
+              <div className="wgt-empty-icon" style={{ background:'rgba(91,196,245,0.1)', color:'var(--accent-cyan)' }}><CheckSquare size={18} /></div>
+              <span className="wgt-empty-title">No local results yet</span>
+              <span className="wgt-empty-sub">Run some specs in Cypress Runner</span>
+            </div>
+          ) : (
+            <div className="matrix-stats" style={{ gridTemplateColumns: 'repeat(5, 1fr)' }}>
+              <div className="matrix-stat" style={{ background:'rgba(45,232,134,0.08)', borderColor:'rgba(45,232,134,0.15)' }}>
+                <div className="matrix-stat-val" style={{ color:'var(--accent-green)', fontSize:'1rem' }}>{t.passed}</div>
+                <div className="matrix-stat-label">Passed</div>
+              </div>
+              <div className="matrix-stat" style={{ background:'rgba(240,80,80,0.08)', borderColor:'rgba(240,80,80,0.15)' }}>
+                <div className="matrix-stat-val" style={{ color:'var(--accent-red)', fontSize:'1rem' }}>{t.failed}</div>
+                <div className="matrix-stat-label">Failed</div>
+              </div>
+              <div className="matrix-stat" style={{ background:'rgba(245,200,66,0.08)', borderColor:'rgba(245,200,66,0.15)' }}>
+                <div className="matrix-stat-val" style={{ color:'var(--accent-yellow)', fontSize:'1rem' }}>{t.blocked}</div>
+                <div className="matrix-stat-label">Blocked</div>
+              </div>
+              <div className="matrix-stat" style={{ background:'rgba(232,83,138,0.08)', borderColor:'rgba(232,83,138,0.15)' }}>
+                <div className="matrix-stat-val" style={{ color:'var(--accent-pink)', fontSize:'1rem' }}>{t.retest}</div>
+                <div className="matrix-stat-label">Retest</div>
+              </div>
+              <div className="matrix-stat" style={{ background:'rgba(255,255,255,0.03)', borderColor:'var(--border-color)' }}>
+                <div className="matrix-stat-val" style={{ color:'var(--text-muted)', fontSize:'1rem' }}>{t.untested}</div>
+                <div className="matrix-stat-label">Untested</div>
+              </div>
+            </div>
+          )}
+          <button onClick={() => navigate('/cypress-runner')} className="glow-btn" style={{ width:'100%', justifyContent:'center', background:'var(--bg-tertiary)', border:'1px solid var(--border-color)', color:'var(--text-secondary)', boxShadow:'none' }}>
+            Open Cypress Runner
+          </button>
+        </div>
+      );
+    })(),
   };
 
   /* ─────────────────────────────────────────────────────────────

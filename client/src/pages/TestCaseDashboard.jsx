@@ -656,16 +656,16 @@ const TestCaseDashboard = () => {
           </select>
           <span className="tcd-toolbar-divider" />
           <div className="tcd-btn-group">
-            <button className="tcd-btn" title="Expand all" onClick={expandAll}><ChevronsDown size={14} /></button>
-            <button className="tcd-btn" title="Collapse all" onClick={collapseAll}><ChevronsUp size={14} /></button>
-            <button className="tcd-btn" title="Refresh now" onClick={fetchData}><RefreshCw size={14} /></button>
+            <button className="tcd-btn" title="Expand all" aria-label="Expand all" onClick={expandAll}><ChevronsDown size={14} /></button>
+            <button className="tcd-btn" title="Collapse all" aria-label="Collapse all" onClick={collapseAll}><ChevronsUp size={14} /></button>
+            <button className="tcd-btn" title="Refresh now" aria-label="Refresh now" onClick={fetchData}><RefreshCw size={14} /></button>
           </div>
           <div className="tcd-btn-group">
             <button className="tcd-btn" title="Copy visible file paths" onClick={copyVisible}><Copy size={14} /> Copy</button>
             <button className="tcd-btn" title="Export filtered cases as CSV" onClick={exportCsv}><Download size={14} /> CSV</button>
           </div>
           <button className="tcd-btn primary" onClick={() => setModal({ type: 'addManifest' })}><FilePlus2 size={14} /> Add to manifest</button>
-          <button className="tcd-btn" title="TestRail, Jenkins &amp; Telegram credentials (Settings → Integrations)" onClick={() => navigate('/settings?tab=integrations')}><SettingsIcon size={14} /></button>
+          <button className="tcd-btn" title="TestRail, Jenkins &amp; Telegram credentials (Settings → Integrations)" aria-label="TestRail, Jenkins &amp; Telegram credentials (Settings → Integrations)" onClick={() => navigate('/settings?tab=integrations')}><SettingsIcon size={14} /></button>
         </div>
 
         <div className="tcd-toolbar-row">
@@ -705,7 +705,7 @@ const TestCaseDashboard = () => {
           {presets.map((p) => (
             <span key={p.id} className="tcd-preset-chip" onClick={() => applyPreset(p)} title="Apply this preset">
               {p.name}
-              <button type="button" onClick={(e) => { e.stopPropagation(); removePreset(p.id); }} title="Remove preset"><X size={11} /></button>
+              <button type="button" onClick={(e) => { e.stopPropagation(); removePreset(p.id); }} title="Remove preset" aria-label="Remove preset"><X size={11} /></button>
             </span>
           ))}
         </div>
