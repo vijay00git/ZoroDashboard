@@ -499,7 +499,20 @@ app.get('/api/ai/models', async (req, res) => {
     if (!key) return res.status(400).json({ error: 'Missing key' });
 
     if (provider === 'groq') {
-        return res.json({ models: GROQ_MODELS });
+        try {
+            const response = await fetch('https://api.groq.com/openai/v1/models', {
+                headers: { 'Authorization': `Bearer ${key}` }
+            });
+            const data = await response.json();
+            if (!response.ok) return res.status(response.status).json({ error: data?.error?.message || `Groq API error ${response.status}` });
+            const models = (data.data || [])
+                .filter(m => !m.id.includes('whisper') && !m.id.includes('tts') && !m.id.includes('guard'))
+                .map(m => ({ id: m.id, displayName: m.id }));
+            return res.json({ models: models.length ? models : GROQ_MODELS });
+        } catch (err) {
+            console.warn('Groq live model list failed, falling back to static list:', err.message);
+            return res.json({ models: GROQ_MODELS });
+        }
     }
 
     // Gemini

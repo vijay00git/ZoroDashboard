@@ -23,7 +23,9 @@ import {
   X,
   CheckCircle2,
   XCircle,
-  Loader2
+  Loader2,
+  Zap,
+  Star
 } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
 import { showAlert, showConfirm } from '../utils/Alerts';
@@ -96,6 +98,33 @@ const ConnTestRow = ({ label, testing, result }) => {
   );
 };
 
+const ModelTestRow = ({ result, isFastest, onUse }) => {
+  let icon = <Loader2 size={13} className="spinner" />;
+  let color = 'var(--text-muted)';
+  if (result.status === 'ok') { icon = <CheckCircle2 size={13} />; color = 'var(--accent-green)'; }
+  else if (result.status === 'fail') { icon = <XCircle size={13} />; color = 'var(--accent-red)'; }
+
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 10px', borderRadius: '8px', background: isFastest ? 'color-mix(in srgb, var(--accent-green) 8%, transparent)' : 'transparent' }}>
+      <span style={{ color, display: 'flex', flexShrink: 0 }}>{icon}</span>
+      <span style={{ flex: 1, minWidth: 0, fontSize: '0.85rem', fontWeight: '600', color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        {result.displayName || result.id}
+      </span>
+      {isFastest && <Star size={12} style={{ color: 'var(--accent-green)', flexShrink: 0 }} />}
+      <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', flexShrink: 0, minWidth: '110px', textAlign: 'right' }}>
+        {result.status === 'testing' && 'Testing…'}
+        {result.status === 'ok' && `${result.latencyMs}ms`}
+        {result.status === 'fail' && (result.error || 'Failed').slice(0, 60)}
+      </span>
+      {result.status === 'ok' && (
+        <button type="button" onClick={onUse} style={{ background: 'var(--bg-primary)', border: '1px solid var(--border-glow)', color: 'var(--accent-cyan)', padding: '4px 10px', borderRadius: '6px', cursor: 'pointer', fontSize: '0.75rem', fontWeight: '600', flexShrink: 0 }}>
+          Use
+        </button>
+      )}
+    </div>
+  );
+};
+
 const Settings = () => {
   const [searchParams] = useSearchParams();
   const [activeTab, setActiveTab] = useState(() => searchParams.get('tab') || 'profile');
@@ -139,6 +168,106 @@ const Settings = () => {
     } finally {
       setFetchingModels(false);
     }
+  };
+
+  const [availableGroqModels, setAvailableGroqModels] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('zoro-groq-models-list')) || null; } catch { return null; }
+  });
+  const [fetchingGroqModels, setFetchingGroqModels] = useState(false);
+
+  const handleFetchGroqModels = async () => {
+    if (!groqKey) {
+      showAlert('Please enter a Groq API key first to pull models.');
+      return;
+    }
+    setFetchingGroqModels(true);
+    try {
+      const res = await fetch(`http://localhost:3000/api/ai/models?key=${groqKey}&provider=groq`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to fetch models');
+      setAvailableGroqModels(data.models);
+      localStorage.setItem('zoro-groq-models-list', JSON.stringify(data.models));
+      showAlert(`Successfully fetched ${data.models.length} models!`);
+    } catch (e) {
+      showAlert('Error fetching models: ' + e.message);
+    } finally {
+      setFetchingGroqModels(false);
+    }
+  };
+
+  // ── Model Tester — pulls every model for each configured provider and
+  // fires a tiny prompt at each one so you can see which are actually usable
+  // right now (free-tier models get deprecated / rate-limited often).
+  const [modelTestRunning, setModelTestRunning] = useState(false);
+  const [modelTestResults, setModelTestResults] = useState([]);
+
+  const testOneModel = async (provider, key, m) => {
+    setModelTestResults(prev => prev.map(r => (r.provider === provider && r.id === m.id) ? { ...r, status: 'testing' } : r));
+    const start = performance.now();
+    try {
+      const res = await fetch('http://localhost:3000/api/ai/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          key, model: m.id, provider,
+          system: 'You are a connectivity test. Respond with only the single word OK, nothing else.',
+          prompt: 'Reply with exactly one word: OK'
+        })
+      });
+      const data = await res.json();
+      const latencyMs = Math.round(performance.now() - start);
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      setModelTestResults(prev => prev.map(r => (r.provider === provider && r.id === m.id) ? { ...r, status: 'ok', latencyMs } : r));
+    } catch (err) {
+      const latencyMs = Math.round(performance.now() - start);
+      setModelTestResults(prev => prev.map(r => (r.provider === provider && r.id === m.id) ? { ...r, status: 'fail', latencyMs, error: err.message } : r));
+    }
+  };
+
+  const handleRunModelTests = async () => {
+    const providersToTest = [];
+    if (apiKey) providersToTest.push({ provider: 'gemini', key: apiKey });
+    if (groqKey) providersToTest.push({ provider: 'groq', key: groqKey });
+    if (!providersToTest.length) {
+      showAlert('Add an API key for Gemini and/or Groq above first, then run the tester.');
+      return;
+    }
+
+    setModelTestRunning(true);
+    setModelTestResults([]);
+
+    for (const { provider, key } of providersToTest) {
+      try {
+        const res = await fetch(`http://localhost:3000/api/ai/models?key=${encodeURIComponent(key)}&provider=${provider}`);
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Failed to fetch models');
+        const models = data.models || [];
+        setModelTestResults(prev => [...prev, ...models.map(m => ({ ...m, provider, status: 'pending' }))]);
+
+        for (const m of models) {
+          await testOneModel(provider, key, m);
+          await new Promise(r => setTimeout(r, 300)); // be gentle on free-tier rate limits
+        }
+      } catch (err) {
+        await showAlert(`Couldn't pull ${provider === 'groq' ? 'Groq' : 'Gemini'} models: ${err.message}`);
+      }
+    }
+
+    setModelTestRunning(false);
+  };
+
+  const handleUseModel = (provider, modelId) => {
+    if (provider === 'groq') {
+      setGroqModel(modelId);
+      localStorage.setItem('zoro-groq-model', modelId);
+    } else {
+      setModel(modelId);
+      localStorage.setItem('zoro-ai-model', modelId);
+    }
+    setAiProvider(provider);
+    localStorage.setItem('zoro-ai-provider', provider);
+    setSaveStatus(`Now using ${modelId} (${provider === 'groq' ? 'Groq' : 'Gemini'}).`);
+    setTimeout(() => setSaveStatus(''), 3000);
   };
 
   // Profile State
@@ -802,15 +931,32 @@ const Settings = () => {
                     </div>
 
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                      <label style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', fontWeight: '600' }}>Model</label>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <label style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', fontWeight: '600' }}>Model</label>
+                        <button
+                          type="button"
+                          onClick={handleFetchGroqModels}
+                          disabled={fetchingGroqModels}
+                          style={{ background: 'var(--bg-primary)', border: '1px solid var(--border-glow)', color: '#f97316', padding: '4px 12px', borderRadius: '6px', cursor: 'pointer', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '6px' }}
+                        >
+                          {fetchingGroqModels ? <RefreshCw size={14} className="spinner" /> : <Download size={14} />}
+                          Pull Models
+                        </button>
+                      </div>
                       <select
                         value={groqModel}
                         onChange={(e) => setGroqModel(e.target.value)}
                         style={{ background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', padding: '14px 16px', borderRadius: '10px', outline: 'none', fontSize: '0.95rem', fontWeight: '500' }}
                       >
-                        {GROQ_MODELS.map(m => (
-                          <option key={m.id} value={m.id}>{m.label}</option>
-                        ))}
+                        {availableGroqModels ? (
+                          availableGroqModels.map(m => (
+                            <option key={m.id} value={m.id}>{m.displayName || m.id}</option>
+                          ))
+                        ) : (
+                          GROQ_MODELS.map(m => (
+                            <option key={m.id} value={m.id}>{m.label}</option>
+                          ))
+                        )}
                       </select>
                     </div>
                   </>
@@ -820,6 +966,54 @@ const Settings = () => {
                   <Check size={18} /> Save AI Settings
                 </button>
               </form>
+
+              {/* ── Model Tester ── */}
+              <div style={{ borderTop: '1px solid var(--border-color)', paddingTop: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
+                  <div>
+                    <h4 style={{ fontSize: '1rem', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <Zap size={16} style={{ color: '#fbbf24' }} /> Model Tester
+                    </h4>
+                    <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: '4px', maxWidth: '520px' }}>
+                      Pulls every model available for whichever provider(s) have a key saved above, sends each one a tiny test prompt, and shows which are actually working right now.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleRunModelTests}
+                    disabled={modelTestRunning}
+                    style={{ background: 'var(--bg-primary)', border: '1px solid var(--border-glow)', color: '#fbbf24', padding: '10px 18px', borderRadius: '10px', cursor: modelTestRunning ? 'default' : 'pointer', fontSize: '0.85rem', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}
+                  >
+                    {modelTestRunning ? <Loader2 size={16} className="spinner" /> : <Zap size={16} />}
+                    {modelTestRunning ? 'Testing models…' : 'Pull & Test Models'}
+                  </button>
+                </div>
+
+                {modelTestResults.length > 0 && (
+                  ['gemini', 'groq'].map(provider => {
+                    const rows = modelTestResults.filter(r => r.provider === provider);
+                    if (!rows.length) return null;
+                    const fastestId = rows
+                      .filter(r => r.status === 'ok')
+                      .sort((a, b) => a.latencyMs - b.latencyMs)[0]?.id;
+                    return (
+                      <div key={provider} style={{ background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)', borderRadius: '10px', padding: '8px' }}>
+                        <div style={{ fontSize: '0.78rem', fontWeight: '700', color: 'var(--text-muted)', padding: '6px 10px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                          {provider === 'groq' ? '⚡ Groq' : '✦ Gemini'} — {rows.filter(r => r.status === 'ok').length}/{rows.length} working
+                        </div>
+                        {rows.map(r => (
+                          <ModelTestRow
+                            key={`${provider}:${r.id}`}
+                            result={r}
+                            isFastest={r.id === fastestId}
+                            onUse={() => handleUseModel(provider, r.id)}
+                          />
+                        ))}
+                      </div>
+                    );
+                  })
+                )}
+              </div>
             </div>
           )}
 
