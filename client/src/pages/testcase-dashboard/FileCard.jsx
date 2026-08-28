@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Copy, Check, Play, ChevronRight, StickyNote, ExternalLink, UploadCloud, Tag as TagIcon, X, Zap } from 'lucide-react';
+import { Copy, Check, Play, ChevronRight, StickyNote, ExternalLink, UploadCloud, Tag as TagIcon, X, Zap, Bug } from 'lucide-react';
 import { splitPath, numericId, statusClass, tallyFor, trendDotClass, isFlakyTrend, formatDateTime, copyText, highlightParts, testRailCaseUrl, tagColorClass } from './helpers';
 import { MANUAL_STATUS_TO_ID } from '../cypress-runner/helpers';
 import SelectAllCasesCheckbox from './SelectAllCasesCheckbox';
@@ -25,6 +25,7 @@ const FileCard = ({
   notes, selectable, selected, onToggleSelect, onRun, canRun, onOpenNote, showToast, testrailUrl,
   runLabel = 'Run on Jenkins', onSync, runCaseResults, manualStatus, onSetManualStatus,
   tags, onOpenTagModal, onRemoveTag, selectedCases, onToggleCaseSelect, onSelectManyCases,
+  bugLinks, onEditBugLink, onClearBugLink,
 }) => {
   const [copied, setCopied] = useState(false);
   const sp = splitPath(path);
@@ -156,6 +157,7 @@ const FileCard = ({
                 const caseVal = runCaseResults ? runCaseResults[numericId(r.id)] : undefined;
                 const manual = manualStatus ? manualStatus[r.id] : undefined;
                 const caseTags = (tags && tags[r.id]) || [];
+                const bugLink = bugLinks ? bugLinks[r.id] : undefined;
                 return (
                   <div key={`${r.id}-${r.title}`} className={`tcd-tc-row${r.commented ? ' is-commented' : ''}`}>
                     <div className="tcd-tc-id">
@@ -194,6 +196,36 @@ const FileCard = ({
                           )}
                         </span>
                       ))}
+                      {bugLink && (
+                        <span
+                          className="tcd-bug-chip"
+                          title={`Linked ${formatDateTime(bugLink.updatedAt)} — click to edit`}
+                          onClick={() => onEditBugLink(r.id)}
+                        >
+                          <Bug size={10} />{bugLink.bugId}
+                          {onClearBugLink && (
+                            <button
+                              type="button"
+                              onClick={(e) => { e.stopPropagation(); onClearBugLink(r.id); }}
+                              title="Unlink bug"
+                              aria-label="Unlink bug"
+                            >
+                              <X size={10} />
+                            </button>
+                          )}
+                        </span>
+                      )}
+                      {onEditBugLink && !bugLink && (
+                        <button
+                          type="button"
+                          className="tcd-icon-btn tcd-bug-btn"
+                          title="Link a bug ID (e.g. EVB-1234)"
+                          aria-label="Link a bug ID"
+                          onClick={() => onEditBugLink(r.id)}
+                        >
+                          <Bug size={13} />
+                        </button>
+                      )}
                       {onOpenNote && (
                         <button
                           type="button"

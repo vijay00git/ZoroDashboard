@@ -1087,6 +1087,7 @@ const INTEGRATIONS_CONFIG_PATH = path.join(SETTINGS_DIR, 'integrations.local.jso
 const TCD_NOTES_PATH = path.join(TCD_DIR, 'notes.json');
 const TCD_MANUAL_STATUS_PATH = path.join(TCD_DIR, 'manual-status.json');
 const TCD_TAGS_PATH = path.join(TCD_DIR, 'tags.json');
+const TCD_BUG_LINKS_PATH = path.join(TCD_DIR, 'bug-links.json');
 const TCD_HISTORY_PATH = path.join(TCD_DIR, 'job-history.json');
 const TCD_QUEUE_STATE_PATH = path.join(TCD_DIR, 'queue-state.json');
 const TCD_MANIFEST_PATH = process.env.TCD_MANIFEST_PATH || path.join(os.homedir(), '.claude', 'ic-tokyo-file-manifest.md');
@@ -1148,6 +1149,28 @@ function tcdSaveTags() {
         writeJsonAtomic(TCD_TAGS_PATH, tcdTagsCache || {});
     } catch (e) {
         console.error('[testcases] failed to save tags:', e.message);
+    }
+}
+
+// Bug-tracker ticket linked to a case (e.g. "EVB-1234") — keyed the same way
+// notes/manual-status/tags are. Distinct from tags: a free-form label vs a
+// single canonical ticket reference for "this case is currently failing
+// because of a known, tracked bug."
+let tcdBugLinksCache = null;
+function tcdLoadBugLinks() {
+    if (tcdBugLinksCache) return tcdBugLinksCache;
+    try {
+        tcdBugLinksCache = JSON.parse(fs.readFileSync(TCD_BUG_LINKS_PATH, 'utf8'));
+    } catch (e) {
+        tcdBugLinksCache = {};
+    }
+    return tcdBugLinksCache;
+}
+function tcdSaveBugLinks() {
+    try {
+        writeJsonAtomic(TCD_BUG_LINKS_PATH, tcdBugLinksCache || {});
+    } catch (e) {
+        console.error('[testcases] failed to save bug links:', e.message);
     }
 }
 function tcdNormalizeTagList(list) {
@@ -2384,6 +2407,25 @@ app.post('/api/testcases/tags/bulk', (req, res) => {
     res.json({ updated: caseIds.length, tag: cleanTag, action });
 });
 
+app.get('/api/testcases/bug-links', (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    res.json(tcdLoadBugLinks());
+});
+
+app.post('/api/testcases/bug-links', (req, res) => {
+    const { caseId, bugId } = req.body;
+    if (!caseId) return res.status(400).json({ error: 'caseId is required' });
+    const store = tcdLoadBugLinks();
+    const trimmed = (bugId || '').trim();
+    if (trimmed) {
+        store[caseId] = { bugId: trimmed, updatedAt: Date.now() };
+    } else {
+        delete store[caseId]; // blank clears the link
+    }
+    tcdSaveBugLinks();
+    res.json({ caseId, entry: store[caseId] || null });
+});
+
 app.get('/api/testcases/recheck-ids', (req, res) => {
     tcdCaseIdCache = null; // force tcdEnsureCaseIdsFresh() to refetch on the next /api/testcases/data call
     tcdCaseIdCacheAt = 0;
@@ -3469,6 +3511,13 @@ function cyrDequeue(id) {
     return true;
 }
 
+function cyrClearQueue() {
+    const removed = cyrQueue.length;
+    cyrQueue = [];
+    cyrSaveQueue();
+    return removed;
+}
+
 function cyrPumpQueue() {
     if (cyrActiveRun || cyrQueue.length === 0) return;
     const item = cyrQueue.shift();
@@ -3677,6 +3726,21 @@ app.post('/api/cypress/kill', (req, res) => {
     const result = cyrKillRun(runId);
     if (!result.ok) return res.status(404).json({ error: result.error });
     res.json({ success: true });
+});
+
+// "Cancel the whole queue" — drops every not-yet-started item and, if a run
+// is currently in progress, stops that too. The queue is cleared before the
+// kill signal goes out so that once the child actually exits and
+// cyrFinalizeRun fires its own cyrPumpQueue() call, there's nothing left for
+// it to pick up.
+app.post('/api/cypress/stop-all', (req, res) => {
+    const removedFromQueue = cyrClearQueue();
+    let stoppedRunId = null;
+    if (cyrActiveRun) {
+        stoppedRunId = cyrActiveRun.id;
+        cyrKillRun(stoppedRunId);
+    }
+    res.json({ success: true, removedFromQueue, stoppedRunId });
 });
 
 // Manual sync — triggered from a file/group/category sync button in the

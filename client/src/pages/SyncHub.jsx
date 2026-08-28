@@ -29,6 +29,8 @@ import {
   MessageSquare,
 } from 'lucide-react';
 import { showAlert, showConfirm, showPrompt } from '../utils/Alerts';
+import syncHubHero from '../assets/hero-banners/synchub-hero.webp';
+import syncHubHeroLight from '../assets/hero-banners/synchub-hero-light.webp';
 
 const SyncHub = () => {
   // TestRail credentials
@@ -1001,7 +1003,14 @@ const SyncHub = () => {
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
 
       {/* Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
+      <div
+        className="glass-panel sync-hero"
+        style={{
+          '--hero-image': `url(${syncHubHero})`, '--hero-image-light': `url(${syncHubHeroLight})`,
+          display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px',
+          padding: '24px 28px',
+        }}
+      >
         <div>
           <h1 style={{ fontSize: '2rem', fontWeight: '800', marginBottom: '4px' }}>
             Sync <span className="gradient-text">Hub</span>

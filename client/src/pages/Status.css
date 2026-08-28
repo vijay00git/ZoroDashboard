@@ -4,6 +4,26 @@
 
 .dsw-page { display: flex; flex-direction: column; gap: 24px; padding-bottom: 40px; }
 
+/* ── Hero banner ── */
+/* Same single-text-zone-on-left shape used across the other page heroes
+   (title/description only, no header button). --hero-image/--hero-image-light
+   set inline (a plain url() can't reference a hashed Vite asset path from a
+   static CSS file). */
+.status-hero {
+  position: relative;
+  background-image:
+    linear-gradient(90deg, var(--bg-secondary) 0%, color-mix(in srgb, var(--bg-secondary) 62%, transparent) 55%, color-mix(in srgb, var(--bg-secondary) 32%, transparent) 100%),
+    var(--hero-image);
+  background-size: cover;
+  background-position: center right;
+  background-repeat: no-repeat;
+}
+[data-theme="light"] .status-hero {
+  background-image:
+    linear-gradient(90deg, var(--bg-secondary) 0%, color-mix(in srgb, var(--bg-secondary) 62%, transparent) 55%, color-mix(in srgb, var(--bg-secondary) 32%, transparent) 100%),
+    var(--hero-image-light);
+}
+
 /* ── Stepper ── */
 .dsw-stepper {
   display: flex; align-items: flex-start; gap: 0; padding: 4px 8px;

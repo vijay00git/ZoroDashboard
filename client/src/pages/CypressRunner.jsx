@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { PlayCircle, Square, FolderOpen, Terminal, ListChecks, SlidersHorizontal, Clipboard, Download, Eye, EyeOff, ChevronRight, Search, RotateCcw, FilePlus2, AlertTriangle } from 'lucide-react';
+import { PlayCircle, Square, SkipForward, XCircle, FolderOpen, Terminal, ListChecks, SlidersHorizontal, Clipboard, Download, Eye, EyeOff, ChevronRight, Search, RotateCcw, FilePlus2, AlertTriangle } from 'lucide-react';
 import { useToast } from '../contexts/ToastContext';
 import { showConfirm, showPrompt } from '../utils/Alerts';
 import ModalPortal from './testcase-dashboard/ModalPortal';
@@ -17,11 +17,19 @@ import RunsList from './cypress-runner/RunsList';
 import Lightbox from './cypress-runner/Lightbox';
 import CyrHeroStats from './cypress-runner/CyrHeroStats';
 import CyrActivityCard from './cypress-runner/CyrActivityCard';
+import FlakySpecsCard from './cypress-runner/FlakySpecsCard';
+import BugsCard from './cypress-runner/BugsCard';
+import QueueProgress from './cypress-runner/QueueProgress';
+import CompareRunsModal from './cypress-runner/CompareRunsModal';
 import {
   latestCaseResultsForPaths, latestCaseResultsByPath, latestRunStatusByPath,
   localCaseStatus, localRunTally, buildCyrReportText, buildCyrDateReportText, mergeManualIntoResultMap,
+  cyrFlakySpecs, cyrAvgDurationByPath, cyrGlobalAvgDuration, cyrEstimateDuration, formatEta,
+  CYR_DEFAULT_ESTIMATE_MS, cyrGroupBugLinks,
 } from './cypress-runner/helpers';
 import { filterHistoryByDate, formatReportDateLabel, todayDateKey, copyText, csvEscape, normCat } from './testcase-dashboard/helpers';
+import cypressRunnerHero from '../assets/hero-banners/cypress-runner-hero.webp';
+import cypressRunnerHeroLight from '../assets/hero-banners/cypress-runner-hero-light.webp';
 import './testcase-dashboard/TestCaseDashboard.css';
 import './cypress-runner/CypressRunner.css';
 
@@ -48,6 +56,7 @@ const CypressRunner = () => {
   const [manifestData, setManifestData] = useState(EMPTY_MANIFEST);
   const [manualStatus, setManualStatus] = useState({});
   const [tags, setTags] = useState({});
+  const [bugLinks, setBugLinks] = useState({});
   const [selectedCases, setSelectedCases] = useState(new Set());
   const [tagModal, setTagModal] = useState(null); // { caseId, caseTitle }
   const [manifestModalOpen, setManifestModalOpen] = useState(false);
@@ -62,8 +71,10 @@ const CypressRunner = () => {
   const [logText, setLogText] = useState('');
   const [triggering, setTriggering] = useState(false);
   const [killing, setKilling] = useState(false);
+  const [stoppingAll, setStoppingAll] = useState(false);
   const [viewLog, setViewLog] = useState(null); // { id, log }
   const [lightbox, setLightbox] = useState(null); // { images, startIndex }
+  const [compareModal, setCompareModal] = useState(null); // { current, previous }
 
   const [runStatus, setRunStatus] = useState(null);
   const [runPulling, setRunPulling] = useState(false);
@@ -79,6 +90,12 @@ const CypressRunner = () => {
   const pollRef = useRef(null);
   const testrailRunIdInputRef = useRef(null);
   const searchInputRef = useRef(null);
+
+  // Tracks every run id that's entered the queue/active slot since it was
+  // last empty — the "batch" the Queue Progress card reports on. State
+  // (not a ref) since batchProgress below reads it during render.
+  const [batchIds, setBatchIds] = useState(() => new Set());
+  const [batchStart, setBatchStart] = useState(null);
 
   useEffect(() => { localStorage.setItem('cyr_project_path', projectPath); }, [projectPath]);
   useEffect(() => { localStorage.setItem('cyr_spec_path', specPath); }, [specPath]);
@@ -135,6 +152,10 @@ const CypressRunner = () => {
     fetch('/api/testcases/tags', { cache: 'no-store' })
       .then((r) => r.json())
       .then(setTags)
+      .catch(() => {});
+    fetch('/api/testcases/bug-links', { cache: 'no-store' })
+      .then((r) => r.json())
+      .then(setBugLinks)
       .catch(() => {});
     fetch('/api/testcases/jenkins-jobs', { cache: 'no-store' })
       .then((r) => r.json())
@@ -240,6 +261,43 @@ const CypressRunner = () => {
     return () => { cancelled = true; clearInterval(interval); };
   }, [runState.active?.id]);
 
+  // Queue Progress's "batch" — every run id seen in queue+active accumulates
+  // into batchIds until both drain empty at once, at which point the next
+  // enqueue starts a fresh batch, and batchStart is stamped the moment the
+  // first item arrives. batchIds is memory of past renders (which ids have
+  // ever been live), not something derivable from the current props alone,
+  // so this can only be synced from an effect — the set-state-in-effect rule
+  // is deliberately silenced for it. Doesn't retroactively count runs
+  // already queued/active before this page loaded (batchIds starts empty on
+  // mount) — acceptable since a refresh mid-batch is rare on a single-user
+  // local tool.
+  /* eslint-disable react-hooks/set-state-in-effect */
+  useEffect(() => {
+    const queueIds = (runState.queue || []).map((q) => q.id);
+    const liveIds = runState.active ? [runState.active.id, ...queueIds] : queueIds;
+    if (liveIds.length === 0) {
+      setBatchIds((prev) => (prev.size === 0 ? prev : new Set()));
+      setBatchStart(null);
+      return;
+    }
+    setBatchIds((prev) => {
+      const next = new Set(prev);
+      liveIds.forEach((id) => next.add(id));
+      return next;
+    });
+    setBatchStart((prev) => prev ?? Date.now());
+  }, [runState.queue, runState.active]);
+  /* eslint-enable react-hooks/set-state-in-effect */
+
+  // Ticks once a second, purely to force the ETA/elapsed display to recount
+  // against Date.now() between server polls — no server call of its own.
+  const [nowTick, setNowTick] = useState(() => Date.now());
+  useEffect(() => {
+    if (!runState.active && (runState.queue?.length || 0) === 0) return undefined;
+    const t = setInterval(() => setNowTick(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [runState.active, runState.queue]);
+
   const handleRun = () => {
     if (!projectPath.trim()) { showToast('Enter a Cypress project path first', 'warning'); return; }
     setTriggering(true);
@@ -263,7 +321,12 @@ const CypressRunner = () => {
 
   const handleKill = async () => {
     if (!runState.active) return;
-    const confirmed = await showConfirm('Stop the running Cypress process?');
+    const pending = runState.queue?.length || 0;
+    const confirmed = await showConfirm(
+      pending > 0
+        ? `Skip this test? The next queued item (${pending} pending) will start automatically.`
+        : 'Stop the running Cypress process?'
+    );
     if (!confirmed) return;
     setKilling(true);
     fetch('/api/cypress/kill', {
@@ -275,10 +338,37 @@ const CypressRunner = () => {
       .then(({ ok, body }) => {
         setKilling(false);
         if (!ok) { showToast(body.error || 'Failed to stop run', 'error'); return; }
-        showToast('Stopping run…', 'info');
+        showToast(pending > 0 ? 'Skipping…' : 'Stopping run…', 'info');
         fetchState();
       })
       .catch((err) => { setKilling(false); showToast(err.message, 'error'); });
+  };
+
+  // "Cancel the whole queue" — stops whatever's currently running (if
+  // anything) and drops every not-yet-started queued item in one shot.
+  const handleStopAll = async () => {
+    const pending = runState.queue?.length || 0;
+    const hasActive = !!runState.active;
+    if (!hasActive && pending === 0) return;
+    const msg = hasActive && pending > 0
+      ? `Stop the running test and cancel ${pending} queued item${pending === 1 ? '' : 's'}?`
+      : hasActive
+        ? 'Stop the running test? The queue is otherwise empty.'
+        : `Cancel ${pending} queued item${pending === 1 ? '' : 's'}?`;
+    const confirmed = await showConfirm(msg);
+    if (!confirmed) return;
+    setStoppingAll(true);
+    fetch('/api/cypress/stop-all', { method: 'POST' })
+      .then((res) => res.json().then((body) => ({ ok: res.ok, body })))
+      .then(({ ok, body }) => {
+        setStoppingAll(false);
+        if (!ok) { showToast(body.error || 'Failed to cancel the queue', 'error'); return; }
+        showToast('Queue cancelled', 'info');
+        setBatchIds(new Set());
+        setBatchStart(null);
+        fetchState();
+      })
+      .catch((err) => { setStoppingAll(false); showToast(err.message, 'error'); });
   };
 
   const enqueuePaths = (items) => {
@@ -299,6 +389,13 @@ const CypressRunner = () => {
   };
 
   const handleDequeue = (id) => {
+    // Manually removed, not run — doesn't count toward the batch.
+    setBatchIds((prev) => {
+      if (!prev.has(id)) return prev;
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
     fetch('/api/cypress/dequeue', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -380,6 +477,36 @@ const CypressRunner = () => {
     const next = (tags[caseId] || []).filter((t) => t !== tag);
     handleSaveTags(caseId, next);
   };
+
+  // Shared by both the prompt-based edit and the chip's direct clear button
+  // below — optimistic local update ahead of the server ack, same pattern
+  // as handleSetManualStatus/handleSaveTags.
+  const saveBugLink = (caseId, bugId) => {
+    setBugLinks((prev) => {
+      const copy = { ...prev };
+      if (bugId) copy[caseId] = { bugId, updatedAt: Date.now() }; else delete copy[caseId];
+      return copy;
+    });
+    fetch('/api/testcases/bug-links', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ caseId, bugId }),
+    })
+      .then((res) => res.json().then((body) => ({ ok: res.ok, body })))
+      .then(({ ok, body }) => { if (!ok) showToast(body.error || 'Failed to save bug link', 'error'); })
+      .catch((err) => showToast(err.message, 'error'));
+  };
+
+  // Prompts for a ticket id (pre-filled with the existing one, if any) —
+  // submitting blank clears the link, cancelling (null) leaves it untouched.
+  const handleEditBugLink = async (caseId) => {
+    const current = bugLinks[caseId]?.bugId || '';
+    const val = await showPrompt(`Bug ID for ${caseId} (e.g. EVB-1234):`, current);
+    if (val === null) return;
+    saveBugLink(caseId, val.trim());
+  };
+
+  const handleClearBugLink = (caseId) => saveBugLink(caseId, '');
 
   const toggleCaseSelect = (caseId) => {
     setSelectedCases((prev) => {
@@ -573,6 +700,60 @@ const CypressRunner = () => {
     [manifestData.rows, caseResultsByPath, runStatusByPath, manualStatus]
   );
 
+  const flakySpecs = useMemo(() => cyrFlakySpecs(fileTrendMap), [fileTrendMap]);
+  const flakySpecCaseCount = useMemo(() => {
+    const paths = new Set(flakySpecs.map((s) => s.path));
+    return manifestData.rows.filter((r) => paths.has(r.path)).length;
+  }, [flakySpecs, manifestData.rows]);
+
+  const bugGroups = useMemo(() => cyrGroupBugLinks(bugLinks), [bugLinks]);
+
+  const avgDurationByPath = useMemo(() => cyrAvgDurationByPath(runState.history), [runState.history]);
+  const globalAvgDuration = useMemo(() => cyrGlobalAvgDuration(runState.history), [runState.history]);
+
+  // "Time estimation calculator" — a live ETA preview for whatever's about
+  // to be queued, before the Queue/Retry button is even clicked.
+  const selectedEtaMs = useMemo(
+    () => cyrEstimateDuration(Array.from(selectedFiles.keys()), avgDurationByPath, globalAvgDuration),
+    [selectedFiles, avgDurationByPath, globalAvgDuration]
+  );
+  const retryEtaMs = useMemo(
+    () => cyrEstimateDuration(failedFileItems.map((i) => i.path), avgDurationByPath, globalAvgDuration),
+    [failedFileItems, avgDurationByPath, globalAvgDuration]
+  );
+
+  // Batch progress for the Queue Progress card — batchIds accumulates run
+  // ids in an effect above; "done" is whichever of those ids are no longer
+  // in the live queue/active set, looked up in history for their verdict.
+  const batchProgress = useMemo(() => {
+    if (batchIds.size === 0) return null;
+    const liveIds = new Set([...(runState.queue || []).map((q) => q.id), ...(runState.active ? [runState.active.id] : [])]);
+    let passed = 0, failed = 0, done = 0;
+    batchIds.forEach((id) => {
+      if (liveIds.has(id)) return;
+      const h = runState.history.find((x) => x.id === id);
+      if (!h) return;
+      done++;
+      if (h.status === 'passed') passed++; else failed++;
+    });
+    return { total: batchIds.size, done, passed, failed };
+  }, [batchIds, runState.queue, runState.active, runState.history]);
+
+  const queueEtaMs = useMemo(() => {
+    if (!runState.active && (runState.queue?.length || 0) === 0) return 0;
+    let ms = cyrEstimateDuration((runState.queue || []).map((q) => q.path), avgDurationByPath, globalAvgDuration);
+    if (runState.active) {
+      const specAvg = avgDurationByPath[runState.active.specPath] || globalAvgDuration || CYR_DEFAULT_ESTIMATE_MS;
+      const elapsed = nowTick - runState.active.startedAt;
+      ms += Math.max(specAvg - elapsed, 3000);
+    }
+    return ms;
+  }, [runState.queue, runState.active, avgDurationByPath, globalAvgDuration, nowTick]);
+
+  const batchElapsedMs = batchProgress && batchStart ? nowTick - batchStart : 0;
+
+  const handleCompare = (h, previous) => setCompareModal({ current: h, previous });
+
   // Union of tags already present on any currently-selected case — feeds the
   // bulk toolbar's "remove" chips, so it only ever offers to remove a tag
   // that's actually there to remove.
@@ -652,10 +833,15 @@ const CypressRunner = () => {
 
   const active = runState.active;
   const selectedCount = selectedFiles.size;
+  const pendingCount = runState.queue?.length || 0;
+  const canStopAll = !!active || pendingCount > 0;
 
   return (
     <div className="cyr-page">
-      <div className="cyr-card">
+      <div
+        className="cyr-card cyr-setup-card"
+        style={{ '--hero-image': `url(${cypressRunnerHero})`, '--hero-image-light': `url(${cypressRunnerHeroLight})` }}
+      >
         <div className={`cyr-setup-header${setupCollapsed ? '' : ' open'}`} onClick={() => setSetupCollapsed((v) => !v)}>
           <ChevronRight className="chev" size={16} />
           <h2><span className="cyr-icon-chip"><Terminal size={16} /></span> Cypress Runner</h2>
@@ -672,8 +858,26 @@ const CypressRunner = () => {
                   <PlayCircle size={13} /> {triggering ? 'Starting…' : 'Run'}
                 </button>
               ) : (
-                <button type="button" className="cyr-btn danger small" onClick={handleKill} disabled={killing}>
-                  <Square size={13} /> {killing ? 'Stopping…' : 'Stop'}
+                <button
+                  type="button"
+                  className="cyr-btn danger small"
+                  onClick={handleKill}
+                  disabled={killing}
+                  title={pendingCount > 0 ? 'Skip this test and continue with the queue' : 'Stop the running test'}
+                >
+                  {pendingCount > 0 ? <SkipForward size={13} /> : <Square size={13} />}
+                  {' '}{killing ? 'Working…' : (pendingCount > 0 ? 'Skip' : 'Stop')}
+                </button>
+              )}
+              {canStopAll && (
+                <button
+                  type="button"
+                  className="cyr-btn danger small"
+                  onClick={handleStopAll}
+                  disabled={stoppingAll}
+                  title="Stop the running test (if any) and cancel every queued item"
+                >
+                  <XCircle size={13} /> {stoppingAll ? 'Cancelling…' : 'Cancel queue'}
                 </button>
               )}
               {active && <RunStatusPill status={active.status} />}
@@ -770,8 +974,26 @@ const CypressRunner = () => {
               <PlayCircle size={15} /> {triggering ? 'Starting…' : 'Run'}
             </button>
           ) : (
-            <button type="button" className="cyr-btn danger" onClick={handleKill} disabled={killing}>
-              <Square size={15} /> {killing ? 'Stopping…' : 'Stop'}
+            <button
+              type="button"
+              className="cyr-btn danger"
+              onClick={handleKill}
+              disabled={killing}
+              title={pendingCount > 0 ? 'Skip this test and continue with the queue' : 'Stop the running test'}
+            >
+              {pendingCount > 0 ? <SkipForward size={15} /> : <Square size={15} />}
+              {' '}{killing ? 'Working…' : (pendingCount > 0 ? 'Skip' : 'Stop')}
+            </button>
+          )}
+          {canStopAll && (
+            <button
+              type="button"
+              className="cyr-btn danger"
+              onClick={handleStopAll}
+              disabled={stoppingAll}
+              title="Stop the running test (if any) and cancel every queued item"
+            >
+              <XCircle size={15} /> {stoppingAll ? 'Cancelling…' : 'Cancel queue'}
             </button>
           )}
           {active && <RunStatusPill status={active.status} />}
@@ -784,14 +1006,20 @@ const CypressRunner = () => {
         <div className="tcd-hero-heading"><SlidersHorizontal size={13} /> Overview</div>
         <CyrHeroStats manifestData={manifestData} runState={runState} />
         <div className="tcd-cards-row">
-          <CoverageCard data={manifestData} />
+          <CoverageCard data={manifestData} activeCats={activeCats} onToggleCat={toggleCat} />
           <LocalRunStatusCard data={manifestData} caseResultsByPath={caseResultsByPath} statusByPath={runStatusByPath} manualStatus={manualStatus} />
           <RunStatusCard data={manifestData} runStatus={runStatus} onFocusRunId={() => testrailRunIdInputRef.current?.focus()} />
           <CyrActivityCard history={runState.history} />
+          <FlakySpecsCard
+            specs={flakySpecs}
+            caseCount={flakySpecCaseCount}
+            onFocusPath={(p) => { setSearchTerm(p); searchInputRef.current?.focus(); }}
+          />
+          <BugsCard groups={bugGroups} onFocusCase={(caseId) => { setSearchTerm(caseId); searchInputRef.current?.focus(); }} />
         </div>
       </div>
 
-      <StatsBar data={manifestData} activeCats={activeCats} onToggleCat={toggleCat} issueFilter={issueFilter} onToggleIssue={toggleIssue} statusCounts={statusCounts} />
+      <StatsBar data={manifestData} activeCats={activeCats} onToggleCat={toggleCat} issueFilter={issueFilter} onToggleIssue={toggleIssue} statusCounts={statusCounts} flakyCount={flakySpecCaseCount} />
 
       {manifestData.missing && manifestData.missing.length > 0 && (
         <div className="tcd-banner">
@@ -801,6 +1029,18 @@ const CypressRunner = () => {
             <button type="button" className="tcd-link-btn" onClick={() => setManifestModalOpen(true)}>Manifest</button> to remove them.
           </div>
         </div>
+      )}
+
+      {batchProgress && (
+        <QueueProgress
+          total={batchProgress.total}
+          done={batchProgress.done}
+          passed={batchProgress.passed}
+          failed={batchProgress.failed}
+          activeSpec={runState.active ? (runState.active.specPath || 'all specs') : null}
+          etaMs={queueEtaMs}
+          elapsedMs={batchElapsedMs}
+        />
       )}
 
       <div className={`cyr-layout${(active || !runsHidden) ? '' : ' cyr-layout-single'}`}>
@@ -831,6 +1071,7 @@ const CypressRunner = () => {
                 onClick={() => enqueuePaths(Array.from(selectedFiles.entries()).map(([path, cat]) => ({ path, cat })))}
               >
                 Queue {selectedCount > 0 ? selectedCount : ''} selected
+                {selectedCount > 0 && <span className="cyr-eta-badge">{formatEta(selectedEtaMs)}</span>}
               </button>
               <button
                 type="button"
@@ -840,6 +1081,7 @@ const CypressRunner = () => {
                 onClick={handleRetryFailed}
               >
                 <RotateCcw size={12} /> Retry failed {failedFileItems.length > 0 ? `(${failedFileItems.length})` : ''}
+                {failedFileItems.length > 0 && <span className="cyr-eta-badge">{formatEta(retryEtaMs)}</span>}
               </button>
               <button type="button" className="cyr-btn small" title="View, add, remove, and download manifest entries" onClick={() => setManifestModalOpen(true)}>
                 <FilePlus2 size={12} /> Manifest
@@ -908,6 +1150,9 @@ const CypressRunner = () => {
               tags={tags}
               onOpenTagModal={(caseId, caseTitle) => setTagModal({ caseId, caseTitle })}
               onRemoveTag={handleRemoveTag}
+              bugLinks={bugLinks}
+              onEditBugLink={handleEditBugLink}
+              onClearBugLink={handleClearBugLink}
               selectedCases={selectedCases}
               onToggleCaseSelect={toggleCaseSelect}
               onSelectManyCases={selectManyCases}
@@ -965,6 +1210,7 @@ const CypressRunner = () => {
                   onViewLog={handleViewLog}
                   onViewScreenshots={handleViewScreenshots}
                   onSendTelegram={handleSendTelegram}
+                  onCompare={handleCompare}
                 />
               </div>
             )}
@@ -988,6 +1234,10 @@ const CypressRunner = () => {
 
       {lightbox && (
         <Lightbox images={lightbox.images} startIndex={lightbox.startIndex} onClose={() => setLightbox(null)} />
+      )}
+
+      {compareModal && (
+        <CompareRunsModal current={compareModal.current} previous={compareModal.previous} onClose={() => setCompareModal(null)} />
       )}
 
       {tagModal && (

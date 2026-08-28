@@ -605,6 +605,45 @@ button {
   overflow: hidden;
   min-height: 190px;
   align-items: stretch;
+  position: relative;
+}
+
+/* Hero banner — unlike Cypress Runner's setup card (text only on the left),
+   this hero has readable text on BOTH sides (clock/greeting on the left,
+   a quote on the right, whose text runs roughly from 20%-55% of the
+   width) — so a simple left-to-right fade isn't enough. This gradient
+   keeps both the clock column (0-18%) and the quote's actual text band
+   (18-55%) solidly tinted, then opens up for the image across the mostly-
+   decorative right portion. Both --hero-image/--hero-image-light are set
+   inline (a plain url() can't reference a hashed Vite asset path from a
+   static CSS file); the light variant is a separate soft-watercolor render,
+   not a recolor, since glow doesn't read on a white panel. */
+.dash-hero {
+  background-image:
+    linear-gradient(90deg,
+      var(--bg-secondary) 0%,
+      var(--bg-secondary) 18%,
+      color-mix(in srgb, var(--bg-secondary) 78%, transparent) 34%,
+      color-mix(in srgb, var(--bg-secondary) 68%, transparent) 55%,
+      color-mix(in srgb, var(--bg-secondary) 30%, transparent) 78%,
+      color-mix(in srgb, var(--bg-secondary) 15%, transparent) 100%
+    ),
+    var(--hero-image);
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+[data-theme="light"] .dash-hero {
+  background-image:
+    linear-gradient(90deg,
+      var(--bg-secondary) 0%,
+      var(--bg-secondary) 18%,
+      color-mix(in srgb, var(--bg-secondary) 78%, transparent) 34%,
+      color-mix(in srgb, var(--bg-secondary) 68%, transparent) 55%,
+      color-mix(in srgb, var(--bg-secondary) 30%, transparent) 78%,
+      color-mix(in srgb, var(--bg-secondary) 15%, transparent) 100%
+    ),
+    var(--hero-image-light);
 }
 
 .dash-clock-block {
@@ -721,6 +760,87 @@ button {
   line-height: 1.6;
   font-weight: 500;
   flex: 1;
+}
+
+/* ─────────────────────────────────────────────
+   SYNC HUB — hero banner
+───────────────────────────────────────────── */
+/* Single text zone on the left (title/description) plus one compact button
+   on the right — same shape as Cypress Runner's setup card, so this reuses
+   that simpler one-directional fade rather than Dashboard's dual-zone one.
+   --hero-image/--hero-image-light set inline (see .dash-hero comment above
+   for why). */
+.sync-hero {
+  position: relative;
+  background-image:
+    linear-gradient(90deg, var(--bg-secondary) 0%, color-mix(in srgb, var(--bg-secondary) 62%, transparent) 55%, color-mix(in srgb, var(--bg-secondary) 32%, transparent) 100%),
+    var(--hero-image);
+  background-size: cover;
+  background-position: center right;
+  background-repeat: no-repeat;
+}
+[data-theme="light"] .sync-hero {
+  background-image:
+    linear-gradient(90deg, var(--bg-secondary) 0%, color-mix(in srgb, var(--bg-secondary) 62%, transparent) 55%, color-mix(in srgb, var(--bg-secondary) 32%, transparent) 100%),
+    var(--hero-image-light);
+}
+
+/* ─────────────────────────────────────────────
+   QUICK LAUNCH — hero banner
+───────────────────────────────────────────── */
+/* Same single-text-zone-on-left shape as .sync-hero. */
+.ql-hero {
+  position: relative;
+  background-image:
+    linear-gradient(90deg, var(--bg-secondary) 0%, color-mix(in srgb, var(--bg-secondary) 62%, transparent) 55%, color-mix(in srgb, var(--bg-secondary) 32%, transparent) 100%),
+    var(--hero-image);
+  background-size: cover;
+  background-position: center right;
+  background-repeat: no-repeat;
+}
+[data-theme="light"] .ql-hero {
+  background-image:
+    linear-gradient(90deg, var(--bg-secondary) 0%, color-mix(in srgb, var(--bg-secondary) 62%, transparent) 55%, color-mix(in srgb, var(--bg-secondary) 32%, transparent) 100%),
+    var(--hero-image-light);
+}
+
+/* ─────────────────────────────────────────────
+   SETTINGS — hero banner
+───────────────────────────────────────────── */
+/* Same single-text-zone-on-left shape as .sync-hero/.ql-hero, just with no
+   header button at all (purely decorative right side). */
+.settings-hero {
+  position: relative;
+  background-image:
+    linear-gradient(90deg, var(--bg-secondary) 0%, color-mix(in srgb, var(--bg-secondary) 62%, transparent) 55%, color-mix(in srgb, var(--bg-secondary) 32%, transparent) 100%),
+    var(--hero-image);
+  background-size: cover;
+  background-position: center right;
+  background-repeat: no-repeat;
+}
+[data-theme="light"] .settings-hero {
+  background-image:
+    linear-gradient(90deg, var(--bg-secondary) 0%, color-mix(in srgb, var(--bg-secondary) 62%, transparent) 55%, color-mix(in srgb, var(--bg-secondary) 32%, transparent) 100%),
+    var(--hero-image-light);
+}
+
+/* ─────────────────────────────────────────────
+   WATER — hero banner
+───────────────────────────────────────────── */
+/* Same shape as .settings-hero (title/description only, no header button). */
+.water-hero {
+  position: relative;
+  background-image:
+    linear-gradient(90deg, var(--bg-secondary) 0%, color-mix(in srgb, var(--bg-secondary) 62%, transparent) 55%, color-mix(in srgb, var(--bg-secondary) 32%, transparent) 100%),
+    var(--hero-image);
+  background-size: cover;
+  background-position: center right;
+  background-repeat: no-repeat;
+}
+[data-theme="light"] .water-hero {
+  background-image:
+    linear-gradient(90deg, var(--bg-secondary) 0%, color-mix(in srgb, var(--bg-secondary) 62%, transparent) 55%, color-mix(in srgb, var(--bg-secondary) 32%, transparent) 100%),
+    var(--hero-image-light);
 }
 
 /* Keep compat classes for hero foot */

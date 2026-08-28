@@ -33,7 +33,13 @@
 .tcd-result-count { font-size: 0.78rem; color: var(--text-secondary); white-space: nowrap; }
 .tcd-toolbar-divider { width: 1px; align-self: stretch; background: var(--border-color); margin: 0 0.1rem; }
 .tcd-btn-group { display: flex; gap: 0.35rem; }
-.tcd-run-pull { display: flex; align-items: center; gap: 0.4rem; }
+/* min-width: 0 on both the row and the input override flexbox's default
+   min-width:auto (which floors an item at its content size) — without it,
+   the input refuses to shrink below its intrinsic width and pushes the
+   "Pull status" button outside the card at narrower panel widths. flex-wrap
+   is a safety net for when there's truly no room even for a shrunk input. */
+.tcd-run-pull { display: flex; align-items: center; gap: 0.4rem; min-width: 0; flex-wrap: wrap; }
+.tcd-run-pull input { flex: 1 1 90px; min-width: 0; }
 .tcd-live-status { font-size: 0.78rem; color: var(--text-muted); display: inline-flex; align-items: center; gap: 0.4rem; white-space: nowrap; }
 .tcd-live-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--text-muted); flex-shrink: 0; }
 .tcd-live-dot.ok { background: var(--accent-green); }
@@ -51,6 +57,11 @@
 .tcd-chip .filecount { color: var(--text-muted); }
 .tcd-issue-chip { border-color: var(--accent-red); color: var(--accent-red); background: transparent; opacity: 0.6; }
 .tcd-issue-chip.active { opacity: 1; background: color-mix(in srgb, var(--accent-red) 12%, transparent); }
+
+/* Orange rather than red — flakiness is a run-behavior signal, not a data
+   problem like the other two issue chips, matching .tcd-badge.flaky's color. */
+.tcd-flaky-chip { display: inline-flex; align-items: center; gap: 0.35rem; border-color: var(--accent-orange); color: var(--accent-orange); background: transparent; opacity: 0.6; }
+.tcd-flaky-chip.active { opacity: 1; background: color-mix(in srgb, var(--accent-orange) 12%, transparent); }
 
 .tcd-status-chip { background: transparent; opacity: 0.65; }
 .tcd-status-chip .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
@@ -161,10 +172,45 @@
 .tcd-legend { display: flex; flex-direction: column; gap: 0.3rem; font-size: 0.78rem; color: var(--text-secondary); }
 .tcd-legend-item { display: flex; align-items: center; gap: 0.4rem; }
 .tcd-sw { width: 9px; height: 9px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
-.tcd-health-empty { color: var(--accent-green); font-size: 0.82rem; }
+.tcd-health-empty { display: inline-flex; align-items: center; gap: 0.35rem; color: var(--accent-green); font-size: 0.82rem; font-weight: 600; }
 
-.tcd-tier-bar { display: flex; height: 9px; border-radius: 999px; overflow: hidden; background: var(--bg-tertiary); margin-bottom: 0.5rem; }
-.tcd-tier-seg { height: 100%; }
+/* ── Coverage by tier card ── */
+.tcd-cov-bar {
+  display: flex; height: 11px; border-radius: 999px; overflow: hidden;
+  background: var(--bg-tertiary); margin-bottom: 0.6rem; gap: 2px;
+}
+.tcd-cov-seg {
+  height: 100%; background: var(--seg-color); position: relative;
+  transition: transform 0.15s ease, filter 0.15s ease, opacity 0.15s ease;
+  animation: tcdCovGrow 0.6s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.tcd-cov-seg::after {
+  content: ''; position: absolute; inset: 0;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.28), transparent 60%);
+}
+.tcd-cov-seg.inactive { opacity: 0.3; }
+.tcd-cov-seg.clickable { cursor: pointer; }
+.tcd-cov-seg.clickable:hover { filter: brightness(1.15); transform: scaleY(1.15); }
+@keyframes tcdCovGrow { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+@media (prefers-reduced-motion: reduce) { .tcd-cov-seg { animation: none; } }
+
+.tcd-cov-chips { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-bottom: 0.75rem; }
+.tcd-cov-chip {
+  display: inline-flex; align-items: center; gap: 0.35rem;
+  background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 999px;
+  padding: 0.28rem 0.6rem; font-size: 0.74rem; color: var(--text-secondary);
+  cursor: pointer; transition: border-color 0.15s ease, background 0.15s ease, transform 0.15s ease, opacity 0.15s ease;
+}
+.tcd-cov-chip .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--seg-color); flex-shrink: 0; box-shadow: 0 0 5px var(--seg-color); }
+.tcd-cov-chip .lbl { color: var(--text-primary); font-weight: 600; }
+.tcd-cov-chip b { color: var(--text-primary); font-family: var(--font-mono); }
+.tcd-cov-chip .pct { color: var(--text-muted); font-family: var(--font-mono); }
+.tcd-cov-chip:hover { border-color: var(--seg-color); background: color-mix(in srgb, var(--seg-color) 10%, var(--bg-tertiary)); transform: translateY(-1px); }
+.tcd-cov-chip.inactive { opacity: 0.45; }
+.tcd-cov-chip.static { cursor: default; }
+.tcd-cov-chip.static:hover { border-color: var(--border-color); background: var(--bg-tertiary); transform: none; }
+
+.tcd-cov-divider { height: 1px; background: var(--border-color); margin: 0 0 0.8rem; opacity: 0.7; }
 
 .tcd-run-meta { display: flex; flex-direction: column; gap: 0.15rem; font-size: 0.78rem; color: var(--text-secondary); }
 .tcd-run-meta .run-name { font-weight: 600; color: var(--text-primary); font-size: 0.85rem; }
@@ -268,6 +314,24 @@
 .tcd-tag-btn { color: var(--text-muted); }
 .tcd-tag-btn.has-tags { color: var(--accent-cyan); }
 .tcd-tag-btn svg { width: 13px; height: 13px; }
+
+/* ── Bug links — a single canonical ticket reference (e.g. "EVB-1234"),
+   distinct from free-form tags. Orange rather than red so it doesn't read
+   as another failure indicator sitting next to the status pill. ── */
+.tcd-bug-chip {
+  display: inline-flex; align-items: center; gap: 0.22rem;
+  font-size: 0.66rem; font-weight: 700; font-family: var(--font-mono);
+  padding: 0.08rem 0.4rem 0.08rem 0.5rem; border-radius: 999px; white-space: nowrap;
+  cursor: pointer; background: color-mix(in srgb, var(--accent-orange) 18%, transparent); color: var(--accent-orange);
+  border: 1px solid color-mix(in srgb, var(--accent-orange) 40%, transparent);
+}
+.tcd-bug-chip button {
+  display: inline-flex; align-items: center; justify-content: center; background: none; border: none;
+  color: inherit; opacity: 0.65; cursor: pointer; padding: 0.1rem; border-radius: 50%;
+}
+.tcd-bug-chip button:hover { opacity: 1; background: rgba(0, 0, 0, 0.15); }
+.tcd-bug-btn { color: var(--text-muted); }
+.tcd-bug-btn svg { width: 13px; height: 13px; }
 
 /* Round (vs. the square file/run-select checkboxes) so tag-selection reads
    as visually distinct from run-queue selection at a glance. */

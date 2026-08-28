@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
-import { Image, Terminal, X, Send, Search } from 'lucide-react';
+import { Image, Terminal, X, Send, Search, GitCompareArrows } from 'lucide-react';
 import RunStatusPill from './RunStatusPill';
-import { formatDuration, formatTime, STATUS_LABEL } from './helpers';
+import { formatDuration, formatTime, STATUS_LABEL, findPreviousRun } from './helpers';
 import { dateHeadingLabel } from '../testcase-dashboard/helpers';
 
 const PAGE_SIZE = 30;
@@ -34,7 +34,7 @@ const QueueItem = ({ item, onDequeue }) => (
   </div>
 );
 
-const HistoryItem = ({ h, onViewLog, onViewScreenshots, onSendTelegram }) => (
+const HistoryItem = ({ h, previous, onViewLog, onViewScreenshots, onSendTelegram, onCompare }) => (
   <div className="cyr-history-item">
     <RunStatusPill status={h.status} />
     <span className="cyr-history-spec">{h.specPath || 'all specs'}</span>
@@ -59,13 +59,18 @@ const HistoryItem = ({ h, onViewLog, onViewScreenshots, onSendTelegram }) => (
     <button type="button" className="cyr-btn small" onClick={() => onViewLog(h)}>
       <Terminal size={12} /> Log
     </button>
+    {previous && (
+      <button type="button" className="cyr-btn small" title="Compare with the previous run of this spec" onClick={() => onCompare(h, previous)}>
+        <GitCompareArrows size={12} /> Compare
+      </button>
+    )}
     <button type="button" className="cyr-btn small" title="Send this run's report to Telegram" onClick={() => onSendTelegram(h)}>
       <Send size={12} /> Telegram
     </button>
   </div>
 );
 
-const RunsList = ({ queue, history, onDequeue, onViewLog, onViewScreenshots, onSendTelegram }) => {
+const RunsList = ({ queue, history, onDequeue, onViewLog, onViewScreenshots, onSendTelegram, onCompare }) => {
   const [runSearch, setRunSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [visibleLimit, setVisibleLimit] = useState(PAGE_SIZE);
@@ -100,7 +105,17 @@ const RunsList = ({ queue, history, onDequeue, onViewLog, onViewScreenshots, onS
       historyEls.push(<h3 key={`d${i}`} className="tcd-run-date-heading">{label}</h3>);
       lastDateLabel = label;
     }
-    historyEls.push(<HistoryItem key={h.id} h={h} onViewLog={onViewLog} onViewScreenshots={onViewScreenshots} onSendTelegram={onSendTelegram} />);
+    historyEls.push(
+      <HistoryItem
+        key={h.id}
+        h={h}
+        previous={findPreviousRun(history, h)}
+        onViewLog={onViewLog}
+        onViewScreenshots={onViewScreenshots}
+        onSendTelegram={onSendTelegram}
+        onCompare={onCompare}
+      />
+    );
   });
 
   return (

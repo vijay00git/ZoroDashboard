@@ -10,6 +10,8 @@ import {
   Trash2
 } from 'lucide-react';
 import { showConfirm } from '../utils/Alerts';
+import waterHero from '../assets/hero-banners/water-hero.webp';
+import waterHeroLight from '../assets/hero-banners/water-hero-light.webp';
 
 const Water = () => {
   const [goal, setGoal] = useState(2000);
@@ -121,7 +123,13 @@ const Water = () => {
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
       
       {/* Header */}
-      <div>
+      <div
+        className="glass-panel water-hero"
+        style={{
+          '--hero-image': `url(${waterHero})`, '--hero-image-light': `url(${waterHeroLight})`,
+          padding: '24px 28px',
+        }}
+      >
         <h1 style={{ fontSize: '2rem', fontWeight: '800', marginBottom: '4px' }}>
           Hydration <span className="gradient-text">Station</span>
         </h1>

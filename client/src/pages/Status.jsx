@@ -11,6 +11,8 @@ import {
 import { showAlert, showConfirm } from '../utils/Alerts';
 import { getAIConfig, noKeyMessage } from '../utils/ai';
 import './Status.css';
+import statusHero from '../assets/hero-banners/status-hero.webp';
+import statusHeroLight from '../assets/hero-banners/status-hero-light.webp';
 
 const STEP_META = {
   1: { label: 'Template', color: 'var(--accent-purple)' },
@@ -454,7 +456,13 @@ const Status = () => {
     <div className="dsw-page">
 
       {/* Header */}
-      <div>
+      <div
+        className="glass-panel status-hero"
+        style={{
+          '--hero-image': `url(${statusHero})`, '--hero-image-light': `url(${statusHeroLight})`,
+          padding: '24px 28px',
+        }}
+      >
         <h1 style={{ fontSize: '2rem', fontWeight: '900', marginBottom: '8px', letterSpacing: '-0.5px' }}>
           Daily <span className="gradient-text">Status Workstation</span>
         </h1>

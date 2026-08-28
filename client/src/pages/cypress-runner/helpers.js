@@ -1,6 +1,6 @@
 // Pure helpers for the Cypress Runner page.
 
-import { numericId } from '../testcase-dashboard/helpers';
+import { numericId, isFlakyTrend } from '../testcase-dashboard/helpers';
 
 // Manual status <-> TestRail status id, shared between the pill/tally display
 // and the "sync to TestRail" resultMap so a manual override syncs exactly
@@ -216,4 +216,134 @@ export function buildCyrDateReportText(jobs, headerLabel) {
   const lines = [`Cypress Run Report — ${headerLabel}`, `${jobs.length} run${jobs.length === 1 ? '' : 's'}`, ''];
   jobs.forEach((h) => { lines.push(buildCyrReportText(h)); lines.push(''); });
   return { text: lines.join('\n').trim(), count: jobs.length };
+}
+
+// ── Flakiness ────────────────────────────────────────────────────────────
+// FileCard already flags an individual file as flaky inline (isFlakyTrend,
+// same rule: recent runs flip pass/fail more than once), but that only
+// surfaces once the tree is scrolled to that exact row. This surfaces the
+// same verdict as one glanceable list, built from the same fileTrendMap
+// CypressRunner.jsx already computes for the tree's trend dots.
+export function cyrFlakySpecs(fileTrendMap) {
+  return Object.keys(fileTrendMap || {})
+    .filter((path) => isFlakyTrend(fileTrendMap[path]))
+    .map((path) => ({ path, trend: fileTrendMap[path] }));
+}
+
+// ── Bug links ────────────────────────────────────────────────────────────
+// Groups the flat caseId -> {bugId, updatedAt} store (server's bug-links.json)
+// by ticket, since one ticket commonly covers several failing cases — sorted
+// most-linked-first so the highest-impact bug surfaces at the top of the card.
+export function cyrGroupBugLinks(bugLinks) {
+  const groups = {};
+  Object.entries(bugLinks || {}).forEach(([caseId, entry]) => {
+    if (!entry || !entry.bugId) return;
+    (groups[entry.bugId] = groups[entry.bugId] || []).push({ caseId, updatedAt: entry.updatedAt });
+  });
+  return Object.entries(groups)
+    .map(([bugId, cases]) => ({ bugId, cases: cases.sort((a, b) => a.caseId.localeCompare(b.caseId)) }))
+    .sort((a, b) => b.cases.length - a.cases.length || a.bugId.localeCompare(b.bugId));
+}
+
+// ── Duration tracking & ETA ──────────────────────────────────────────────
+// 'interrupted' (server crashed mid-run) is excluded — its duration reflects
+// however long the server happened to be down, not how long the spec itself
+// takes to run.
+const CYR_DURATION_STATUSES = new Set(['passed', 'failed', 'killed']);
+const CYR_DURATION_SAMPLE_LIMIT = 5;
+export const CYR_DEFAULT_ESTIMATE_MS = 30000;
+
+// Rolling average duration per spec path — most-recent-first, capped at
+// CYR_DURATION_SAMPLE_LIMIT samples so a spec that's recently sped up or
+// slowed down is reflected quickly rather than smoothed out by old runs.
+export function cyrAvgDurationByPath(history) {
+  const byPath = {};
+  (history || []).forEach((h) => {
+    if (!h.specPath || !CYR_DURATION_STATUSES.has(h.status) || !h.duration) return;
+    const arr = (byPath[h.specPath] = byPath[h.specPath] || []);
+    if (arr.length < CYR_DURATION_SAMPLE_LIMIT) arr.push(h.duration);
+  });
+  const avg = {};
+  Object.keys(byPath).forEach((p) => { avg[p] = byPath[p].reduce((a, b) => a + b, 0) / byPath[p].length; });
+  return avg;
+}
+
+// Fallback for a spec with no local run history of its own yet — average of
+// the last 50 terminal runs across every spec.
+export function cyrGlobalAvgDuration(history) {
+  const durations = (history || [])
+    .filter((h) => CYR_DURATION_STATUSES.has(h.status) && h.duration)
+    .slice(0, 50)
+    .map((h) => h.duration);
+  if (durations.length === 0) return null;
+  return durations.reduce((a, b) => a + b, 0) / durations.length;
+}
+
+// Estimated total ms to run this set of spec paths — used for both the live
+// queue ETA and the "~Xm Ys" preview badges shown before anything's queued.
+export function cyrEstimateDuration(paths, avgByPath, globalAvg) {
+  const fallback = globalAvg || CYR_DEFAULT_ESTIMATE_MS;
+  return (paths || []).reduce((sum, p) => sum + (avgByPath[p] || fallback), 0);
+}
+
+// "~2m 30s" / "~45s" — same rounding as formatDuration, prefixed so an
+// estimate is never mistaken for a recorded duration at the call site.
+export function formatEta(ms) {
+  if (!ms || ms <= 0) return '~0s';
+  return `~${formatDuration(ms)}`;
+}
+
+// ── Run comparison ───────────────────────────────────────────────────────
+// history is newest-first, so the previous run of the same spec is simply
+// the next entry after h's own index that shares its specPath.
+export function findPreviousRun(history, h) {
+  if (!h || !h.specPath) return null;
+  const idx = (history || []).findIndex((x) => x.id === h.id);
+  if (idx === -1) return null;
+  for (let i = idx + 1; i < history.length; i++) {
+    if (history[i].specPath === h.specPath) return history[i];
+  }
+  return null;
+}
+
+// Per-case diff between two runs of the same spec. 'from'/'to' are
+// TestRail-style status ids (1=passed, 5=failed, undefined=not extracted),
+// the same vocabulary cyrExtractCaseResults (server.js) produces.
+export function diffCaseResults(currentResults, previousResults) {
+  const cur = currentResults || {};
+  const prev = previousResults || {};
+  const ids = new Set([...Object.keys(cur), ...Object.keys(prev)]);
+  const changed = [];
+  let unchangedPass = 0, unchangedFail = 0;
+  ids.forEach((id) => {
+    const c = cur[id];
+    const p = prev[id];
+    if (c === p) {
+      if (c === 1) unchangedPass++; else if (c === 5) unchangedFail++;
+      return;
+    }
+    changed.push({ caseId: id, from: p, to: c });
+  });
+  changed.sort((a, b) => Number(a.caseId) - Number(b.caseId));
+  return { changed, unchangedPass, unchangedFail };
+}
+
+// Pairs screenshots between two runs of the same spec by their relative
+// name — Cypress's default screenshot naming is deterministic per spec +
+// test title (plus a numeric suffix for multiple shots in one test), so the
+// same failing test produces the same relative path run over run. Used by
+// the compare-run modal's before/after gallery.
+export function pairScreenshots(currentShots, previousShots) {
+  const cur = currentShots || [];
+  const prev = previousShots || [];
+  const prevByName = new Map(prev.map((s) => [s.name, s]));
+  const curNames = new Set(cur.map((s) => s.name));
+  const paired = [];
+  const onlyCurrent = [];
+  cur.forEach((s) => {
+    const p = prevByName.get(s.name);
+    if (p) paired.push({ name: s.name, current: s, previous: p }); else onlyCurrent.push(s);
+  });
+  const onlyPrevious = prev.filter((s) => !curNames.has(s.name));
+  return { paired, onlyCurrent, onlyPrevious };
 }

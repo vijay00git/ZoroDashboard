@@ -30,6 +30,8 @@ import {
 import { useSearchParams } from 'react-router-dom';
 import { showAlert, showConfirm } from '../utils/Alerts';
 import { DEFAULT_WIDGET_ORDER, WIDGET_NAMES } from '../dashboardWidgets';
+import settingsHero from '../assets/hero-banners/settings-hero.webp';
+import settingsHeroLight from '../assets/hero-banners/settings-hero-light.webp';
 
 const EMPTY_INTEGRATIONS_FORM = {
   TESTRAIL_URL: '', TESTRAIL_USERNAME: '', TESTRAIL_API_KEY: '', TESTRAIL_PROJECT_ID: '', TESTRAIL_SUITE_ID: '',
@@ -568,7 +570,13 @@ const Settings = () => {
     <div className="settings-page" style={{ display: 'flex', flexDirection: 'column', gap: '24px', height: '100%' }}>
 
       {/* Header */}
-      <div>
+      <div
+        className="glass-panel settings-hero"
+        style={{
+          '--hero-image': `url(${settingsHero})`, '--hero-image-light': `url(${settingsHeroLight})`,
+          padding: '24px 28px',
+        }}
+      >
         <h1 style={{ fontSize: '2rem', fontWeight: '800', marginBottom: '4px' }}>
           Portal <span className="gradient-text">Settings</span>
         </h1>

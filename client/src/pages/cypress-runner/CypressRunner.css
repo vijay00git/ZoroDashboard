@@ -55,6 +55,29 @@
 .cyr-card h2 { display: flex; align-items: center; gap: 0.55rem; margin: 0; font-size: 1.05rem; color: var(--text-primary); letter-spacing: 0.01em; }
 .cyr-card h3 { display: flex; align-items: center; gap: 0.5rem; margin: 0 0 0.7rem; font-size: 0.95rem; color: var(--text-primary); }
 
+/* Hero banner — dark/lava use the moody neon-on-black render, light theme
+   uses a separate soft-watercolor-on-white render (a glow effect doesn't
+   read on a white card, so it's a genuinely different image, not just a
+   recolor). Both scrims fade from fully opaque on the left (title/
+   description text) to mostly transparent on the right, matching each
+   banner's own calm-left/detailed-right composition, and both key off
+   --bg-secondary so they naturally match their theme's card color.
+   --hero-image/--hero-image-light are set inline per-page (a plain url()
+   can't reference a hashed Vite asset path from a static CSS file). */
+.cyr-setup-card {
+  background-image:
+    linear-gradient(90deg, var(--bg-secondary) 0%, color-mix(in srgb, var(--bg-secondary) 62%, transparent) 55%, color-mix(in srgb, var(--bg-secondary) 32%, transparent) 100%),
+    var(--hero-image);
+  background-size: cover;
+  background-position: center right;
+  background-repeat: no-repeat;
+}
+[data-theme="light"] .cyr-setup-card {
+  background-image:
+    linear-gradient(90deg, var(--bg-secondary) 0%, color-mix(in srgb, var(--bg-secondary) 62%, transparent) 55%, color-mix(in srgb, var(--bg-secondary) 32%, transparent) 100%),
+    var(--hero-image-light);
+}
+
 .cyr-setup-header {
   display: flex; align-items: center; gap: 0.5rem; cursor: pointer; user-select: none;
 }
@@ -68,7 +91,12 @@
 .cyr-sub code { background: var(--bg-tertiary); padding: 0.1rem 0.35rem; border-radius: 4px; }
 
 .cyr-form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 0.8rem; margin-bottom: 1rem; }
-.cyr-field { display: flex; flex-direction: column; gap: 0.35rem; font-size: 0.8rem; color: var(--text-secondary); }
+/* min-width: 0 overrides a grid item's default min-width:auto (floored at
+   its content's intrinsic size) — without it, a field whose content can't
+   shrink (e.g. the TestRail Run ID row's input+button) forces its whole
+   grid track wider than the minmax() track sizing intends, overflowing the
+   card at narrower panel widths. */
+.cyr-field { display: flex; flex-direction: column; gap: 0.35rem; font-size: 0.8rem; color: var(--text-secondary); min-width: 0; }
 .cyr-field > span:first-child { font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); font-weight: 700; }
 .cyr-field-wide { grid-column: span 2; }
 .cyr-field input, .cyr-field select {
@@ -268,6 +296,70 @@
 .cyr-page .tcd-cards-row > .tcd-card:nth-child(4) { animation-delay: 0.16s; }
 .cyr-page .tcd-cards-row > .tcd-card:nth-child(4)::before { background: linear-gradient(90deg, transparent, var(--accent-green), transparent); }
 
+/* ── Filter bar — bright/modern restyle ──
+   Category colors match CoverageCard's own legend (OFFLINE=cyan, ONLINE=
+   purple, E2E=pink) so the filter chips and the coverage card read as one
+   consistent color language. Active chips stay a translucent tint (never a
+   solid fill) so text contrast holds across dark/light/lava without
+   per-theme overrides — the "bright" comes from the glow + saturated dot,
+   not from inverting text onto a solid color. */
+.cyr-page .tcd-filter-bar {
+  position: relative; overflow: hidden; border-radius: var(--radius-md, 12px);
+  background: linear-gradient(135deg, color-mix(in srgb, var(--accent-purple) 7%, var(--bg-secondary)), var(--bg-secondary));
+}
+.cyr-page .tcd-filter-bar::before {
+  content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px;
+  background: linear-gradient(90deg, var(--accent-cyan), var(--accent-purple), var(--accent-pink), var(--accent-orange));
+  opacity: 0.7;
+}
+.cyr-page .tcd-chip {
+  border-radius: 999px; font-weight: 600; padding: 0.4rem 0.85rem; border-width: 1.5px;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.15s ease, border-color 0.15s ease, opacity 0.15s ease, color 0.15s ease;
+}
+.cyr-page .tcd-chip:hover { transform: translateY(-1px); }
+.cyr-page .tcd-chip:active { transform: translateY(0); }
+.cyr-page .tcd-chip.inactive { opacity: 0.45; }
+.cyr-page .tcd-chip .dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; flex-shrink: 0; box-shadow: 0 0 6px currentColor; }
+.cyr-page .tcd-cat-chip { display: inline-flex; align-items: center; gap: 0.45rem; }
+
+.cyr-page .tcd-cat-chip.cat-offline { color: var(--accent-cyan); border-color: color-mix(in srgb, var(--accent-cyan) 40%, var(--border-color)); }
+.cyr-page .tcd-cat-chip.cat-offline.active {
+  background: color-mix(in srgb, var(--accent-cyan) 18%, var(--bg-tertiary)); border-color: var(--accent-cyan);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent-cyan) 30%, transparent), 0 2px 12px color-mix(in srgb, var(--accent-cyan) 35%, transparent);
+}
+.cyr-page .tcd-cat-chip.cat-online { color: var(--accent-purple); border-color: color-mix(in srgb, var(--accent-purple) 40%, var(--border-color)); }
+.cyr-page .tcd-cat-chip.cat-online.active {
+  background: color-mix(in srgb, var(--accent-purple) 18%, var(--bg-tertiary)); border-color: var(--accent-purple);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent-purple) 30%, transparent), 0 2px 12px color-mix(in srgb, var(--accent-purple) 35%, transparent);
+}
+.cyr-page .tcd-cat-chip.cat-e2e { color: var(--accent-pink); border-color: color-mix(in srgb, var(--accent-pink) 40%, var(--border-color)); }
+.cyr-page .tcd-cat-chip.cat-e2e.active {
+  background: color-mix(in srgb, var(--accent-pink) 18%, var(--bg-tertiary)); border-color: var(--accent-pink);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent-pink) 30%, transparent), 0 2px 12px color-mix(in srgb, var(--accent-pink) 35%, transparent);
+}
+.cyr-page .tcd-cat-chip .num, .cyr-page .tcd-cat-chip .filecount { color: inherit; opacity: 0.8; }
+.cyr-page .tcd-cat-chip.active .num { opacity: 1; }
+
+.cyr-page .tcd-issue-chip {
+  display: inline-flex; align-items: center; gap: 0.45rem;
+  border-color: color-mix(in srgb, var(--accent-red) 40%, var(--border-color));
+}
+.cyr-page .tcd-issue-chip.active {
+  background: color-mix(in srgb, var(--accent-red) 18%, var(--bg-tertiary)); border-color: var(--accent-red);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent-red) 30%, transparent), 0 2px 12px color-mix(in srgb, var(--accent-red) 35%, transparent);
+}
+
+.cyr-page .tcd-flaky-chip { border-color: color-mix(in srgb, var(--accent-orange) 40%, var(--border-color)); }
+.cyr-page .tcd-flaky-chip.active {
+  background: color-mix(in srgb, var(--accent-orange) 18%, var(--bg-tertiary)); border-color: var(--accent-orange);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent-orange) 30%, transparent), 0 2px 12px color-mix(in srgb, var(--accent-orange) 35%, transparent);
+}
+
+.cyr-page .tcd-status-chip.active {
+  box-shadow: 0 0 0 1px color-mix(in srgb, currentColor 35%, transparent), 0 2px 12px color-mix(in srgb, currentColor 30%, transparent);
+}
+.cyr-page .tcd-status-chip .dot { box-shadow: 0 0 5px currentColor; }
+
 /* Run history rows — a thin left accent keyed to that row's own status pill,
    so the list reads at a glance without re-parsing every pill's text. */
 .cyr-history-item { border-left: 3px solid var(--border-color); transition: border-color var(--transition-fast, 0.15s ease); }
@@ -276,3 +368,108 @@
 .cyr-history-item:has(.cyr-running) { border-left-color: var(--accent-cyan); }
 .cyr-history-item:has(.cyr-queued) { border-left-color: var(--accent-yellow); }
 .cyr-history-item:has(.cyr-interrupted) { border-left-color: var(--accent-yellow); }
+
+/* ── Time-estimate badges (Queue selected / Retry failed) ── */
+.cyr-eta-badge {
+  margin-left: 0.4rem; padding: 0.05rem 0.4rem; border-radius: 999px;
+  font-size: 0.68rem; font-weight: 600; font-variant-numeric: tabular-nums;
+  background: color-mix(in srgb, var(--text-primary) 10%, transparent); opacity: 0.85;
+}
+
+/* ── Queue progress card ── */
+.cyr-queue-progress { animation: cyrFadeUp 0.3s ease both; }
+.cyr-qp-track {
+  position: relative; height: 10px; border-radius: 999px; overflow: hidden;
+  background: var(--bg-tertiary); border: 1px solid var(--border-color);
+}
+.cyr-qp-fill { position: absolute; inset: 0 auto 0 0; border-radius: 999px; transition: width 0.4s ease; }
+.cyr-qp-active-seg {
+  position: absolute; top: 0; bottom: 0; background: var(--accent-cyan);
+  animation: cyrPulseRing 1.4s ease-out infinite; transition: left 0.4s ease;
+}
+.cyr-qp-meta {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem 1rem;
+  margin-top: 0.65rem; font-size: 0.8rem; color: var(--text-secondary);
+}
+.cyr-qp-meta b { color: var(--text-primary); }
+.cyr-qp-passed { color: var(--accent-green); font-weight: 600; }
+.cyr-qp-failed { color: var(--accent-red); font-weight: 600; }
+.cyr-qp-running {
+  color: var(--accent-cyan); font-family: var(--font-mono); font-size: 0.76rem;
+  max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.cyr-qp-eta { margin-left: auto; color: var(--text-muted); }
+
+/* ── Flaky specs card ── */
+.cyr-flaky-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.4rem; max-height: 165px; overflow-y: auto; }
+.cyr-flaky-item {
+  width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 0.6rem;
+  background: none; border: 1px solid var(--border-color); border-radius: var(--radius-sm, 6px);
+  padding: 0.35rem 0.6rem; cursor: pointer; color: var(--text-primary); font-size: 0.76rem; text-align: left;
+  transition: border-color var(--transition-fast, 0.15s ease), background var(--transition-fast, 0.15s ease);
+}
+.cyr-flaky-item:hover { border-color: var(--accent-orange); background: color-mix(in srgb, var(--accent-orange) 10%, transparent); }
+.cyr-flaky-path { font-family: var(--font-mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cyr-flaky-trend { display: flex; gap: 2px; flex-shrink: 0; }
+
+/* ── Linked bugs card ── */
+.cyr-bugs-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.5rem; max-height: 165px; overflow-y: auto; }
+.cyr-bugs-item { border: 1px solid var(--border-color); border-radius: var(--radius-sm, 6px); padding: 0.4rem 0.55rem; }
+.cyr-bugs-item-head { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; margin-bottom: 0.3rem; }
+.cyr-bugs-id { font-family: var(--font-mono); font-weight: 700; font-size: 0.8rem; color: var(--accent-orange); }
+.cyr-bugs-count { font-size: 0.7rem; color: var(--text-muted); }
+.cyr-bugs-cases { display: flex; flex-wrap: wrap; gap: 0.3rem; }
+.cyr-bugs-case-chip {
+  font-family: var(--font-mono); font-size: 0.68rem; font-weight: 600; color: var(--text-secondary);
+  background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 999px;
+  padding: 0.1rem 0.5rem; cursor: pointer; transition: border-color var(--transition-fast, 0.15s ease), color var(--transition-fast, 0.15s ease);
+}
+.cyr-bugs-case-chip:hover { border-color: var(--accent-orange); color: var(--accent-orange); }
+
+/* ── Run comparison modal ── */
+.cyr-cmp-modal { max-width: 720px; overflow-y: auto; }
+.cyr-cmp-spec { font-family: var(--font-mono); font-size: 0.78rem; color: var(--text-muted); margin-top: -0.4rem; word-break: break-word; }
+.cyr-cmp-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 0.8rem; }
+.cyr-cmp-col {
+  display: flex; flex-direction: column; gap: 0.4rem;
+  border: 1px solid var(--border-color); border-radius: var(--radius-sm, 6px); padding: 0.7rem 0.8rem;
+}
+.cyr-cmp-col-label { font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); font-weight: 700; }
+.cyr-cmp-row { display: flex; justify-content: space-between; gap: 0.6rem; font-size: 0.8rem; color: var(--text-secondary); }
+.cyr-cmp-row b { color: var(--text-primary); font-weight: 600; }
+.cyr-cmp-delta { font-size: 0.82rem; color: var(--text-secondary); text-align: center; }
+.cyr-cmp-diff-head { display: flex; justify-content: space-between; gap: 0.6rem; font-size: 0.82rem; color: var(--text-secondary); margin-bottom: 0.5rem; flex-wrap: wrap; }
+.cyr-cmp-unchanged { color: var(--text-muted); }
+.cyr-cmp-diff-list { display: flex; flex-direction: column; gap: 0.35rem; max-height: 280px; overflow-y: auto; }
+.cyr-cmp-diff-row {
+  display: flex; align-items: center; gap: 0.5rem; font-size: 0.8rem;
+  border: 1px solid var(--border-color); border-radius: var(--radius-sm, 6px); padding: 0.4rem 0.65rem;
+}
+.cyr-cmp-case-id { font-family: var(--font-mono); font-weight: 600; color: var(--text-primary); }
+.cyr-cmp-status { color: var(--text-secondary); }
+.cyr-cmp-arrow { color: var(--text-muted); }
+.cyr-badge-fixed { color: var(--accent-green); border-color: var(--accent-green); }
+
+/* ── Compare modal — screenshot gallery ── */
+.cyr-cmp-shots { display: flex; flex-direction: column; gap: 0.5rem; }
+.cyr-cmp-shot-grid { display: flex; flex-wrap: wrap; gap: 0.5rem; max-height: 220px; overflow-y: auto; }
+.cyr-cmp-shot-pair {
+  display: flex; gap: 0.3rem; padding: 0.35rem; background: var(--bg-tertiary);
+  border: 1px solid var(--border-color); border-radius: var(--radius-sm, 6px); cursor: pointer;
+  transition: border-color var(--transition-fast, 0.15s ease), transform var(--transition-fast, 0.15s ease);
+}
+.cyr-cmp-shot-pair:hover { border-color: var(--accent-cyan); transform: translateY(-1px); }
+.cyr-cmp-shot-thumb { position: relative; width: 84px; height: 56px; border-radius: 4px; overflow: hidden; flex-shrink: 0; }
+.cyr-cmp-shot-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.cyr-cmp-shot-thumb label {
+  position: absolute; bottom: 2px; left: 3px; font-size: 0.6rem; font-weight: 700; letter-spacing: 0.02em;
+  background: rgba(0, 0, 0, 0.65); color: #fff; padding: 0 0.3rem; border-radius: 3px; text-transform: uppercase;
+}
+.cyr-cmp-shot-single {
+  width: 84px; height: 56px; padding: 0; border-radius: var(--radius-sm, 6px); overflow: hidden; cursor: pointer;
+  border: 1px solid var(--border-color); background: var(--bg-tertiary); flex-shrink: 0;
+  transition: border-color var(--transition-fast, 0.15s ease), transform var(--transition-fast, 0.15s ease);
+}
+.cyr-cmp-shot-single:hover { border-color: var(--accent-cyan); transform: translateY(-1px); }
+.cyr-cmp-shot-single img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.cyr-cmp-shot-extra { display: flex; flex-direction: column; gap: 0.35rem; }

@@ -1,6 +1,11 @@
+import { Zap } from 'lucide-react';
 import { CAT_ORDER, CAT_LABELS, normCat, STATUS_FILTER_ORDER, STATUS_FILTER_LABELS } from './helpers';
 
-const StatsBar = ({ data, activeCats, onToggleCat, issueFilter, onToggleIssue, statusCounts }) => {
+// flakyCount (case count across flaky specs) is optional — only Cypress
+// Runner passes it, same gating as the manual-status/bug-link features
+// elsewhere in this shared component tree, so the chip stays off the
+// Jenkins Test Case Dashboard.
+const StatsBar = ({ data, activeCats, onToggleCat, issueFilter, onToggleIssue, statusCounts, flakyCount }) => {
   const commentedCount = data.rows.filter((r) => r.commented).length;
   const unknownCount = (data.unknownIds || []).length;
 
@@ -15,9 +20,10 @@ const StatsBar = ({ data, activeCats, onToggleCat, issueFilter, onToggleIssue, s
           return (
             <span
               key={cat}
-              className={`tcd-chip ${activeCats[cat] ? 'active' : 'inactive'}`}
+              className={`tcd-chip tcd-cat-chip cat-${cat.toLowerCase()} ${activeCats[cat] ? 'active' : 'inactive'}`}
               onClick={() => onToggleCat(cat)}
             >
+              <span className="dot" />
               {CAT_LABELS[cat]} <span className="num">{count}</span> <span className="filecount">· {files} files</span>
             </span>
           );
@@ -28,6 +34,7 @@ const StatsBar = ({ data, activeCats, onToggleCat, issueFilter, onToggleIssue, s
           onClick={() => onToggleIssue('commented')}
           title="Files with a commented-out it() block"
         >
+          <span className="dot" />
           Commented <span className="num">{commentedCount}</span>
         </span>
         <span
@@ -35,8 +42,19 @@ const StatsBar = ({ data, activeCats, onToggleCat, issueFilter, onToggleIssue, s
           onClick={() => onToggleIssue('unknown')}
           title="Case IDs not found in TestRail"
         >
+          <span className="dot" />
           Not in TestRail <span className="num">{unknownCount}</span>
         </span>
+        {flakyCount !== undefined && (
+          <span
+            className={`tcd-chip tcd-flaky-chip ${issueFilter === 'flaky' ? 'active' : ''}`}
+            onClick={() => onToggleIssue('flaky')}
+            title="Cases in specs whose recent runs have flipped between pass and fail more than once"
+          >
+            <Zap size={11} />
+            Flaky <span className="num">{flakyCount}</span>
+          </span>
+        )}
         {statusCounts && (
           <>
             <span className="tcd-filter-divider" />

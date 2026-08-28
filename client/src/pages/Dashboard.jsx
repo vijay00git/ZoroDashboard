@@ -13,6 +13,8 @@ import { calcCompleteness } from '../utils/resume';
 import { cyrRecentRunStats, latestCaseResultsByPath, latestRunStatusByPath, localRunTally } from './cypress-runner/helpers';
 import { CAT_ORDER, CAT_LABELS, normCat } from './testcase-dashboard/helpers';
 import { DEFAULT_WIDGET_ORDER } from '../dashboardWidgets';
+import dashboardHero from '../assets/hero-banners/dashboard-hero.webp';
+import dashboardHeroLight from '../assets/hero-banners/dashboard-hero-light.webp';
 
 /* ─────────────────────────────────────────────────────────────
    WORLD CLOCK (sub-component)
@@ -1042,7 +1044,10 @@ const Dashboard = () => {
     <div style={{ display:'flex', flexDirection:'column', gap:'20px' }}>
 
       {/* ── Hero ── */}
-      <div className="glass-panel dash-hero">
+      <div
+        className="glass-panel dash-hero"
+        style={{ '--hero-image': `url(${dashboardHero})`, '--hero-image-light': `url(${dashboardHeroLight})` }}
+      >
 
         {/* Left: live clock + greeting */}
         <div className="dash-clock-block">

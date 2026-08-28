@@ -12,6 +12,8 @@ import {
 } from 'lucide-react';
 import { showConfirm } from '../utils/Alerts';
 import { useApi } from '../hooks/useApi';
+import quickLaunchHero from '../assets/hero-banners/quicklaunch-hero.webp';
+import quickLaunchHeroLight from '../assets/hero-banners/quicklaunch-hero-light.webp';
 
 const QuickLaunch = () => {
   // --- State ---
@@ -282,15 +284,22 @@ const QuickLaunch = () => {
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
       
       {/* Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <div
+        className="glass-panel ql-hero"
+        style={{
+          '--hero-image': `url(${quickLaunchHero})`, '--hero-image-light': `url(${quickLaunchHeroLight})`,
+          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+          padding: '24px 28px',
+        }}
+      >
         <div>
           <h1 style={{ fontSize: '2rem', fontWeight: '800', marginBottom: '4px' }}>
             Quick-<span className="gradient-text">Launch</span>
           </h1>
           <p style={{ color: 'var(--text-secondary)' }}>Organize and launch your work links with a single click.</p>
         </div>
-        
-        <button 
+
+        <button
           onClick={() => handleOpenFolderModal()}
           className="glow-btn"
         >

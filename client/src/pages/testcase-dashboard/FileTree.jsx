@@ -1,6 +1,6 @@
 import { useEffect, useMemo } from 'react';
 import { UploadCloud } from 'lucide-react';
-import { CAT_ORDER, CAT_LABELS, buildTree, fileSortComparator, STATUS_FILTER_KEYS } from './helpers';
+import { CAT_ORDER, CAT_LABELS, buildTree, fileSortComparator, STATUS_FILTER_KEYS, isFlakyTrend } from './helpers';
 import FileCard from './FileCard';
 import SelectAllCheckbox from './SelectAllCheckbox';
 import SelectAllCasesCheckbox from './SelectAllCasesCheckbox';
@@ -15,7 +15,7 @@ const FileTree = ({
   onSyncFile, onSyncGroup, onSyncCategory, caseResultsByPath,
   manualStatus, onSetManualStatus,
   tags, onOpenTagModal, onRemoveTag, selectedCases, onToggleCaseSelect, onSelectManyCases,
-  getCaseStatus,
+  getCaseStatus, bugLinks, onEditBugLink, onClearBugLink,
 }) => {
   const unknownIdSet = useMemo(() => new Set((data.unknownIds || []).map((u) => u.id)), [data.unknownIds]);
   const tree = useMemo(() => buildTree(data.rows), [data.rows]);
@@ -47,6 +47,7 @@ const FileTree = ({
           if (term && `${r.id} ${r.title} ${r.path} ${r.club || ''}`.toLowerCase().indexOf(term) === -1) return false;
           if (issueFilter === 'commented' && !r.commented) return false;
           if (issueFilter === 'unknown' && !unknownIdSet.has(r.id)) return false;
+          if (issueFilter === 'flaky' && !isFlakyTrend(fileTrendMap[path])) return false;
           if (STATUS_FILTER_KEYS.has(issueFilter) && getCaseStatus?.(r) !== issueFilter) return false;
           return true;
         }).map((r) => ({ ...r, __unknown: unknownIdSet.has(r.id) }));
@@ -89,6 +90,9 @@ const FileTree = ({
             selectedCases={selectedCases}
             onToggleCaseSelect={onToggleCaseSelect}
             onSelectManyCases={onSelectManyCases}
+            bugLinks={bugLinks}
+            onEditBugLink={onEditBugLink}
+            onClearBugLink={onClearBugLink}
           />
         );
       });
