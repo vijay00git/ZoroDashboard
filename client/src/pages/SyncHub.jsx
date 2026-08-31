@@ -27,10 +27,12 @@ import {
   Bookmark,
   X,
   MessageSquare,
+  HelpCircle,
 } from 'lucide-react';
 import { showAlert, showConfirm, showPrompt } from '../utils/Alerts';
 import syncHubHero from '../assets/hero-banners/synchub-hero.webp';
 import syncHubHeroLight from '../assets/hero-banners/synchub-hero-light.webp';
+import syncEmptyIllustration from '../assets/illustrations/sync-empty.svg';
 
 const SyncHub = () => {
   // TestRail credentials
@@ -977,10 +979,12 @@ const SyncHub = () => {
     addLog(`Exported ${sortedFilteredCases.length} cases to CSV.`, 'success');
   };
 
-  const handleBulkStatusChange = (newStatus) => {
+  const handleBulkStatusChange = async (newStatus) => {
+    if (!(await showConfirm(`Set ${selectedCaseUids.length} selected case(s) to ${newStatus}?`))) return;
     setTestCases(testCases.map(tc =>
       selectedCaseUids.includes(tc._uid) ? { ...tc, status: newStatus } : tc
     ));
+    addLog(`Set ${selectedCaseUids.length} test cases to ${newStatus}.`, 'info');
   };
 
   const handleBulkNoteApply = () => {
@@ -2245,6 +2249,15 @@ const SyncHub = () => {
                 </div>
               </div>
             )}
+            {testCases.length === 0 && (
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flex: 1, gap: '12px', padding: '24px' }}>
+                <img src={syncEmptyIllustration} alt="" style={{ width: '220px', maxWidth: '80%', opacity: 0.9 }} />
+                <h3 style={{ fontSize: '1rem', fontWeight: 'bold', margin: 0 }}>No matrix loaded yet</h3>
+                <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', textAlign: 'center', margin: 0, maxWidth: '340px' }}>
+                  Upload a CSV, load a saved matrix, or start from scratch to see your test cases here.
+                </p>
+              </div>
+            )}
           </div>
         </div>
 
@@ -2688,29 +2701,29 @@ const SyncHub = () => {
               const s = compareSearch.trim().toLowerCase();
               const thSt = { textAlign: 'left', padding: '8px 12px', fontSize: '0.68rem', fontWeight: '700', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px', borderBottom: '1px solid var(--border-color)', background: 'var(--bg-tertiary)', position: 'sticky', top: 0, zIndex: 1 };
               const tdSt = { padding: '9px 12px', fontSize: '0.78rem', borderBottom: '1px solid var(--border-color)', verticalAlign: 'middle' };
-              const emptyState = (icon, msg) => <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '160px', gap: '8px', color: 'var(--text-secondary)' }}><span style={{ fontSize: '2rem' }}>{icon}</span><span style={{ fontSize: '0.85rem' }}>{msg}</span></div>;
+              const emptyState = (Icon, msg) => <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '160px', gap: '8px', color: 'var(--text-secondary)' }}><Icon size={28} style={{ opacity: 0.5 }} /><span style={{ fontSize: '0.85rem' }}>{msg}</span></div>;
               const banner = (color, bg, msg) => <div style={{ padding: '9px 16px', fontSize: '0.72rem', color, background: bg, borderBottom: `1px solid color-mix(in srgb, ${color} 14.5%, transparent)` }} dangerouslySetInnerHTML={{ __html: msg }} />;
 
               return (
                 <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
                   {activeCompareTab === 'matched' && (() => {
                     const rows = compareData.matched.filter(c => !s || c.id.includes(s) || (c.title||'').toLowerCase().includes(s));
-                    if (!rows.length) return emptyState('✓', s ? 'No matches for your search.' : 'No matched cases found.');
+                    if (!rows.length) return emptyState(Check, s ? 'No matches for your search.' : 'No matched cases found.');
                     return <>{banner('#10b981','rgba(16,185,129,0.06)', 'Cases in <strong>both sources with the same status</strong> — fully in sync, no action needed.')}<table style={{ width: '100%', borderCollapse: 'collapse' }}><thead><tr><th style={thSt}>Case ID</th><th style={thSt}>Title</th><th style={thSt}>Status</th></tr></thead><tbody>{rows.map((c,i)=><tr key={i} style={{ background: i%2?'rgba(255,255,255,0.01)':'transparent' }}><td style={{ ...tdSt, fontWeight:'700', color:'var(--text-secondary)', width:'90px' }}>C{c.id}</td><td style={{ ...tdSt }}><span style={{ overflow:'hidden', textOverflow:'ellipsis', display:'block', whiteSpace:'nowrap', maxWidth:'500px' }}>{c.title}</span></td><td style={tdSt}>{statusBadge(c.status)}</td></tr>)}</tbody></table></>;
                   })()}
                   {activeCompareTab === 'conflicts' && (() => {
                     const rows = compareData.strictConflicts.filter(c => !s || c.id.includes(s) || (c.title||'').toLowerCase().includes(s));
-                    if (!rows.length) return emptyState('⚡', s ? 'No matches for your search.' : 'No conflicts — all shared cases match!');
+                    if (!rows.length) return emptyState(AlertTriangle, s ? 'No matches for your search.' : 'No conflicts — all shared cases match!');
                     return <>{banner('var(--accent-red)','color-mix(in srgb, var(--accent-red) 6%, transparent)', 'Cases in <strong>both sources with different statuses</strong>. Use "Use Remote ↗" per row or bulk-apply all above.')}<table style={{ width: '100%', borderCollapse: 'collapse' }}><thead><tr><th style={thSt}>Case ID</th><th style={thSt}>Title</th><th style={thSt}>Local</th><th style={thSt}>Remote</th><th style={thSt}>Action</th></tr></thead><tbody>{rows.map((c,i)=><tr key={i} style={{ background: i%2?'rgba(255,255,255,0.01)':'transparent' }}><td style={{ ...tdSt, fontWeight:'700', color:'var(--text-secondary)', width:'90px' }}>C{c.id}</td><td style={tdSt}><span style={{ overflow:'hidden', textOverflow:'ellipsis', display:'block', whiteSpace:'nowrap', maxWidth:'340px' }}>{c.title}</span></td><td style={tdSt}>{statusBadge(c.local)}</td><td style={tdSt}>{statusBadge(c.remote)}</td><td style={{ ...tdSt, width:'130px' }}><button onClick={()=>handleApplyRemoteStatus(c.id,c.remote)} style={{ background:'color-mix(in srgb, var(--accent-red) 10%, transparent)', border:'1px solid color-mix(in srgb, var(--accent-red) 30%, transparent)', color:'var(--accent-red)', borderRadius:'6px', padding:'4px 10px', cursor:'pointer', fontSize:'0.72rem', fontWeight:'600', whiteSpace:'nowrap' }}>Use Remote ↗</button></td></tr>)}</tbody></table></>;
                   })()}
                   {activeCompareTab === 'needsSync' && (() => {
                     const rows = compareData.needsSync.filter(c => !s || c.id.includes(s) || (c.title||'').toLowerCase().includes(s));
-                    if (!rows.length) return emptyState('↓', s ? 'No matches for your search.' : 'No remote-only cases found.');
+                    if (!rows.length) return emptyState(Download, s ? 'No matches for your search.' : 'No remote-only cases found.');
                     return <>{banner('#f59e0b','rgba(245,158,11,0.06)', 'Cases in the <strong>remote CSV only</strong>. Import them into your local matrix to track them.')}<table style={{ width: '100%', borderCollapse: 'collapse' }}><thead><tr><th style={thSt}>Case ID</th><th style={thSt}>Title</th><th style={thSt}>Remote Status</th><th style={thSt}>Action</th></tr></thead><tbody>{rows.map((c,i)=><tr key={i} style={{ background: i%2?'rgba(255,255,255,0.01)':'transparent' }}><td style={{ ...tdSt, fontWeight:'700', color:'var(--text-secondary)', width:'90px' }}>C{c.id}</td><td style={tdSt}><span style={{ overflow:'hidden', textOverflow:'ellipsis', display:'block', whiteSpace:'nowrap', maxWidth:'400px' }}>{c.title}</span></td><td style={tdSt}>{statusBadge(c.status)}</td><td style={{ ...tdSt, width:'145px' }}><button onClick={()=>handleAddToLocalFromRemote(c)} style={{ background:'rgba(245,158,11,0.1)', border:'1px solid rgba(245,158,11,0.3)', color:'#f59e0b', borderRadius:'6px', padding:'4px 10px', cursor:'pointer', fontSize:'0.72rem', fontWeight:'600', whiteSpace:'nowrap' }}>+ Add to Matrix</button></td></tr>)}</tbody></table></>;
                   })()}
                   {activeCompareTab === 'missingTr' && (() => {
                     const rows = compareData.missingTr.filter(c => !s || c.id.includes(s) || (c.title||'').toLowerCase().includes(s));
-                    if (!rows.length) return emptyState('?', s ? 'No matches for your search.' : 'All local cases are present in the remote.');
+                    if (!rows.length) return emptyState(HelpCircle, s ? 'No matches for your search.' : 'All local cases are present in the remote.');
                     const allRowsSelected = rows.length > 0 && rows.every(c => missingTrSelected.has(c._uid));
                     const someSelected = rows.some(c => missingTrSelected.has(c._uid));
                     const toggleAll = () => {
@@ -2819,7 +2832,7 @@ const SyncHub = () => {
                 const filtered = states.filter(m => !q || m.name.toLowerCase().includes(q) || (m.folder || '').toLowerCase().includes(q));
                 if (filtered.length === 0) return (
                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '120px', color: 'var(--text-muted)', gap: '6px' }}>
-                    <span style={{ fontSize: '1.5rem' }}>🗂</span>
+                    <FolderOpen size={24} style={{ opacity: 0.5 }} />
                     <span style={{ fontSize: '0.8rem' }}>{q ? 'No matrices match your search.' : 'No saved matrices found.'}</span>
                   </div>
                 );

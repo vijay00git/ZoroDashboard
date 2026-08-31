@@ -17,6 +17,7 @@ const BugsCard = ({ groups, onFocusCase }) => {
       </p>
       {groups.length === 0 ? (
         <div className="tcd-hero-empty">
+          <div className="tcd-hero-empty-icon"><Bug size={20} /></div>
           <p>No bugs linked yet.</p>
           <p className="tcd-modal-hint">Click the bug icon on a failing case to link a ticket (e.g. EVB-1234).</p>
         </div>

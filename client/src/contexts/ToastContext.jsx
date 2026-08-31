@@ -50,7 +50,7 @@ export const ToastProvider = ({ children }) => {
               pointerEvents: 'auto',
               animation: 'slideInRight 0.3s cubic-bezier(0.4, 0, 0.2, 1) forwards'
             }}>
-              <Icon size={18} style={{ color }} />
+              <Icon size={18} style={{ color, animation: 'toast-icon-pop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) 0.1s both' }} />
               <span style={{ color: 'var(--text-primary)', fontSize: '0.9rem', fontWeight: '500' }}>{t.message}</span>
             </div>
           );

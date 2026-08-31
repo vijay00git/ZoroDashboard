@@ -324,10 +324,19 @@ const SSBucket = () => {
 
   // ── Render ──
   if (isLoading) {
+    const skeletonHeights = [180, 240, 150, 210, 170, 260, 190, 220];
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '60vh', gap: '16px' }}>
-        <div style={{ width: '44px', height: '44px', borderRadius: '50%', border: '3px solid rgba(192,132,252,0.2)', borderTopColor: '#c084fc', animation: 'spin 0.9s linear infinite' }} />
-        <span style={{ fontSize: '0.88rem', color: 'var(--text-muted)', fontWeight: 500 }}>Loading screenshots…</span>
+      <div style={{ display: 'flex', gap: '16px', height: 'calc(100vh - var(--header-h) - 48px)', minHeight: 0 }}>
+        <div style={{ width: '214px', flexShrink: 0, display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          {Array.from({ length: 6 }, (_, i) => (
+            <div key={i} className="skeleton" style={{ height: '28px', borderRadius: '8px' }} />
+          ))}
+        </div>
+        <div style={{ flex: 1, columns: '220px', columnGap: '14px' }}>
+          {skeletonHeights.map((h, i) => (
+            <div key={i} className="skeleton" style={{ height: `${h}px`, marginBottom: '14px', breakInside: 'avoid', borderRadius: 'var(--radius-md, 10px)' }} />
+          ))}
+        </div>
       </div>
     );
   }

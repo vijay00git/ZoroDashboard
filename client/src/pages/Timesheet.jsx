@@ -20,6 +20,8 @@ import 'flatpickr/dist/themes/dark.css';
 import { showAlert } from '../utils/Alerts';
 import monthSelectPlugin from 'flatpickr/dist/plugins/monthSelect/index.js';
 import 'flatpickr/dist/plugins/monthSelect/style.css';
+import timesheetHero from '../assets/hero-banners/timesheet-hero.webp';
+import timesheetHeroLight from '../assets/hero-banners/timesheet-hero-light.webp';
 
 const DonutChart = ({ data }) => {
   let total = data.reduce((acc, d) => acc + d.count, 0);
@@ -62,6 +64,12 @@ for (let h = 0; h < 24; h++) {
     TIME_OPTIONS.push(`${hour}:${min} ${ampm}`);
   }
 }
+
+const WEEKDAY_INDEX = { Sunday: 0, Monday: 1, Tuesday: 2, Wednesday: 3, Thursday: 4, Friday: 5, Saturday: 6 };
+const HEATMAP_LEGEND = [
+  ['Office', '#10b981'], ['WFH', '#f59e0b'], ['WeekEnd', 'var(--text-muted)'],
+  ['Leave', 'var(--accent-red)'], ['Holiday', '#06b6d4'], ['Comp Off', '#8b5cf6'],
+];
 
 const Timesheet = () => {
   const [empId, setEmpId] = useState(localStorage.getItem('ts-empId') || '1200');
@@ -549,18 +557,24 @@ const Timesheet = () => {
       <input type="file" accept=".ics" style={{ display: 'none' }} ref={icsInputRef} onChange={handleImportICS} />
 
       {/* Top Header / Nav Bar */}
-      <div style={{
-        background: 'linear-gradient(90deg, #10b981, #059669)',
-        borderRadius: '16px',
-        padding: '20px 24px',
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        boxShadow: '0 4px 20px rgba(16, 185, 129, 0.3)'
-      }}>
-        <h1 style={{ color: '#fff', fontSize: '1.5rem', fontWeight: '800', margin: 0, display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <CalendarIcon size={24} /> Monthly Timesheet
-        </h1>
+      <div
+        className="glass-panel timesheet-hero"
+        style={{
+          '--hero-image': `url(${timesheetHero})`, '--hero-image-light': `url(${timesheetHeroLight})`,
+          padding: '24px 28px',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          flexWrap: 'wrap',
+          gap: '16px',
+        }}
+      >
+        <div>
+          <h1 style={{ fontSize: '2rem', fontWeight: '900', marginBottom: '8px', letterSpacing: '-0.5px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <CalendarIcon size={24} /> Monthly <span className="gradient-text">Timesheet</span>
+          </h1>
+          <p style={{ color: 'var(--text-secondary)', fontSize: '0.95rem', margin: 0 }}>Track daily hours, import calendar events, and export your monthly log.</p>
+        </div>
 
         <div style={{ display: 'flex', gap: '12px' }}>
           <button onClick={() => icsInputRef.current.click()} style={{ background: '#3b82f6', color: '#fff', border: 'none', padding: '8px 16px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -905,6 +919,45 @@ const Timesheet = () => {
 
         {/* Right Column: Charts */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+
+          {/* Month Heatmap */}
+          <div className="glass-panel" style={{ padding: '20px' }}>
+            <h3 style={{ fontSize: '0.9rem', color: 'var(--text-muted)', marginBottom: '16px', fontWeight: 'bold' }}>Month Heatmap</h3>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '4px' }}>
+              {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((d, i) => (
+                <div key={i} style={{ textAlign: 'center', fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 'bold' }}>{d}</div>
+              ))}
+              {rows.length > 0 && Array.from({ length: WEEKDAY_INDEX[rows[0].dayName] ?? 0 }, (_, i) => (
+                <div key={`pad-${i}`} />
+              ))}
+              {rows.map((r, i) => {
+                const { total } = calculateRowHours(r);
+                const badge = getStatusBadgeStyle(r.type);
+                const dayNum = parseInt(r.date.split('-')[0], 10);
+                return (
+                  <div
+                    key={i}
+                    title={`${r.date} · ${r.type}${total > 0 ? ' · ' + formatToTimeStr(total) : ''}`}
+                    style={{
+                      aspectRatio: '1', borderRadius: '5px', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      background: badge.bg, color: badge.color, fontSize: '0.68rem', fontWeight: '700',
+                      border: `1px solid color-mix(in srgb, ${badge.color} 20%, transparent)`,
+                    }}
+                  >
+                    {dayNum}
+                  </div>
+                );
+              })}
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '14px' }}>
+              {HEATMAP_LEGEND.map(([label, color]) => (
+                <div key={label} style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.68rem' }}>
+                  <div style={{ width: '8px', height: '8px', borderRadius: '2px', background: color }} />
+                  <span style={{ color: 'var(--text-secondary)' }}>{label}</span>
+                </div>
+              ))}
+            </div>
+          </div>
 
           {/* Bar Chart Panel */}
           <div className="glass-panel" style={{ padding: '20px', display: 'flex', flexDirection: 'column', alignItems: 'center', height: '300px' }}>

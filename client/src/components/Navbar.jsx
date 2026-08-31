@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { Settings } from 'lucide-react';
 import { MAIN_NAV } from '../navigation';
@@ -8,12 +8,19 @@ const Navbar = () => {
   const displayName = localStorage.getItem('tr-display-name') || 'ZORO';
   const avatarUrl   = localStorage.getItem('tr-avatar-url')   || '';
 
-  const initials = displayName
-    .split(' ')
-    .map(w => w[0])
-    .join('')
-    .toUpperCase()
-    .slice(0, 2);
+  const navRef = useRef(null);
+  const itemRefs = useRef({});
+  const [indicator, setIndicator] = useState({ top: 0, opacity: 0 });
+
+  useLayoutEffect(() => {
+    const activeEl = itemRefs.current[location.pathname];
+    if (activeEl) {
+      setIndicator({ top: activeEl.offsetTop + (activeEl.offsetHeight - 14) / 2, opacity: 1 });
+    } else {
+      setIndicator((prev) => ({ ...prev, opacity: 0 }));
+    }
+  }, [location.pathname]);
+
 
   return (
     <nav className="sidebar" aria-label="Main navigation">
@@ -27,7 +34,11 @@ const Navbar = () => {
               style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 'inherit' }}
             />
           ) : (
-            initials
+            <img
+              src="/favicon.svg"
+              alt="ZORO"
+              style={{ width: '70%', height: '70%', objectFit: 'contain' }}
+            />
           )}
         </div>
         <div className="sidebar-brand-text">
@@ -37,7 +48,8 @@ const Navbar = () => {
       </div>
 
       {/* ── Main Nav ── */}
-      <div className="sidebar-nav">
+      <div className="sidebar-nav" ref={navRef}>
+        <div className="sidebar-nav-indicator" style={{ transform: `translateY(${indicator.top}px)`, opacity: indicator.opacity }} />
         <span className="sidebar-section-label">Workspace</span>
 
         {MAIN_NAV.map(({ path, label, icon: Icon }) => {
@@ -46,6 +58,7 @@ const Navbar = () => {
             <Link
               key={path}
               to={path}
+              ref={(el) => { itemRefs.current[path] = el; }}
               className={`sidebar-item${isActive ? ' active' : ''}`}
               title={label}
             >

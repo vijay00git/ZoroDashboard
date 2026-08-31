@@ -1,22 +1,27 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  Droplet, 
-  Plus, 
-  RotateCcw, 
-  Volume2, 
-  VolumeX, 
-  Bell, 
+import {
+  Droplet,
+  Plus,
+  RotateCcw,
+  Volume2,
+  VolumeX,
+  Bell,
   Settings,
-  Trash2
+  Trash2,
+  Flame
 } from 'lucide-react';
 import { showConfirm } from '../utils/Alerts';
 import waterHero from '../assets/hero-banners/water-hero.webp';
 import waterHeroLight from '../assets/hero-banners/water-hero-light.webp';
+import waterEmptyIllustration from '../assets/illustrations/water-empty.svg';
+
+const dateKey = (d) => d.toISOString().slice(0, 10);
 
 const Water = () => {
   const [goal, setGoal] = useState(2000);
   const [intake, setIntake] = useState(0);
   const [logs, setLogs] = useState([]);
+  const [history, setHistory] = useState([]);
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [customAmount, setCustomAmount] = useState('');
 
@@ -26,23 +31,36 @@ const Water = () => {
 
   // Load from local storage
   useEffect(() => {
-    const todayStr = new Date().toDateString();
+    const now = new Date();
+    const todayStr = now.toDateString();
     const lastSavedDate = localStorage.getItem('tr-water-date');
     const savedGoal = localStorage.getItem('tr-water-goal');
-    
-    if (savedGoal) setGoal(parseInt(savedGoal));
+    const parsedGoal = savedGoal ? parseInt(savedGoal) : 2000;
+
+    if (savedGoal) setGoal(parsedGoal);
+
+    let savedHistory = JSON.parse(localStorage.getItem('tr-water-history') || '[]');
 
     if (lastSavedDate === todayStr) {
       setIntake(parseInt(localStorage.getItem('tr-water-intake-ml') || '0'));
       setLogs(JSON.parse(localStorage.getItem('tr-water-log') || '[]'));
     } else {
-      // New Day: Clear stats
+      // Archive the previous day's final total before clearing today's stats,
+      // so the 7-day chart/streak has something to look back on.
+      if (lastSavedDate) {
+        const prevIntake = parseInt(localStorage.getItem('tr-water-intake-ml') || '0');
+        const prevKey = dateKey(new Date(lastSavedDate));
+        savedHistory = [...savedHistory.filter(h => h.date !== prevKey), { date: prevKey, intake: prevIntake, goal: parsedGoal }].slice(-30);
+        localStorage.setItem('tr-water-history', JSON.stringify(savedHistory));
+      }
       setIntake(0);
       setLogs([]);
       localStorage.setItem('tr-water-intake-ml', '0');
       localStorage.setItem('tr-water-log', '[]');
       localStorage.setItem('tr-water-date', todayStr);
     }
+
+    setHistory(savedHistory);
 
     const savedSound = localStorage.getItem('tr-water-sound-enabled');
     if (savedSound) setSoundEnabled(savedSound === 'true');
@@ -118,6 +136,36 @@ const Water = () => {
   };
 
   const pct = Math.min(100, Math.round((intake / goal) * 100));
+
+  // Last 7 calendar days (today included, live) for the mini bar chart.
+  const last7 = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date();
+    d.setDate(d.getDate() - (6 - i));
+    const isToday = i === 6;
+    const entry = isToday ? { intake, goal } : history.find(h => h.date === dateKey(d));
+    return {
+      label: d.toLocaleDateString([], { weekday: 'short' }).slice(0, 1),
+      intake: entry?.intake ?? 0,
+      goal: entry?.goal ?? goal,
+      hasData: !!entry,
+      isToday,
+    };
+  });
+
+  // Consecutive days ending today that hit the goal. Today doesn't break an
+  // existing streak just for being incomplete-so-far — it's simply not
+  // counted until the goal is actually reached.
+  const streak = (() => {
+    let count = intake >= goal ? 1 : 0;
+    for (let i = 1; ; i++) {
+      const d = new Date();
+      d.setDate(d.getDate() - i);
+      const entry = history.find(h => h.date === dateKey(d));
+      if (!entry || entry.intake < entry.goal) break;
+      count++;
+    }
+    return count;
+  })();
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
@@ -385,14 +433,56 @@ const Water = () => {
             </div>
           </div>
 
+          {/* Last 7 Days & Streak */}
+          <div className="glass-panel" style={{ padding: '20px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+              <h3 style={{ fontSize: '1rem', fontWeight: 'bold', margin: 0 }}>Last 7 Days</h3>
+              {streak > 0 && (
+                <span style={{
+                  display: 'flex', alignItems: 'center', gap: '4px',
+                  background: 'color-mix(in srgb, var(--accent-orange) 15%, transparent)',
+                  border: '1px solid color-mix(in srgb, var(--accent-orange) 35%, transparent)',
+                  color: 'var(--accent-orange)', borderRadius: '999px', padding: '2px 9px',
+                  fontSize: '0.72rem', fontWeight: '700',
+                }}>
+                  <Flame size={11} /> {streak} day{streak === 1 ? '' : 's'} streak
+                </span>
+              )}
+            </div>
+            <div style={{ display: 'flex', alignItems: 'flex-end', gap: '10px', height: '80px' }}>
+              {last7.map((day, i) => {
+                const barPct = day.goal ? Math.min(100, Math.round((day.intake / day.goal) * 100)) : 0;
+                const met = day.intake >= day.goal && day.goal > 0;
+                return (
+                  <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px', height: '100%' }}>
+                    <div style={{ flex: 1, width: '100%', display: 'flex', alignItems: 'flex-end', background: 'var(--bg-tertiary)', borderRadius: '6px', overflow: 'hidden' }}>
+                      <div style={{
+                        width: '100%',
+                        height: `${Math.max(barPct, day.hasData || day.isToday ? 4 : 0)}%`,
+                        background: met ? 'var(--accent-green)' : 'linear-gradient(180deg, var(--accent-cyan), #3b82f6)',
+                        borderRadius: '6px 6px 0 0',
+                        transition: 'height 0.5s cubic-bezier(0.4, 0, 0.2, 1)',
+                        opacity: day.isToday ? 1 : (day.hasData ? 0.85 : 0.25),
+                      }} />
+                    </div>
+                    <span style={{ fontSize: '0.65rem', fontWeight: '700', color: day.isToday ? 'var(--text-primary)' : 'var(--text-muted)' }}>{day.label}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
           {/* Daily Logs History */}
           <div className="glass-panel" style={{ padding: '20px' }}>
             <h3 style={{ fontSize: '1rem', fontWeight: 'bold', marginBottom: '12px' }}>Today's Logs</h3>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '180px', overflowY: 'auto' }}>
               {logs.length === 0 ? (
-                <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', textAlign: 'center', padding: '12px' }}>
-                  No hydration logged yet today.
-                </p>
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '4px 0' }}>
+                  <img src={waterEmptyIllustration} alt="" style={{ width: '80px', opacity: 0.9, marginBottom: '4px' }} />
+                  <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', textAlign: 'center', margin: 0 }}>
+                    No hydration logged yet today.
+                  </p>
+                </div>
               ) : (
                 logs.map(log => (
                   <div

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import AnimatedDigits from './AnimatedDigits';
 
 const GlobalClock = () => {
   const [time, setTime] = useState(new Date());
@@ -30,9 +31,9 @@ const GlobalClock = () => {
         color: 'var(--accent-cyan)',
         letterSpacing: '1px',
       }}>
-        {hh}
+        <AnimatedDigits text={hh} />
         <span style={{ opacity: blink ? 1 : 0.35, transition: 'opacity 0.2s ease' }}>:</span>
-        {mm}
+        <AnimatedDigits text={mm} />
       </span>
 
       <span style={{

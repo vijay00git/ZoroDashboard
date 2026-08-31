@@ -1,7 +1,9 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
+import Lottie from 'lottie-react';
 import { Play, Pause, RotateCcw, X, Coffee, Zap, Moon } from 'lucide-react';
 import { usePomo } from '../contexts/PomodoroContext';
+import confettiAnim from '../assets/lottie/confetti.json';
 
 const ModeIcon = ({ m }) => {
   if (m === 'focus') return <Zap size={11} strokeWidth={2.5} />;
@@ -23,6 +25,17 @@ export default function FocusMode() {
   const { MODES, mode, timeLeft, isActive, sessions, isFocusOpen, totalSecs, toggle, reset, switchMode, setIsFocusOpen } = usePomo();
   const [closeHover, setCloseHover] = useState(false);
   const [startHover, setStartHover] = useState(false);
+  const [celebrate, setCelebrate] = useState(false);
+  const prevSessions = useRef(sessions);
+
+  useEffect(() => {
+    if (sessions !== prevSessions.current) {
+      prevSessions.current = sessions;
+      setCelebrate(true);
+      const t = setTimeout(() => setCelebrate(false), 2200);
+      return () => clearTimeout(t);
+    }
+  }, [sessions]);
 
   if (!isFocusOpen) return null;
 
@@ -66,6 +79,14 @@ export default function FocusMode() {
         animation: 'focusBgIn 0.3s ease forwards',
       }}
     >
+      {celebrate && (
+        <Lottie
+          animationData={confettiAnim}
+          loop={false}
+          style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 1 }}
+        />
+      )}
+
       {/* Ambient radial glow behind card */}
       <div style={{
         position: 'absolute',

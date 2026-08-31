@@ -19,8 +19,13 @@ import {
 } from 'lucide-react';
 import { showAlert, showConfirm } from '../utils/Alerts';
 import { getAIConfig, noKeyMessage } from '../utils/ai';
+import { getLevelData } from '../utils/xpLevels';
+import { useToast } from '../contexts/ToastContext';
+import { playCompleteChime, playLevelUpFanfare } from '../utils/sound';
 
 const LearnSkills = () => {
+  const { showToast } = useToast();
+
   // --- State ---
   const [library, setLibrary] = useState([]);
   const [currentGoalId, setCurrentGoalId] = useState('new');
@@ -113,14 +118,6 @@ const LearnSkills = () => {
   };
 
   const activeXP = calculateTotalXP();
-
-  const getLevelData = (xp) => {
-    if (xp < 100) return { title: 'Novice', min: 0, max: 100, pct: xp, icon: '🥚' };
-    if (xp < 300) return { title: 'Apprentice', min: 100, max: 300, pct: ((xp - 100) / 200) * 100, icon: '🌱' };
-    if (xp < 600) return { title: 'Scholar', min: 300, max: 600, pct: ((xp - 300) / 300) * 100, icon: '📘' };
-    if (xp < 1000) return { title: 'Expert', min: 600, max: 1000, pct: ((xp - 600) / 400) * 100, icon: '🔥' };
-    return { title: 'Grandmaster', min: 1000, max: 1000, pct: 100, icon: '👑' };
-  };
 
   const levelInfo = getLevelData(activeXP);
 
@@ -344,6 +341,7 @@ const LearnSkills = () => {
       spread: 70,
       origin: { y: 0.6 }
     });
+    playCompleteChime();
 
     // Check level up
     const nextXP = (updatedLib.find(g => g.id === activeGoal.id).roadmap.flatMap(m => m.subtopics).filter(t => t.completed).length) * 10;
@@ -353,7 +351,9 @@ const LearnSkills = () => {
       setTimeout(() => {
         confetti({ particleCount: 150, angle: 60, spread: 80, origin: { x: 0 } });
         confetti({ particleCount: 150, angle: 120, spread: 80, origin: { x: 1 } });
+        playLevelUpFanfare();
       }, 500);
+      showToast(`Level up! You're now a ${nextLvlInfo.title}.`, 'success');
     }
   };
 
@@ -420,11 +420,16 @@ const LearnSkills = () => {
             {/* Glossy overlay */}
             <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '40%', background: 'linear-gradient(180deg, rgba(255,255,255,0.05), transparent)', pointerEvents: 'none' }} />
             
-            <div style={{ 
-              fontSize: '2.5rem', 
+            <div style={{
+              width: '52px', height: '52px', borderRadius: '50%', flexShrink: 0,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              background: `color-mix(in srgb, ${levelInfo.color} 18%, transparent)`,
+              border: `1px solid color-mix(in srgb, ${levelInfo.color} 40%, transparent)`,
+              color: levelInfo.color,
               filter: 'drop-shadow(0 4px 8px rgba(0,0,0,0.4))',
-              transform: 'scale(1.1)'
-            }}>{levelInfo.icon}</div>
+            }}>
+              <levelInfo.icon size={26} />
+            </div>
             
             <div style={{ flexGrow: 1, zIndex: 1 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '6px' }}>

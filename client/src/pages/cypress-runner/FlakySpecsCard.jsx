@@ -15,6 +15,7 @@ const FlakySpecsCard = ({ specs, caseCount, onFocusPath }) => (
     </p>
     {specs.length === 0 ? (
       <div className="tcd-hero-empty">
+        <div className="tcd-hero-empty-icon"><Zap size={20} /></div>
         <p>None detected.</p>
         <p className="tcd-modal-hint">A spec is flagged once its last few local runs flip between pass and fail more than once.</p>
       </div>

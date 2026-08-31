@@ -8,6 +8,7 @@ export const GlobalAlert = () => {
   const [confirmConfig, setConfirmConfig] = useState(null);
   const [promptConfig, setPromptConfig] = useState(null);
   const [promptInput, setPromptInput] = useState('');
+  const [closing, setClosing] = useState(false);
 
   useEffect(() => {
     registerAlerts(
@@ -33,46 +34,63 @@ export const GlobalAlert = () => {
   const handleAlertClose = () => {
     if (alertConfig) {
       alertConfig.resolve(true);
-      setAlertConfig(null);
+      setClosing(true);
     }
   };
 
   const handleConfirm = (result) => {
     if (confirmConfig) {
       confirmConfig.resolve(result);
-      setConfirmConfig(null);
+      setClosing(true);
     }
   };
 
   const handlePrompt = (result) => {
     if (promptConfig) {
       promptConfig.resolve(result);
-      setPromptConfig(null);
+      setClosing(true);
     }
   };
 
   if (!alertConfig && !confirmConfig && !promptConfig) return null;
 
   return createPortal(
-    <div style={{
-      position: 'fixed',
-      top: 0, left: 0, right: 0, bottom: 0,
-      background: 'rgba(0,0,0,0.6)',
-      backdropFilter: 'blur(5px)',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      zIndex: 99999
-    }}>
+    <div
+      style={{
+        position: 'fixed',
+        top: 0, left: 0, right: 0, bottom: 0,
+        background: 'rgba(0,0,0,0.6)',
+        backdropFilter: 'blur(5px)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        zIndex: 99999,
+        animation: `${closing ? 'overlayFadeOut' : 'overlayFadeIn'} 0.15s ease forwards`,
+      }}
+      onAnimationEnd={() => {
+        if (closing) {
+          setAlertConfig(null);
+          setConfirmConfig(null);
+          setPromptConfig(null);
+          setClosing(false);
+        }
+      }}
+    >
       <style>{`
         @keyframes scaleIn {
           from { transform: scale(0.95); opacity: 0; }
           to { transform: scale(1); opacity: 1; }
         }
+        @keyframes scaleOut {
+          from { transform: scale(1); opacity: 1; }
+          to { transform: scale(0.95); opacity: 0; }
+        }
+        @keyframes overlayFadeIn { from { opacity: 0; } to { opacity: 1; } }
+        @keyframes overlayFadeOut { from { opacity: 1; } to { opacity: 0; } }
       `}</style>
 
       {alertConfig && (
-        <div className="glass-panel" style={{ width: '400px', padding: '24px', animation: 'scaleIn 0.2s ease-out' }}>
+        <div className="glass-panel" style={{ width: '400px', padding: '24px', animation: `${closing ? 'scaleOut' : 'scaleIn'} 0.15s ease forwards` }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
             <AlertCircle size={24} color="#3b82f6" />
             <h3 style={{ margin: 0, fontSize: '1.2rem', color: 'var(--text-primary)' }}>Alert</h3>
@@ -89,7 +107,7 @@ export const GlobalAlert = () => {
       )}
 
       {confirmConfig && (
-        <div className="glass-panel" style={{ width: '400px', padding: '24px', animation: 'scaleIn 0.2s ease-out' }}>
+        <div className="glass-panel" style={{ width: '400px', padding: '24px', animation: `${closing ? 'scaleOut' : 'scaleIn'} 0.15s ease forwards` }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
             <AlertCircle size={24} color="#f59e0b" />
             <h3 style={{ margin: 0, fontSize: '1.2rem', color: 'var(--text-primary)' }}>Confirm Action</h3>
@@ -109,7 +127,7 @@ export const GlobalAlert = () => {
       )}
 
       {promptConfig && (
-        <div className="glass-panel" style={{ width: '400px', padding: '24px', animation: 'scaleIn 0.2s ease-out' }}>
+        <div className="glass-panel" style={{ width: '400px', padding: '24px', animation: `${closing ? 'scaleOut' : 'scaleIn'} 0.15s ease forwards` }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
             <AlertCircle size={24} color="#8b5cf6" />
             <h3 style={{ margin: 0, fontSize: '1.2rem', color: 'var(--text-primary)' }}>Input Required</h3>

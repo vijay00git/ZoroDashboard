@@ -1,5 +1,6 @@
 import { Play, Pause, RotateCcw, Maximize2 } from 'lucide-react';
 import { usePomo } from '../contexts/PomodoroContext';
+import AnimatedDigits from './AnimatedDigits';
 
 const PomodoroTimer = () => {
   const { mode, MODES, timeLeft, isActive, toggle, reset, setIsFocusOpen } = usePomo();
@@ -24,9 +25,9 @@ const PomodoroTimer = () => {
         letterSpacing: '1px', minWidth: '42px',
         transition: 'color 0.2s ease',
       }}>
-        {mins}
+        <AnimatedDigits text={mins} />
         <span style={{ opacity: isActive && timeLeft % 2 === 0 ? 1 : 0.4, transition: 'opacity 0.2s ease' }}>:</span>
-        {secs}
+        <AnimatedDigits text={secs} />
       </span>
 
       <button onClick={toggle} aria-label={isActive ? 'Pause' : 'Start'}

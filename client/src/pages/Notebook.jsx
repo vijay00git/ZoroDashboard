@@ -2,6 +2,9 @@ import React, { useState, useEffect, useRef } from 'react';
 import { marked } from 'marked';
 import html2pdf from 'html2pdf.js';
 import { sanitizeHtml } from '../utils/sanitizeHtml';
+import notebookEmptyIllustration from '../assets/illustrations/notebook-empty.svg';
+import notebookHero from '../assets/hero-banners/notebook-hero.webp';
+import notebookHeroLight from '../assets/hero-banners/notebook-hero-light.webp';
 import {
   Plus,
   Trash2,
@@ -43,6 +46,7 @@ const Notebook = () => {
   const [items, setItems] = useState([]);
   const [activeNoteId, setActiveNoteId] = useState(null);
   const [noteMode, setNoteMode] = useState('preview'); // 'edit', 'preview', 'split'
+  const [caretPos, setCaretPos] = useState(0);
   const [editingTitleId, setEditingTitleId] = useState(null);
   const [renameValue, setRenameValue] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
@@ -276,6 +280,53 @@ const Notebook = () => {
     }, 0);
   };
 
+  const updateCaretPos = () => {
+    if (textareaRef.current) setCaretPos(textareaRef.current.selectionStart);
+  };
+
+  // Heuristic "is the caret inside this format" check, driven purely off the
+  // raw markdown source (there's no rich-text model to ask) — good enough to
+  // light up the toolbar the way a real editor would, not a strict parser.
+  const activeFormats = (() => {
+    const content = activeNote?.content || '';
+    const countOccurrences = (str, marker) => {
+      let count = 0, idx = 0;
+      while ((idx = str.indexOf(marker, idx)) !== -1) { count++; idx += marker.length; }
+      return count;
+    };
+    const lineStart = content.lastIndexOf('\n', caretPos - 1) + 1;
+    const lineEndIdx = content.indexOf('\n', caretPos);
+    const lineEnd = lineEndIdx === -1 ? content.length : lineEndIdx;
+    const line = content.slice(lineStart, lineEnd);
+    const before = content.slice(lineStart, caretPos);
+    const strippedBold = before.replaceAll('**', '');
+    return {
+      bold: countOccurrences(before, '**') % 2 === 1,
+      italic: countOccurrences(strippedBold, '*') % 2 === 1,
+      strike: countOccurrences(before, '~~') % 2 === 1,
+      h1: /^\s*#\s/.test(line) && !/^\s*##/.test(line),
+      h2: /^\s*##\s/.test(line),
+      quote: /^\s*>\s?/.test(line),
+      list: /^\s*-\s/.test(line),
+      orderedList: /^\s*\d+\.\s/.test(line),
+      code: countOccurrences(content.slice(0, caretPos), '```') % 2 === 1,
+    };
+  })();
+
+  const toolbarBtnProps = (isActive) => ({
+    style: {
+      background: isActive ? 'color-mix(in srgb, var(--accent-purple) 18%, transparent)' : 'transparent',
+      border: 'none',
+      color: isActive ? 'var(--accent-purple)' : 'var(--text-secondary)',
+      padding: '6px',
+      borderRadius: '4px',
+      cursor: 'pointer',
+      transition: 'background 0.15s ease, color 0.15s ease',
+    },
+    onMouseOver: (e) => { if (!isActive) { e.currentTarget.style.background = 'var(--bg-tertiary)'; e.currentTarget.style.color = 'var(--text-primary)'; } },
+    onMouseOut: (e) => { if (!isActive) { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'var(--text-secondary)'; } },
+  });
+
   // --- Exporting ---
   const handleExportMarkdown = () => {
     if (!activeNote) return;
@@ -296,6 +347,10 @@ const Notebook = () => {
     tempContainer.className = 'markdown-body';
     tempContainer.innerHTML = `
       <div style="padding: 20px 40px; font-family: 'Inter', sans-serif; color: #111;">
+        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 18px;">
+          <img src="${window.location.origin}/favicon.svg" style="width: 22px; height: 22px;" />
+          <span style="font-size: 11px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; color: #999;">ZORO's Portal</span>
+        </div>
         <h1 style="border-bottom: 2px solid #eaeaea; padding-bottom: 10px; margin-bottom: 20px;">${activeNote.name}</h1>
         ${sanitizeHtml(marked(activeNote.content || ''))}
       </div>
@@ -541,8 +596,21 @@ const Notebook = () => {
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 120px)', overflow: 'hidden' }}>
-      <div className="glass-panel" style={{ display: 'flex', height: '100%', minWidth: 0, overflow: 'hidden' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', height: 'calc(100vh - 120px)', overflow: 'hidden' }}>
+      <div
+        className="glass-panel notebook-hero"
+        style={{
+          '--hero-image': `url(${notebookHero})`, '--hero-image-light': `url(${notebookHeroLight})`,
+          padding: '24px 28px', flexShrink: 0,
+        }}
+      >
+        <h1 style={{ fontSize: '2rem', fontWeight: '900', marginBottom: '8px', letterSpacing: '-0.5px' }}>
+          <span className="gradient-text">Notebook</span>
+        </h1>
+        <p style={{ color: 'var(--text-secondary)', fontSize: '0.95rem' }}>Your markdown workspace for daily notes, snippets, and docs.</p>
+      </div>
+
+      <div className="glass-panel" style={{ display: 'flex', flex: 1, minHeight: 0, overflow: 'hidden' }}>
 
         {/* Sidebar */}
         <div style={{ width: '280px', flexShrink: 0, borderRight: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', background: 'rgba(0,0,0,0.2)' }}>
@@ -625,10 +693,8 @@ const Notebook = () => {
                 </>
               )
             ) : rootItems.length === 0 ? (
-              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '32px 12px', color: 'var(--text-muted)', textAlign: 'center' }}>
-                <div style={{ width: '56px', height: '56px', borderRadius: '50%', background: 'rgba(0,0,0,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '12px' }}>
-                  <FilePlus size={22} style={{ opacity: 0.5 }} />
-                </div>
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '20px 12px', color: 'var(--text-muted)', textAlign: 'center' }}>
+                <img src={notebookEmptyIllustration} alt="" style={{ width: '150px', maxWidth: '100%', opacity: 0.9, marginBottom: '8px' }} />
                 <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '12px', lineHeight: '1.5' }}>No notes yet</p>
                 <button onClick={() => handleCreateNote(null)} style={{ background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '8px 14px', cursor: 'pointer', color: 'var(--text-primary)', fontSize: '0.82rem', display: 'flex', alignItems: 'center', gap: '6px' }} className="nav-item-hover">
                   <FilePlus size={13} /> Create your first note
@@ -687,18 +753,18 @@ const Notebook = () => {
                   <div style={{ flex: 1, display: 'flex', flexDirection: 'column', borderRight: noteMode === 'split' ? '1px solid var(--border-color)' : 'none' }}>
                     {/* Toolbar */}
                     <div style={{ display: 'flex', gap: '4px', padding: '8px 16px', background: 'rgba(0,0,0,0.1)', borderBottom: '1px solid var(--border-color)', overflowX: 'auto' }}>
-                      <button onClick={() => injectMarkdown('**', '**')} style={{ background: 'transparent', border: 'none', color: 'var(--text-secondary)', padding: '6px', borderRadius: '4px', cursor: 'pointer' }} className="nav-item-hover"><Bold size={14} /></button>
-                      <button onClick={() => injectMarkdown('*', '*')} style={{ background: 'transparent', border: 'none', color: 'var(--text-secondary)', padding: '6px', borderRadius: '4px', cursor: 'pointer' }} className="nav-item-hover"><Italic size={14} /></button>
-                      <button onClick={() => injectMarkdown('~~', '~~')} style={{ background: 'transparent', border: 'none', color: 'var(--text-secondary)', padding: '6px', borderRadius: '4px', cursor: 'pointer' }} className="nav-item-hover"><Strikethrough size={14} /></button>
+                      <button onClick={() => injectMarkdown('**', '**')} {...toolbarBtnProps(activeFormats.bold)}><Bold size={14} /></button>
+                      <button onClick={() => injectMarkdown('*', '*')} {...toolbarBtnProps(activeFormats.italic)}><Italic size={14} /></button>
+                      <button onClick={() => injectMarkdown('~~', '~~')} {...toolbarBtnProps(activeFormats.strike)}><Strikethrough size={14} /></button>
                       <div style={{ width: '1px', background: 'var(--border-color)', margin: '0 4px' }}></div>
-                      <button onClick={() => injectMarkdown('# ', '')} style={{ background: 'transparent', border: 'none', color: 'var(--text-secondary)', padding: '6px', borderRadius: '4px', cursor: 'pointer' }} className="nav-item-hover"><Heading1 size={14} /></button>
-                      <button onClick={() => injectMarkdown('## ', '')} style={{ background: 'transparent', border: 'none', color: 'var(--text-secondary)', padding: '6px', borderRadius: '4px', cursor: 'pointer' }} className="nav-item-hover"><Heading2 size={14} /></button>
-                      <button onClick={() => injectMarkdown('> ', '')} style={{ background: 'transparent', border: 'none', color: 'var(--text-secondary)', padding: '6px', borderRadius: '4px', cursor: 'pointer' }} className="nav-item-hover"><Quote size={14} /></button>
+                      <button onClick={() => injectMarkdown('# ', '')} {...toolbarBtnProps(activeFormats.h1)}><Heading1 size={14} /></button>
+                      <button onClick={() => injectMarkdown('## ', '')} {...toolbarBtnProps(activeFormats.h2)}><Heading2 size={14} /></button>
+                      <button onClick={() => injectMarkdown('> ', '')} {...toolbarBtnProps(activeFormats.quote)}><Quote size={14} /></button>
                       <div style={{ width: '1px', background: 'var(--border-color)', margin: '0 4px' }}></div>
-                      <button onClick={() => injectMarkdown('- ', '')} style={{ background: 'transparent', border: 'none', color: 'var(--text-secondary)', padding: '6px', borderRadius: '4px', cursor: 'pointer' }} className="nav-item-hover"><List size={14} /></button>
-                      <button onClick={() => injectMarkdown('1. ', '')} style={{ background: 'transparent', border: 'none', color: 'var(--text-secondary)', padding: '6px', borderRadius: '4px', cursor: 'pointer' }} className="nav-item-hover"><ListOrdered size={14} /></button>
+                      <button onClick={() => injectMarkdown('- ', '')} {...toolbarBtnProps(activeFormats.list)}><List size={14} /></button>
+                      <button onClick={() => injectMarkdown('1. ', '')} {...toolbarBtnProps(activeFormats.orderedList)}><ListOrdered size={14} /></button>
                       <div style={{ width: '1px', background: 'var(--border-color)', margin: '0 4px' }}></div>
-                      <button onClick={() => injectMarkdown('```\n', '\n```')} style={{ background: 'transparent', border: 'none', color: 'var(--text-secondary)', padding: '6px', borderRadius: '4px', cursor: 'pointer' }} className="nav-item-hover"><Code size={14} /></button>
+                      <button onClick={() => injectMarkdown('```\n', '\n```')} {...toolbarBtnProps(activeFormats.code)}><Code size={14} /></button>
                       <button onClick={() => injectMarkdown('[', '](url)')} style={{ background: 'transparent', border: 'none', color: 'var(--text-secondary)', padding: '6px', borderRadius: '4px', cursor: 'pointer' }} className="nav-item-hover"><Link2 size={14} /></button>
                       <button onClick={() => injectMarkdown('![alt text](', 'image_url)')} style={{ background: 'transparent', border: 'none', color: 'var(--text-secondary)', padding: '6px', borderRadius: '4px', cursor: 'pointer' }} className="nav-item-hover"><ImageIcon size={14} /></button>
                       <button onClick={() => injectMarkdown('\n| Header 1 | Header 2 |\n| -------- | -------- |\n| Cell 1   | Cell 2   |\n', '')} style={{ background: 'transparent', border: 'none', color: 'var(--text-secondary)', padding: '6px', borderRadius: '4px', cursor: 'pointer' }} className="nav-item-hover"><Table size={14} /></button>
@@ -707,7 +773,10 @@ const Notebook = () => {
                     <textarea
                       ref={textareaRef}
                       value={activeNote.content}
-                      onChange={(e) => handleNoteContentChange(e.target.value)}
+                      onChange={(e) => { handleNoteContentChange(e.target.value); updateCaretPos(); }}
+                      onSelect={updateCaretPos}
+                      onKeyUp={updateCaretPos}
+                      onClick={updateCaretPos}
                       placeholder="Start typing markdown here..."
                       style={{
                         flexGrow: 1,

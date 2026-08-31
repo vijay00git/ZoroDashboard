@@ -32,6 +32,7 @@ import { showAlert, showConfirm } from '../utils/Alerts';
 import { DEFAULT_WIDGET_ORDER, WIDGET_NAMES } from '../dashboardWidgets';
 import settingsHero from '../assets/hero-banners/settings-hero.webp';
 import settingsHeroLight from '../assets/hero-banners/settings-hero-light.webp';
+import ToggleSwitch from '../components/ToggleSwitch';
 
 const EMPTY_INTEGRATIONS_FORM = {
   TESTRAIL_URL: '', TESTRAIL_USERNAME: '', TESTRAIL_API_KEY: '', TESTRAIL_PROJECT_ID: '', TESTRAIL_SUITE_ID: '',
@@ -1154,30 +1155,15 @@ const Settings = () => {
                       )}
                     </div>
 
-                    <label style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '0.85rem', color: 'var(--text-primary)', cursor: 'pointer' }}>
-                      <input type="checkbox" checked={intForm.TELEGRAM_NOTIFY_ON_FAILURE} onChange={setIntChecked('TELEGRAM_NOTIFY_ON_FAILURE')} />
-                      Notify me when a triggered build fails
-                    </label>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '0.85rem', color: 'var(--text-primary)', cursor: 'pointer' }}>
-                      <input type="checkbox" checked={intForm.TELEGRAM_NOTIFY_ON_SUCCESS} onChange={setIntChecked('TELEGRAM_NOTIFY_ON_SUCCESS')} />
-                      Notify me when a triggered build succeeds
-                    </label>
+                    <ToggleSwitch checked={intForm.TELEGRAM_NOTIFY_ON_FAILURE} onChange={setIntChecked('TELEGRAM_NOTIFY_ON_FAILURE')} label="Notify me when a triggered build fails" />
+                    <ToggleSwitch checked={intForm.TELEGRAM_NOTIFY_ON_SUCCESS} onChange={setIntChecked('TELEGRAM_NOTIFY_ON_SUCCESS')} label="Notify me when a triggered build succeeds" />
 
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginLeft: '24px', paddingLeft: '12px', borderLeft: '2px solid var(--border-color)' }}>
-                      <label style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '0.85rem', color: 'var(--text-primary)', cursor: 'pointer' }}>
-                        <input type="checkbox" checked={intForm.TELEGRAM_ATTACH_SCREENSHOTS} onChange={setIntChecked('TELEGRAM_ATTACH_SCREENSHOTS')} />
-                        Attach every screenshot from the build
-                      </label>
-                      <label style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '0.85rem', color: 'var(--text-primary)', cursor: 'pointer' }}>
-                        <input type="checkbox" checked={intForm.TELEGRAM_ATTACH_CSV} onChange={setIntChecked('TELEGRAM_ATTACH_CSV')} />
-                        Attach the CSV results file
-                      </label>
+                      <ToggleSwitch checked={intForm.TELEGRAM_ATTACH_SCREENSHOTS} onChange={setIntChecked('TELEGRAM_ATTACH_SCREENSHOTS')} label="Attach every screenshot from the build" />
+                      <ToggleSwitch checked={intForm.TELEGRAM_ATTACH_CSV} onChange={setIntChecked('TELEGRAM_ATTACH_CSV')} label="Attach the CSV results file" />
                     </div>
 
-                    <label style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '0.85rem', color: 'var(--text-primary)', cursor: 'pointer' }}>
-                      <input type="checkbox" checked={intForm.TELEGRAM_DIGEST_ENABLED} onChange={setIntChecked('TELEGRAM_DIGEST_ENABLED')} />
-                      Send a daily digest of everything that ran
-                    </label>
+                    <ToggleSwitch checked={intForm.TELEGRAM_DIGEST_ENABLED} onChange={setIntChecked('TELEGRAM_DIGEST_ENABLED')} label="Send a daily digest of everything that ran" />
                     {intForm.TELEGRAM_DIGEST_ENABLED && (
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxWidth: '160px' }}>
                         <label style={fieldLabelStyle}>Digest time (server local time)</label>

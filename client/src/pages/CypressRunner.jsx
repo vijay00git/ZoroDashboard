@@ -28,6 +28,7 @@ import {
   CYR_DEFAULT_ESTIMATE_MS, cyrGroupBugLinks,
 } from './cypress-runner/helpers';
 import { filterHistoryByDate, formatReportDateLabel, todayDateKey, copyText, csvEscape, normCat } from './testcase-dashboard/helpers';
+import { useCountUp } from '../hooks/useCountUp';
 import cypressRunnerHero from '../assets/hero-banners/cypress-runner-hero.webp';
 import cypressRunnerHeroLight from '../assets/hero-banners/cypress-runner-hero-light.webp';
 import './testcase-dashboard/TestCaseDashboard.css';
@@ -722,6 +723,11 @@ const CypressRunner = () => {
     [failedFileItems, avgDurationByPath, globalAvgDuration]
   );
 
+  // Eases the ETA badges to their new estimate instead of snapping whenever
+  // the selection/retry set changes.
+  const animSelectedEtaMs = useCountUp(selectedEtaMs);
+  const animRetryEtaMs = useCountUp(retryEtaMs);
+
   // Batch progress for the Queue Progress card — batchIds accumulates run
   // ids in an effect above; "done" is whichever of those ids are no longer
   // in the live queue/active set, looked up in history for their verdict.
@@ -1071,7 +1077,7 @@ const CypressRunner = () => {
                 onClick={() => enqueuePaths(Array.from(selectedFiles.entries()).map(([path, cat]) => ({ path, cat })))}
               >
                 Queue {selectedCount > 0 ? selectedCount : ''} selected
-                {selectedCount > 0 && <span className="cyr-eta-badge">{formatEta(selectedEtaMs)}</span>}
+                {selectedCount > 0 && <span className="cyr-eta-badge">{formatEta(animSelectedEtaMs)}</span>}
               </button>
               <button
                 type="button"
@@ -1081,7 +1087,7 @@ const CypressRunner = () => {
                 onClick={handleRetryFailed}
               >
                 <RotateCcw size={12} /> Retry failed {failedFileItems.length > 0 ? `(${failedFileItems.length})` : ''}
-                {failedFileItems.length > 0 && <span className="cyr-eta-badge">{formatEta(retryEtaMs)}</span>}
+                {failedFileItems.length > 0 && <span className="cyr-eta-badge">{formatEta(animRetryEtaMs)}</span>}
               </button>
               <button type="button" className="cyr-btn small" title="View, add, remove, and download manifest entries" onClick={() => setManifestModalOpen(true)}>
                 <FilePlus2 size={12} /> Manifest

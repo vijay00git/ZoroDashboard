@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { 
-  FolderPlus, 
-  Link, 
+import {
+  Link,
   Trash2, 
   Edit3, 
   ExternalLink,
@@ -14,11 +13,29 @@ import { showConfirm } from '../utils/Alerts';
 import { useApi } from '../hooks/useApi';
 import quickLaunchHero from '../assets/hero-banners/quicklaunch-hero.webp';
 import quickLaunchHeroLight from '../assets/hero-banners/quicklaunch-hero-light.webp';
+import bookmarksEmptyIllustration from '../assets/illustrations/bookmarks-empty.svg';
+
+// A failed favicon load falls back to a generic link glyph instead of the
+// browser's broken-image icon.
+const FaviconImg = ({ src, size }) => {
+  const [failed, setFailed] = useState(false);
+  if (!src || failed) return <Link size={size - 2} style={{ opacity: 0.5 }} />;
+  return (
+    <img
+      src={src}
+      style={{ width: `${size}px`, height: `${size}px` }}
+      alt=""
+      onError={() => setFailed(true)}
+    />
+  );
+};
 
 const QuickLaunch = () => {
   // --- State ---
   const [folders, setFolders] = useState([]);
   const [request] = useApi(true); // the mount effect below fetches immediately
+  const [draggedFolderId, setDraggedFolderId] = useState(null);
+  const [dragOverFolderId, setDragOverFolderId] = useState(null);
 
   // Modals
   const [folderModalOpen, setFolderModalOpen] = useState(false);
@@ -109,6 +126,33 @@ const QuickLaunch = () => {
     } catch (e) {
       console.error(e);
     }
+  };
+
+  const handleFolderDragStart = (e, folderId) => {
+    e.dataTransfer.setData('folderId', folderId);
+    setDraggedFolderId(folderId);
+  };
+  const handleFolderDragOver = (e, folderId) => {
+    if (!e.dataTransfer.types.includes('folderid')) return;
+    e.preventDefault();
+    setDragOverFolderId(folderId);
+  };
+  const handleFolderDragEnd = () => { setDraggedFolderId(null); setDragOverFolderId(null); };
+  const handleFolderDrop = (e, targetFolderId) => {
+    e.preventDefault();
+    const sourceId = e.dataTransfer.getData('folderId');
+    if (sourceId && sourceId !== targetFolderId) {
+      const next = [...folders];
+      const srcIdx = next.findIndex(f => f.id === sourceId);
+      const tgtIdx = next.findIndex(f => f.id === targetFolderId);
+      if (srcIdx !== -1 && tgtIdx !== -1) {
+        const [moved] = next.splice(srcIdx, 1);
+        next.splice(tgtIdx, 0, moved);
+        saveData(next);
+      }
+    }
+    setDraggedFolderId(null);
+    setDragOverFolderId(null);
   };
 
   // --- Handlers ---
@@ -348,7 +392,7 @@ const QuickLaunch = () => {
                       fontWeight: '500'
                     }}
                   >
-                    <span>{link.emoji || <img src={getFaviconUrl(link.url)} style={{ width: '16px', height: '16px' }} alt="" />}</span>
+                    <span>{link.emoji || <FaviconImg src={getFaviconUrl(link.url)} size={16} />}</span>
                     <span>{link.name}</span>
                     <ExternalLink size={12} style={{ opacity: 0.5 }} />
                   </a>
@@ -359,8 +403,8 @@ const QuickLaunch = () => {
 
           {/* Regular Folders */}
           {folders.length === 0 ? (
-            <div className="glass-panel" style={{ padding: '60px', textAlign: 'center', color: 'var(--text-muted)' }}>
-              <FolderPlus size={48} style={{ opacity: 0.5, marginBottom: '12px' }} />
+            <div className="glass-panel" style={{ padding: '40px 60px', textAlign: 'center', color: 'var(--text-muted)' }}>
+              <img src={bookmarksEmptyIllustration} alt="" style={{ width: '200px', maxWidth: '100%', opacity: 0.9, marginBottom: '8px' }} />
               <h3>No folders created</h3>
               <p style={{ fontSize: '0.85rem' }}>Create a folder using the top button to start adding links.</p>
             </div>
@@ -372,19 +416,32 @@ const QuickLaunch = () => {
             }}>
               {folders.map(folder => {
                 const borderAccent = folder.color && folder.color !== 'default' ? folder.color : 'var(--border-color)';
+                const isDragging = draggedFolderId === folder.id;
+                const isDragOver = dragOverFolderId === folder.id && draggedFolderId !== folder.id;
                 return (
-                  <div 
-                    key={folder.id} 
+                  <div
+                    key={folder.id}
                     className="glass-panel"
-                    style={{ 
-                      padding: '20px', 
-                      display: 'flex', 
-                      flexDirection: 'column', 
+                    draggable
+                    onDragStart={(e) => handleFolderDragStart(e, folder.id)}
+                    onDragOver={(e) => handleFolderDragOver(e, folder.id)}
+                    onDragLeave={() => setDragOverFolderId((id) => (id === folder.id ? null : id))}
+                    onDrop={(e) => handleFolderDrop(e, folder.id)}
+                    onDragEnd={handleFolderDragEnd}
+                    style={{
+                      padding: '20px',
+                      display: 'flex',
+                      flexDirection: 'column',
                       gap: '16px',
-                      borderTop: `4px solid ${borderAccent}`
+                      borderTop: `4px solid ${borderAccent}`,
+                      cursor: 'grab',
+                      opacity: isDragging ? 0.4 : 1,
+                      outline: isDragOver ? '2px solid var(--accent-purple)' : '2px solid transparent',
+                      outlineOffset: '2px',
+                      transition: 'opacity 0.15s ease, outline-color 0.15s ease',
                     }}
                   >
-                    
+
                     {/* Header */}
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <h3 style={{ fontSize: '1rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -455,7 +512,7 @@ const QuickLaunch = () => {
                                 flexGrow: 1
                               }}
                             >
-                              <span>{link.emoji || <img src={getFaviconUrl(link.url)} style={{ width: '14px', height: '14px' }} alt="" />}</span>
+                              <span>{link.emoji || <FaviconImg src={getFaviconUrl(link.url)} size={14} />}</span>
                               <span>{link.name}</span>
                             </a>
 

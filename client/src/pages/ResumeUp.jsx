@@ -1154,7 +1154,12 @@ const ResumeUp = () => {
             </div>
           </div>
           <div style={{ display:'flex', flexDirection:'column', gap:'5px', maxHeight:'200px', overflowY:'auto' }}>
-            {applications.length === 0 && <p style={{ fontSize:'0.75rem', color:'var(--text-muted)', textAlign:'center', padding:'8px 0' }}>No applications tracked yet.</p>}
+            {applications.length === 0 && (
+              <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:'6px', padding:'12px 0' }}>
+                <Briefcase size={20} style={{ color:'var(--text-muted)', opacity:0.6 }} />
+                <p style={{ fontSize:'0.75rem', color:'var(--text-muted)', textAlign:'center', margin:0 }}>No applications tracked yet.</p>
+              </div>
+            )}
             {applications.slice().reverse().map(app => (
               <div key={app.id} style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'7px 10px', background:'var(--bg-primary)', borderRadius:'8px', border:'1px solid var(--border-color)' }}>
                 <div>

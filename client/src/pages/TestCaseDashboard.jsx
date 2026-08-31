@@ -27,6 +27,8 @@ import {
   STATUS_FILTER_KEYS, STATUS_FILTER_LABELS,
 } from './testcase-dashboard/helpers';
 import './testcase-dashboard/TestCaseDashboard.css';
+import testcaseDashboardHero from '../assets/hero-banners/testcase-dashboard-hero.webp';
+import testcaseDashboardHeroLight from '../assets/hero-banners/testcase-dashboard-hero-light.webp';
 
 const EMPTY_DATA = { rows: [], missing: [], catCounts: {}, fileCounts: {}, totalCases: 0, totalFiles: 0, unknownIds: [], caseIdCheck: {}, manifestPath: '', e2eRoot: '' };
 
@@ -653,6 +655,19 @@ const TestCaseDashboard = () => {
 
   return (
     <div className="tcd">
+      <div
+        className="glass-panel tcd-title-hero"
+        style={{
+          '--hero-image': `url(${testcaseDashboardHero})`, '--hero-image-light': `url(${testcaseDashboardHeroLight})`,
+          padding: '24px 28px',
+        }}
+      >
+        <h1 style={{ fontSize: '2rem', fontWeight: '900', marginBottom: '8px', letterSpacing: '-0.5px' }}>
+          Test Case <span className="gradient-text">Dashboard</span>
+        </h1>
+        <p style={{ color: 'var(--text-secondary)', fontSize: '0.95rem' }}>Browse, tag, and triage every automated test case across your suite.</p>
+      </div>
+
       {!connOk && (
         <div className="tcd-conn-banner">
           Can't reach the dashboard server. Make sure the Zoro server (<code>node server.js</code>) is still running.

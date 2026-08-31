@@ -4,8 +4,9 @@ import {
   ChevronLeft, ChevronRight, Clock, Activity, CheckCircle,
   Compass, Droplet, Plus, ClipboardList, Globe, Calendar,
   FileText, Database, Layers, CheckSquare, Sparkles, Terminal, User,
-  Rocket, FileSpreadsheet, Image, Briefcase, PlayCircle
+  Rocket, FileSpreadsheet, Image, Briefcase, PlayCircle, Flame
 } from 'lucide-react';
+import { getLevelData } from '../utils/xpLevels';
 import { useToast } from '../contexts/ToastContext';
 import { usePomo } from '../contexts/PomodoroContext';
 import { getAIConfig } from '../utils/ai';
@@ -13,6 +14,7 @@ import { calcCompleteness } from '../utils/resume';
 import { cyrRecentRunStats, latestCaseResultsByPath, latestRunStatusByPath, localRunTally } from './cypress-runner/helpers';
 import { CAT_ORDER, CAT_LABELS, normCat } from './testcase-dashboard/helpers';
 import { DEFAULT_WIDGET_ORDER } from '../dashboardWidgets';
+import { useCountUp } from '../hooks/useCountUp';
 import dashboardHero from '../assets/hero-banners/dashboard-hero.webp';
 import dashboardHeroLight from '../assets/hero-banners/dashboard-hero-light.webp';
 
@@ -102,6 +104,8 @@ const Dashboard = () => {
   const [isClockedIn, setIsClockedIn] = useState(false);
   const [clockInTime, setClockInTime] = useState('--:--');
   const [stats, setStats] = useState({ tasks: 0, water: 0, days: 0, syncs: 0 });
+  const [waterHistory, setWaterHistory] = useState([]);
+  const [taskStreak, setTaskStreak] = useState(0);
   const [flashcards, setFlashcards] = useState([]);
   const [currentCardIdx, setCurrentCardIdx] = useState(0);
   const [lessonProgress, setLessonProgress] = useState({ completed: 0, total: 0 });
@@ -130,17 +134,27 @@ const Dashboard = () => {
   });
 
   /* ── Drag handlers ── */
-  const handleDragStart = (e, index) => e.dataTransfer.setData('widgetIndex', index);
-  const handleDragOver  = (e) => e.preventDefault();
+  const [draggedWidgetId, setDraggedWidgetId] = useState(null);
+  const [dragOverWidgetId, setDragOverWidgetId] = useState(null);
+
+  const handleDragStart = (e, index) => {
+    e.dataTransfer.setData('widgetIndex', index);
+    setDraggedWidgetId(widgetOrder[index]?.id ?? null);
+  };
+  const handleDragOver = (e, id) => { e.preventDefault(); setDragOverWidgetId(id); };
+  const handleDragEnd = () => { setDraggedWidgetId(null); setDragOverWidgetId(null); };
   const handleDrop = (e, targetIndex) => {
     e.preventDefault();
     const src = parseInt(e.dataTransfer.getData('widgetIndex'), 10);
-    if (isNaN(src) || src === targetIndex) return;
-    const next = [...widgetOrder];
-    const [moved] = next.splice(src, 1);
-    next.splice(targetIndex, 0, moved);
-    setWidgetOrder(next);
-    localStorage.setItem('tr-dash-widgets', JSON.stringify(next));
+    if (!isNaN(src) && src !== targetIndex) {
+      const next = [...widgetOrder];
+      const [moved] = next.splice(src, 1);
+      next.splice(targetIndex, 0, moved);
+      setWidgetOrder(next);
+      localStorage.setItem('tr-dash-widgets', JSON.stringify(next));
+    }
+    setDraggedWidgetId(null);
+    setDragOverWidgetId(null);
   };
 
   /* ── Live clock ── */
@@ -225,14 +239,7 @@ const Dashboard = () => {
 
   const progressPct = lessonProgress.total > 0 ? Math.round((lessonProgress.completed / lessonProgress.total) * 100) : 0;
   const activeXP = lessonProgress.completed * 10;
-  const getLevel = (xp) => {
-    if (xp < 100)  return { title: 'Novice',      max: 100,  pct: xp,                       icon: '🥚' };
-    if (xp < 300)  return { title: 'Apprentice',  max: 300,  pct: ((xp-100)/200)*100,        icon: '🌱' };
-    if (xp < 600)  return { title: 'Scholar',     max: 600,  pct: ((xp-300)/300)*100,        icon: '📘' };
-    if (xp < 1000) return { title: 'Expert',      max: 1000, pct: ((xp-600)/400)*100,        icon: '🔥' };
-    return           { title: 'Grandmaster', max: 1000, pct: 100,                        icon: '👑' };
-  };
-  const lvl = getLevel(activeXP);
+  const lvl = getLevelData(activeXP);
 
   /* ── Data loader ── */
   const loadAllStates = async () => {
@@ -243,6 +250,31 @@ const Dashboard = () => {
 
     // Water
     const waterAmt = parseInt(localStorage.getItem('tr-water-intake-ml') || '0') || 0;
+    const waterGoal = parseInt(localStorage.getItem('tr-water-goal') || '2000') || 2000;
+    let waterHist = [];
+    try { waterHist = JSON.parse(localStorage.getItem('tr-water-history') || '[]'); } catch (e) { console.warn('Failed to parse tr-water-history:', e); }
+    const dateKey = (d) => d.toISOString().slice(0, 10);
+    setWaterHistory(Array.from({ length: 7 }, (_, i) => {
+      const d = new Date();
+      d.setDate(d.getDate() - (6 - i));
+      const isToday = i === 6;
+      const entry = isToday ? { intake: waterAmt, goal: waterGoal } : waterHist.find(h => h.date === dateKey(d));
+      return { intake: entry?.intake ?? 0, goal: entry?.goal ?? waterGoal, hasData: !!entry, isToday };
+    }));
+
+    // Task streak — consecutive days with at least one completion, mirroring
+    // the same log/algorithm Task Manager's own streak badge uses.
+    let streakLog = [];
+    try { streakLog = JSON.parse(localStorage.getItem('tr-task-streak-log') || '[]'); } catch (e) { console.warn('Failed to parse tr-task-streak-log:', e); }
+    const streakSet = new Set(streakLog);
+    let streak = streakSet.has(dateKey(new Date())) ? 1 : 0;
+    for (let i = 1; ; i++) {
+      const d = new Date();
+      d.setDate(d.getDate() - i);
+      if (!streakSet.has(dateKey(d))) break;
+      streak++;
+    }
+    setTaskStreak(streak);
 
     // Timesheet
     let daysCount = 0, clockedIn = false, punchStr = '--:--';
@@ -450,6 +482,12 @@ const Dashboard = () => {
   const WATER_GOAL = 2000;
   const waterPct = Math.min(100, Math.round((stats.water / WATER_GOAL) * 100));
 
+  const animTasks = useCountUp(stats.tasks);
+  const animWater = useCountUp(stats.water);
+  const animDays = useCountUp(stats.days);
+  const animProgressPct = useCountUp(progressPct);
+  const animSyncs = useCountUp(stats.syncs);
+
   const passed   = pinnedMatrix?.statusCounts?.PASSED   || 0;
   const failed   = pinnedMatrix?.statusCounts?.FAILED   || 0;
   const untested = pinnedMatrix?.statusCounts?.UNTESTED || 0;
@@ -463,10 +501,18 @@ const Dashboard = () => {
     /* ── Career Profile ── */
     profile_widget: (
       <div className="glass-panel wgt wgt--pink">
-        <WgtHeader icon={User} iconColor="var(--accent-purple)" title="Career Profile"
+        <WgtHeader icon={User} iconColor="var(--accent-pink)" title="Career Profile"
           badge={`Lvl ${Math.floor(activeXP / 100)}`} badgeVariant="amber" />
         <div style={{ display:'flex', alignItems:'center', gap:'14px', background:'var(--bg-tertiary)', padding:'14px', borderRadius:'var(--radius-md)', border:'1px solid var(--border-color)' }}>
-          <span style={{ fontSize:'2.2rem', lineHeight:1 }}>{lvl.icon}</span>
+          <span style={{
+            width:'52px', height:'52px', borderRadius:'50%', flexShrink:0,
+            display:'flex', alignItems:'center', justifyContent:'center',
+            background:`color-mix(in srgb, ${lvl.color} 16%, transparent)`,
+            border:`1px solid color-mix(in srgb, ${lvl.color} 35%, transparent)`,
+            color: lvl.color,
+          }}>
+            <lvl.icon size={24} />
+          </span>
           <div style={{ flex:1, minWidth:0 }}>
             <div style={{ display:'flex', justifyContent:'space-between', marginBottom:'8px' }}>
               <span style={{ fontSize:'0.85rem', fontWeight:'800', textTransform:'uppercase', letterSpacing:'1px', color:'var(--text-primary)' }}>{lvl.title}</span>
@@ -530,8 +576,8 @@ const Dashboard = () => {
 
     /* ── Active Learning ── */
     learning: (
-      <div className="glass-panel wgt wgt--purple">
-        <WgtHeader icon={Layers} iconColor="var(--accent-purple)" title="Active Learning"
+      <div className="glass-panel wgt wgt--pink">
+        <WgtHeader icon={Layers} iconColor="var(--accent-pink)" title="Active Learning"
           right={<span style={{ fontSize:'0.68rem', color:'var(--accent-purple)', fontWeight:'700' }}>{progressPct}%</span>} />
         <p className="wgt-subtitle">{activeGoalName}</p>
         <div className="prog-bar"><div className="prog-fill" style={{ width:`${progressPct}%` }} /></div>
@@ -583,8 +629,8 @@ const Dashboard = () => {
 
     /* ── Scratchpad ── */
     scratchpad: (
-      <div className="glass-panel wgt wgt--green">
-        <WgtHeader icon={ClipboardList} iconColor="var(--accent-green)" title="Scratchpad"
+      <div className="glass-panel wgt wgt--orange">
+        <WgtHeader icon={ClipboardList} iconColor="var(--accent-orange)" title="Scratchpad"
           right={<span className="wgt-autosave">Autosaves</span>} />
         <textarea
           className="wgt-textarea"
@@ -598,9 +644,20 @@ const Dashboard = () => {
 
     /* ── Status Checklist ── */
     tasks: (
-      <div className="glass-panel wgt wgt--cyan">
-        <WgtHeader icon={CheckCircle} iconColor="var(--accent-cyan)" title="Status Checklist"
-          badge={`${tasks.filter(t => !t.completed).length} pending`} badgeVariant="cyan" />
+      <div className="glass-panel wgt wgt--purple">
+        <WgtHeader icon={CheckCircle} iconColor="var(--accent-purple)" title="Status Checklist"
+          badge={`${tasks.filter(t => !t.completed).length} pending`} badgeVariant="cyan"
+          right={taskStreak > 0 && (
+            <span style={{
+              display:'flex', alignItems:'center', gap:'4px', marginLeft:'8px',
+              background:'color-mix(in srgb, var(--accent-orange) 15%, transparent)',
+              border:'1px solid color-mix(in srgb, var(--accent-orange) 35%, transparent)',
+              color:'var(--accent-orange)', borderRadius:'999px', padding:'2px 8px',
+              fontSize:'0.68rem', fontWeight:'700',
+            }}>
+              <Flame size={10} /> {taskStreak}
+            </span>
+          )} />
         <div className="task-list">
           {tasks.filter(t => !t.completed).length === 0
             ? <div className="wgt-empty">
@@ -634,8 +691,8 @@ const Dashboard = () => {
 
     /* ── Daily Status Draft ── */
     draft: (
-      <div className="glass-panel wgt wgt--yellow">
-        <WgtHeader icon={FileText} iconColor="var(--accent-yellow)" title="Daily Status Draft"
+      <div className="glass-panel wgt wgt--purple">
+        <WgtHeader icon={FileText} iconColor="var(--accent-purple)" title="Daily Status Draft"
           right={<span className="wgt-autosave">Autosaves</span>} />
         <textarea
           className="wgt-textarea"
@@ -679,12 +736,29 @@ const Dashboard = () => {
             </button>
           </div>
         </div>
+        <div style={{ display:'flex', alignItems:'flex-end', gap:'4px', height:'28px' }}>
+          {waterHistory.map((day, i) => {
+            const pct = day.goal ? Math.min(100, Math.round((day.intake / day.goal) * 100)) : 0;
+            const met = day.intake >= day.goal && day.goal > 0;
+            return (
+              <div key={i} style={{ flex:1, height:'100%', display:'flex', alignItems:'flex-end', background:'var(--bg-tertiary)', borderRadius:'3px', overflow:'hidden' }} title={`${day.intake}ml${day.isToday ? ' (today)' : ''}`}>
+                <div style={{
+                  width:'100%',
+                  height:`${Math.max(pct, day.hasData || day.isToday ? 6 : 0)}%`,
+                  background: met ? 'var(--accent-green)' : 'var(--accent-cyan)',
+                  opacity: day.isToday ? 1 : (day.hasData ? 0.7 : 0.2),
+                  transition:'height 0.5s cubic-bezier(0.4, 0, 0.2, 1)',
+                }} />
+              </div>
+            );
+          })}
+        </div>
       </div>
     ),
 
     /* ── Timesheet ── */
     timesheet_widget: (
-      <div className="glass-panel wgt wgt--green">
+      <div className="glass-panel wgt wgt--purple">
         <WgtHeader icon={Clock} iconColor={isClockedIn ? 'var(--accent-green)' : 'var(--text-muted)'} title="Timesheet"
           badge={`${stats.days} days`} />
         <div className="punch-status">
@@ -706,8 +780,8 @@ const Dashboard = () => {
 
     /* ── Pinned Matrix ── */
     matrix: (
-      <div className="glass-panel wgt wgt--purple">
-        <WgtHeader icon={Database} iconColor="var(--accent-purple)" title="Pinned Matrix"
+      <div className="glass-panel wgt wgt--green">
+        <WgtHeader icon={Database} iconColor="var(--accent-green)" title="Pinned Matrix"
           badge={pinnedMatrix ? `${pinnedMatrix.testCaseCount || 0} cases` : null} />
         {pinnedMatrix ? (
           <>
@@ -752,7 +826,7 @@ const Dashboard = () => {
           </>
         ) : (
           <div className="wgt-empty">
-            <div className="wgt-empty-icon" style={{ background:'rgba(232,168,37,0.1)', color:'var(--accent-purple)' }}><Database size={18} /></div>
+            <div className="wgt-empty-icon" style={{ background:'rgba(45,232,134,0.1)', color:'var(--accent-green)' }}><Database size={18} /></div>
             <span className="wgt-empty-title">No matrix pinned</span>
             <span className="wgt-empty-sub">Pin one in Sync Hub to track it here</span>
             <button onClick={() => navigate('/synchub')} style={{ background:'var(--bg-primary)', border:'1px solid var(--border-color)', borderRadius:'20px', color:'var(--text-secondary)', cursor:'pointer', fontSize:'0.72rem', padding:'5px 12px' }}>
@@ -765,12 +839,12 @@ const Dashboard = () => {
 
     /* ── Frequently Visited ── */
     links: (
-      <div className="glass-panel wgt wgt--pink">
-        <WgtHeader icon={Compass} iconColor="var(--accent-pink)" title="Frequently Visited" />
+      <div className="glass-panel wgt wgt--orange">
+        <WgtHeader icon={Compass} iconColor="var(--accent-orange)" title="Frequently Visited" />
         <div style={{ display:'flex', flexDirection:'column', gap:'7px' }}>
           {quickLinks.length === 0
             ? <div className="wgt-empty">
-                <div className="wgt-empty-icon" style={{ background:'rgba(232,83,138,0.1)', color:'var(--accent-pink)' }}><Compass size={18} /></div>
+                <div className="wgt-empty-icon" style={{ background:'rgba(240,120,48,0.1)', color:'var(--accent-orange)' }}><Compass size={18} /></div>
                 <span className="wgt-empty-title">No links yet</span>
                 <span className="wgt-empty-sub">Add links in Quick Launch</span>
               </div>
@@ -789,8 +863,8 @@ const Dashboard = () => {
 
     /* ── World Clocks ── */
     clocks: (
-      <div className="glass-panel wgt wgt--purple">
-        <WgtHeader icon={Globe} iconColor="var(--accent-purple)" title="Global Sync" />
+      <div className="glass-panel wgt wgt--orange">
+        <WgtHeader icon={Globe} iconColor="var(--accent-orange)" title="Global Sync" />
         <div className="world-clocks-grid">
           {[
             { label:'Tokyo',  flag:'🇯🇵', tz:'Asia/Tokyo',            color:'var(--accent-pink)' },
@@ -804,18 +878,18 @@ const Dashboard = () => {
 
     /* ── CSV Organizer ── */
     csv_organizer_widget: (
-      <div className="glass-panel wgt wgt--cyan">
-        <WgtHeader icon={FileSpreadsheet} iconColor="var(--accent-cyan)" title="CSV Organizer"
+      <div className="glass-panel wgt wgt--orange">
+        <WgtHeader icon={FileSpreadsheet} iconColor="var(--accent-orange)" title="CSV Organizer"
           badge={csvStats.count > 0 ? `${csvStats.count} files` : null} badgeVariant="cyan" />
         {csvStats.count === 0 ? (
           <div className="wgt-empty">
-            <div className="wgt-empty-icon" style={{ background:'rgba(91,196,245,0.1)', color:'var(--accent-cyan)' }}><FileSpreadsheet size={18} /></div>
+            <div className="wgt-empty-icon" style={{ background:'rgba(240,120,48,0.1)', color:'var(--accent-orange)' }}><FileSpreadsheet size={18} /></div>
             <span className="wgt-empty-title">No CSV files yet</span>
             <span className="wgt-empty-sub">Import or create one to get started</span>
           </div>
         ) : (
           <div className="wgt-stat-row">
-            <span className="wgt-stat-big" style={{ color:'var(--accent-cyan)' }}>{csvStats.count}</span>
+            <span className="wgt-stat-big" style={{ color:'var(--accent-orange)' }}>{csvStats.count}</span>
             <div style={{ flex:1, minWidth:0 }}>
               <div style={{ fontSize:'0.78rem', color:'var(--text-primary)', fontWeight:600 }}>saved spreadsheet{csvStats.count === 1 ? '' : 's'}</div>
               {csvStats.lastModified && <div className="wgt-meta-line">Last edited {formatRelativeTime(csvStats.lastModified, currentTime.getTime())}</div>}
@@ -830,12 +904,12 @@ const Dashboard = () => {
 
     /* ── Screenshot Vault (SS Bucket) ── */
     ss_bucket_widget: (
-      <div className="glass-panel wgt wgt--pink">
-        <WgtHeader icon={Image} iconColor="var(--accent-pink)" title="Screenshot Vault"
+      <div className="glass-panel wgt wgt--orange">
+        <WgtHeader icon={Image} iconColor="var(--accent-orange)" title="Screenshot Vault"
           badge={ssStats.count > 0 ? `${ssStats.count} shots` : null} />
         {ssStats.count === 0 ? (
           <div className="wgt-empty">
-            <div className="wgt-empty-icon" style={{ background:'rgba(232,83,138,0.1)', color:'var(--accent-pink)' }}><Image size={18} /></div>
+            <div className="wgt-empty-icon" style={{ background:'rgba(240,120,48,0.1)', color:'var(--accent-orange)' }}><Image size={18} /></div>
             <span className="wgt-empty-title">No screenshots yet</span>
             <span className="wgt-empty-sub">Paste an image in SS Bucket to save one</span>
           </div>
@@ -843,7 +917,7 @@ const Dashboard = () => {
           <>
             <div style={{ display:'flex', gap:'8px' }}>
               <div className="wgt-mini-stat">
-                <div className="wgt-mini-stat-val" style={{ color:'var(--accent-pink)' }}>{ssStats.count}</div>
+                <div className="wgt-mini-stat-val" style={{ color:'var(--accent-orange)' }}>{ssStats.count}</div>
                 <div className="wgt-mini-stat-label">Screenshots</div>
               </div>
               <div className="wgt-mini-stat">
@@ -862,22 +936,22 @@ const Dashboard = () => {
 
     /* ── Resume Tracker ── */
     resume_widget: (
-      <div className="glass-panel wgt wgt--orange">
-        <WgtHeader icon={Briefcase} iconColor="var(--accent-orange)" title="Resume Tracker"
+      <div className="glass-panel wgt wgt--pink">
+        <WgtHeader icon={Briefcase} iconColor="var(--accent-pink)" title="Resume Tracker"
           badge={resumeStats.resumeCount > 0 ? `${resumeStats.completeness}%` : null} />
         {resumeStats.resumeCount === 0 ? (
           <div className="wgt-empty">
-            <div className="wgt-empty-icon" style={{ background:'rgba(240,120,48,0.1)', color:'var(--accent-orange)' }}><Briefcase size={18} /></div>
+            <div className="wgt-empty-icon" style={{ background:'rgba(232,83,138,0.1)', color:'var(--accent-pink)' }}><Briefcase size={18} /></div>
             <span className="wgt-empty-title">No resume yet</span>
             <span className="wgt-empty-sub">Build one in Resume Up</span>
           </div>
         ) : (
           <>
             <p className="wgt-subtitle" style={{ marginTop: 0 }}>{resumeStats.activeName}</p>
-            <div className="prog-bar"><div className="prog-fill" style={{ width:`${resumeStats.completeness}%`, background:'linear-gradient(90deg, var(--accent-orange), var(--accent-yellow))' }} /></div>
+            <div className="prog-bar"><div className="prog-fill" style={{ width:`${resumeStats.completeness}%`, background:'linear-gradient(90deg, var(--accent-pink), var(--accent-purple))' }} /></div>
             <div style={{ display:'flex', gap:'8px' }}>
               <div className="wgt-mini-stat">
-                <div className="wgt-mini-stat-val" style={{ color:'var(--accent-orange)' }}>{resumeStats.resumeCount}</div>
+                <div className="wgt-mini-stat-val" style={{ color:'var(--accent-pink)' }}>{resumeStats.resumeCount}</div>
                 <div className="wgt-mini-stat-label">Resumes</div>
               </div>
               <div className="wgt-mini-stat">
@@ -936,12 +1010,12 @@ const Dashboard = () => {
 
     /* ── Test Coverage (mirrors Cypress Runner's "Coverage by tier" card) ── */
     cypress_coverage_widget: (
-      <div className="glass-panel wgt wgt--purple">
-        <WgtHeader icon={Layers} iconColor="var(--accent-purple)" title="Test Coverage"
+      <div className="glass-panel wgt wgt--green">
+        <WgtHeader icon={Layers} iconColor="var(--accent-green)" title="Test Coverage"
           badge={coverageStats.totalCases > 0 ? `${coverageStats.totalCases} cases` : null} />
         {coverageStats.totalCases === 0 ? (
           <div className="wgt-empty">
-            <div className="wgt-empty-icon" style={{ background:'rgba(232,168,37,0.1)', color:'var(--accent-purple)' }}><Layers size={18} /></div>
+            <div className="wgt-empty-icon" style={{ background:'rgba(45,232,134,0.1)', color:'var(--accent-green)' }}><Layers size={18} /></div>
             <span className="wgt-empty-title">No manifest configured</span>
             <span className="wgt-empty-sub">Set up the E2E manifest in Cypress Runner</span>
           </div>
@@ -984,12 +1058,12 @@ const Dashboard = () => {
       const t = localRunStats.tally;
       const run = t.passed + t.failed + t.blocked + t.retest;
       return (
-        <div className="glass-panel wgt wgt--cyan">
-          <WgtHeader icon={CheckSquare} iconColor="var(--accent-cyan)" title="Local Run Status"
+        <div className="glass-panel wgt wgt--green">
+          <WgtHeader icon={CheckSquare} iconColor="var(--accent-green)" title="Local Run Status"
             badge={localRunStats.totalCases > 0 ? `${run}/${localRunStats.totalCases} run` : null} badgeVariant="cyan" />
           {localRunStats.totalCases === 0 ? (
             <div className="wgt-empty">
-              <div className="wgt-empty-icon" style={{ background:'rgba(91,196,245,0.1)', color:'var(--accent-cyan)' }}><CheckSquare size={18} /></div>
+              <div className="wgt-empty-icon" style={{ background:'rgba(45,232,134,0.1)', color:'var(--accent-green)' }}><CheckSquare size={18} /></div>
               <span className="wgt-empty-title">No local results yet</span>
               <span className="wgt-empty-sub">Run some specs in Cypress Runner</span>
             </div>
@@ -1029,6 +1103,17 @@ const Dashboard = () => {
      RENDER
   ───────────────────────────────────────────────────────────── */
   const activeWidgets = widgetOrder.filter(w => w.enabled !== false);
+
+  // Gives the grid an actual hierarchy instead of 18 equal-weight cards —
+  // Career Profile is the one widget that earns the extra width.
+  const WIDGET_SPAN = { profile_widget: 2 };
+
+  // Hero headline number — overall task completion, not just today's pending
+  // count (which the KPI row already shows).
+  const totalTasksAll = tasks.length;
+  const completedTasksAll = tasks.filter(t => t.completed).length;
+  const taskCompletionPct = totalTasksAll > 0 ? Math.round((completedTasksAll / totalTasksAll) * 100) : 0;
+  const HERO_RING_R = 26, HERO_RING_C = 2 * Math.PI * HERO_RING_R;
 
   const QUICK_NAV = [
     { label:'Tasks',    icon:CheckSquare, href:'/task-manager' },
@@ -1072,9 +1157,22 @@ const Dashboard = () => {
             <Sparkles size={10} strokeWidth={2.5} />
             <span>Daily Directive</span>
           </div>
-          <p className="dash-quote-text">
-            {quoteLoading ? 'Thinking…' : `"${quote}"`}
-          </p>
+          <div style={{ display:'flex', alignItems:'center', gap:'16px' }}>
+            {totalTasksAll > 0 && (
+              <svg width="64" height="64" viewBox="0 0 64 64" style={{ flexShrink:0 }}>
+                <circle cx="32" cy="32" r={HERO_RING_R} fill="none" stroke="var(--bg-tertiary)" strokeWidth="6" />
+                <circle cx="32" cy="32" r={HERO_RING_R} fill="none" stroke="var(--accent-green)" strokeWidth="6"
+                  strokeDasharray={`${(taskCompletionPct/100)*HERO_RING_C} ${HERO_RING_C}`}
+                  strokeLinecap="round" transform="rotate(-90 32 32)"
+                  style={{ transition:'stroke-dasharray 0.6s ease' }} />
+                <text x="32" y="29" textAnchor="middle" fill="var(--text-primary)" fontSize="13" fontWeight="800" fontFamily="var(--font-mono)">{taskCompletionPct}%</text>
+                <text x="32" y="41" textAnchor="middle" fill="var(--text-muted)" fontSize="6" fontFamily="var(--font-mono)" letterSpacing="0.3">{completedTasksAll}/{totalTasksAll} DONE</text>
+              </svg>
+            )}
+            <p className="dash-quote-text" style={{ margin:0 }}>
+              {quoteLoading ? 'Thinking…' : `"${quote}"`}
+            </p>
+          </div>
           <div className="dash-quick-nav">
             {QUICK_NAV.map(({ label, icon: Icon, href }) => (
               <button key={href} className="dash-nav-btn" onClick={() => navigate(href)}>
@@ -1090,32 +1188,32 @@ const Dashboard = () => {
       <div className="dash-kpi-row">
         {[
           {
-            val: stats.tasks, sub: 'Pending tasks', label: 'Tasks',
+            val: animTasks, sub: 'Pending tasks', label: 'Tasks',
             color: 'var(--accent-cyan)', bg: 'rgba(91,196,245,0.12)',
             glow: 'rgba(91,196,245,0.07)', icon: CheckSquare,
           },
           {
-            val: stats.water, sub: `ml · ${waterPct}% of goal`, label: 'Hydration',
+            val: animWater, sub: `ml · ${waterPct}% of goal`, label: 'Hydration',
             color: '#5ba8f5', bg: 'rgba(91,168,245,0.12)',
             glow: 'rgba(91,168,245,0.07)', icon: Droplet,
           },
           {
-            val: stats.days, sub: 'Days logged this month', label: 'Timesheet',
+            val: animDays, sub: 'Days logged this month', label: 'Timesheet',
             color: 'var(--accent-purple)', bg: 'rgba(232,168,37,0.12)',
             glow: 'rgba(232,168,37,0.07)', icon: Calendar,
           },
           {
-            val: `${progressPct}%`, sub: `${lessonProgress.completed} lessons done`, label: 'Learning',
+            val: `${animProgressPct}%`, sub: `${lessonProgress.completed} lessons done`, label: 'Learning',
             color: 'var(--accent-green)', bg: 'rgba(45,232,134,0.12)',
             glow: 'rgba(45,232,134,0.07)', icon: Layers,
           },
           {
-            val: stats.syncs, sub: 'Saved quick links', label: 'Quick Links',
+            val: animSyncs, sub: 'Saved quick links', label: 'Quick Links',
             color: 'var(--accent-pink)', bg: 'rgba(232,83,138,0.12)',
             glow: 'rgba(232,83,138,0.07)', icon: Rocket,
           },
-        ].map(({ val, sub, label, color, bg, glow, icon: Icon }) => (
-          <div key={label} className="kpi-card" style={{ '--kpi-accent': color, '--kpi-glow': glow }}>
+        ].map(({ val, sub, label, color, bg, glow, icon: Icon }, i) => (
+          <div key={label} className="kpi-card" style={{ '--kpi-accent': color, '--kpi-glow': glow, '--i': i }}>
             <div className="kpi-card-top">
               <div className="kpi-icon-wrap" style={{ background: bg, color }}><Icon size={15} /></div>
               <span className="kpi-label-top">{label}</span>
@@ -1128,18 +1226,34 @@ const Dashboard = () => {
 
       {/* ── Widget Grid ── */}
       <div className="dash-grid">
-        {activeWidgets.map((w) => (
-          <div
-            key={w.id}
-            className="dash-widget"
-            draggable
-            onDragStart={e => handleDragStart(e, widgetOrder.findIndex(x => x.id === w.id))}
-            onDrop={e => handleDrop(e, widgetOrder.findIndex(x => x.id === w.id))}
-            onDragOver={handleDragOver}
-          >
-            {widgetsMap[w.id] ?? null}
-          </div>
-        ))}
+        {activeWidgets.map((w, i) => {
+          const isDragging = draggedWidgetId === w.id;
+          const isDragOver = dragOverWidgetId === w.id && draggedWidgetId !== w.id;
+          const span = WIDGET_SPAN[w.id];
+          return (
+            <div
+              key={w.id}
+              className="dash-widget"
+              draggable
+              onDragStart={e => handleDragStart(e, widgetOrder.findIndex(x => x.id === w.id))}
+              onDrop={e => handleDrop(e, widgetOrder.findIndex(x => x.id === w.id))}
+              onDragOver={e => handleDragOver(e, w.id)}
+              onDragLeave={() => setDragOverWidgetId(prev => (prev === w.id ? null : prev))}
+              onDragEnd={handleDragEnd}
+              style={{
+                opacity: isDragging ? 0.4 : 1,
+                outline: isDragOver ? '2px solid var(--accent-purple)' : '2px solid transparent',
+                outlineOffset: '2px',
+                borderRadius: 'var(--radius-lg)',
+                transition: 'opacity 0.15s ease, outline-color 0.15s ease',
+                gridColumn: span ? `span ${span}` : undefined,
+                '--i': i,
+              }}
+            >
+              {widgetsMap[w.id] ?? null}
+            </div>
+          );
+        })}
       </div>
 
     </div>

@@ -21,6 +21,8 @@ const STEP_META = {
   4: { label: 'Export', color: 'var(--accent-green)' },
 };
 
+const AI_LOADING_MESSAGES = ['Reading your notes…', 'Matching your template…', 'Drafting the report…', 'Polishing the tone…'];
+
 const Status = () => {
   // Templates
   const [templates, setTemplates] = useState([]);
@@ -33,7 +35,33 @@ const Status = () => {
   const [report, setReport] = useState(() => localStorage.getItem('tr-status-report') || '');
   const [viewMode, setViewMode] = useState(() => localStorage.getItem('tr-status-view-mode') || 'preview');
   const [loading, setLoading] = useState(false);
+  const [loadingMsgIdx, setLoadingMsgIdx] = useState(0);
   const [refiningAction, setRefiningAction] = useState(null);
+
+  // Rotates the loading button's label while an AI request is in flight —
+  // the backend returns one JSON blob, not a real token stream, so this is
+  // the "feels alive" substitute for actual streaming progress.
+  useEffect(() => {
+    if (!loading) { setLoadingMsgIdx(0); return; }
+    const id = setInterval(() => setLoadingMsgIdx((i) => (i + 1) % AI_LOADING_MESSAGES.length), 1200);
+    return () => clearInterval(id);
+  }, [loading]);
+
+  // Reveals the finished report a few words at a time instead of snapping
+  // the whole thing in at once — a typewriter-style stand-in for real
+  // streaming, capped so long reports still finish in ~1.4s.
+  const revealReport = (fullText) => {
+    const words = fullText.split(' ');
+    const steps = Math.min(words.length, 60);
+    const wordsPerStep = Math.max(1, Math.ceil(words.length / steps));
+    const intervalMs = Math.min(1400, Math.max(400, words.length * 10)) / steps;
+    let i = 0;
+    const timer = setInterval(() => {
+      i += wordsPerStep;
+      setReport(words.slice(0, i).join(' '));
+      if (i >= words.length) clearInterval(timer);
+    }, intervalMs);
+  };
 
   // Past generated reports — quick lookback without regenerating
   const [reportHistory, setReportHistory] = useState(() => {
@@ -246,7 +274,7 @@ const Status = () => {
       }
 
       const data = await res.json();
-      setReport(data.text);
+      revealReport(data.text);
       pushReportToHistory(data.text);
       setOpenStep(null);
     } catch (err) {
@@ -284,7 +312,7 @@ const Status = () => {
       }
 
       const data = await res.json();
-      setReport(data.text);
+      revealReport(data.text);
       pushReportToHistory(data.text);
     } catch (err) {
       showAlert("Couldn't refine report: " + err.message);
@@ -331,7 +359,7 @@ const Status = () => {
       }
 
       const data = await res.json();
-      setReport(data.text);
+      revealReport(data.text);
       setViewMode('preview');
       pushReportToHistory(data.text, 'Weekly Rollup');
     } catch (err) {
@@ -485,7 +513,7 @@ const Status = () => {
               >
                 <div className="dsw-step-row">
                   {idx > 0 && <div className="dsw-step-line" />}
-                  <div className="dsw-step-dot">{isDone ? <Check size={16} /> : id}</div>
+                  <div className="dsw-step-dot">{isDone ? <Check size={16} className="dsw-step-check" /> : id}</div>
                   {idx < 3 && <div className="dsw-step-line" />}
                 </div>
                 <span className="dsw-step-label">{meta.label}</span>
@@ -681,7 +709,7 @@ const Status = () => {
                 }}
               >
                 {loading ? (
-                  <><div className="spinner" style={{ width: '18px', height: '18px', marginRight: '8px' }} /> AI Processing...</>
+                  <><div className="spinner" style={{ width: '18px', height: '18px', marginRight: '8px' }} /> {AI_LOADING_MESSAGES[loadingMsgIdx]}</>
                 ) : (
                   <><Sparkles size={18} /> Generate Perfect Standup</>
                 )}

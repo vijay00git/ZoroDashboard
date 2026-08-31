@@ -27,3 +27,8 @@ Thumbs.db
 # Raw hero-banner source renders (originals kept locally; the optimized,
 # actually-used copies live under client/src/assets/hero-banners/)
 /Backgrounds/
+
+# Raw illustration/animation source files (originals kept locally; the
+# optimized, actually-used copies live under client/src/assets/illustrations/
+# and client/src/assets/lottie/)
+/sources/

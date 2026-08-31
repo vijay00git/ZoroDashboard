@@ -92,6 +92,8 @@ export default function CSVOrganizer() {
   const [editHeader,  setEditHeader]  = useState(null);
   const [editHdrVal,  setEditHdrVal]  = useState('');
   const [selRows,     setSelRows]     = useState(new Set());
+  const [hoveredRow,  setHoveredRow]  = useState(null);
+  const [justAddedRow, setJustAddedRow] = useState(null);
 
   // Undo / redo
   const [undoStack, setUndoStack] = useState([]);
@@ -189,7 +191,13 @@ export default function CSVOrganizer() {
   };
 
   /* ── Grid / column ops ────────────────────────────────────── */
-  const addRow = () => { pushUndo(headers, rows); setRows(r => [...r, Array(headers.length).fill('')]); };
+  const addRow = () => {
+    pushUndo(headers, rows);
+    const newIdx = rows.length;
+    setRows(r => [...r, Array(headers.length).fill('')]);
+    setJustAddedRow(newIdx);
+    setTimeout(() => setJustAddedRow((i) => (i === newIdx ? null : i)), 900);
+  };
 
   const deleteSelRows = async () => {
     if (!selRows.size) return;
@@ -591,10 +599,19 @@ export default function CSVOrganizer() {
                   </td></tr>
                 ) : visibleRows.map(({ row, orig }, ri) => {
                   const isSelRow = selRows.has(orig);
+                  const isHovered = hoveredRow === orig;
+                  const rowBg = isSelRow ? 'rgba(168,85,247,0.06)' : isHovered ? 'rgba(255,255,255,0.035)' : ri % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.015)';
+                  const stickyBg = isSelRow ? 'rgba(168,85,247,0.1)' : isHovered ? 'rgba(255,255,255,0.05)' : ri % 2 === 0 ? 'var(--bg-secondary)' : 'var(--bg-tertiary)';
                   return (
-                    <tr key={orig} style={{ background: isSelRow ? 'rgba(168,85,247,0.06)' : ri % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.015)', borderBottom: '1px solid var(--border-color)' }}>
+                    <tr
+                      key={orig}
+                      onMouseEnter={() => setHoveredRow(orig)}
+                      onMouseLeave={() => setHoveredRow((o) => (o === orig ? null : o))}
+                      className={orig === justAddedRow ? 'csv-row-added' : ''}
+                      style={{ background: rowBg, borderBottom: '1px solid var(--border-color)', transition: 'background 0.15s ease' }}
+                    >
                       {/* Checkbox */}
-                      <td style={{ padding: '4px', textAlign: 'center', borderRight: '1px solid var(--border-color)', position: 'sticky', left: 0, background: isSelRow ? 'rgba(168,85,247,0.1)' : ri % 2 === 0 ? 'var(--bg-secondary)' : 'var(--bg-tertiary)', zIndex: 2 }}>
+                      <td style={{ padding: '4px', textAlign: 'center', borderRight: '1px solid var(--border-color)', position: 'sticky', left: 0, background: stickyBg, zIndex: 2, transition: 'background 0.15s ease' }}>
                         <input type="checkbox" checked={isSelRow} onChange={e => {
                           const ns = new Set(selRows);
                           e.target.checked ? ns.add(orig) : ns.delete(orig);
@@ -602,7 +619,7 @@ export default function CSVOrganizer() {
                         }} style={{ cursor: 'pointer' }} />
                       </td>
                       {/* Row number */}
-                      <td style={{ padding: '4px 6px', textAlign: 'center', borderRight: '1px solid var(--border-color)', color: 'var(--text-muted)', fontSize: '0.68rem', fontWeight: '500', position: 'sticky', left: '42px', background: isSelRow ? 'rgba(168,85,247,0.1)' : ri % 2 === 0 ? 'var(--bg-secondary)' : 'var(--bg-tertiary)', zIndex: 2, userSelect: 'none' }}>
+                      <td style={{ padding: '4px 6px', textAlign: 'center', borderRight: '1px solid var(--border-color)', color: 'var(--text-muted)', fontSize: '0.68rem', fontWeight: '500', position: 'sticky', left: '42px', background: stickyBg, zIndex: 2, userSelect: 'none', transition: 'background 0.15s ease' }}>
                         {orig + 1}
                       </td>
                       {/* Cells */}

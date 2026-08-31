@@ -1,5 +1,11 @@
 import React, { useState, useEffect } from 'react';
+import Lottie from 'lottie-react';
 import { showConfirm } from '../utils/Alerts';
+import { playCompleteChime } from '../utils/sound';
+import checklistEmptyIllustration from '../assets/illustrations/checklist-empty.svg';
+import successCheckmarkAnim from '../assets/lottie/success-checkmark.json';
+import taskManagerHero from '../assets/hero-banners/task-manager-hero.webp';
+import taskManagerHeroLight from '../assets/hero-banners/task-manager-hero-light.webp';
 import {
   Plus,
   Trash2,
@@ -15,7 +21,8 @@ import {
   ChevronDown,
   Flag,
   Bell,
-  Repeat
+  Repeat,
+  Flame
 } from 'lucide-react';
 import Flatpickr from 'react-flatpickr';
 import 'flatpickr/dist/themes/dark.css';
@@ -113,6 +120,39 @@ function loadInitialTasks() {
   return seed;
 }
 
+const TASK_STREAK_KEY = 'tr-task-streak-log';
+const dateKey = (d) => d.toISOString().slice(0, 10);
+
+function loadStreakLog() {
+  try { return JSON.parse(localStorage.getItem(TASK_STREAK_KEY) || '[]'); } catch { return []; }
+}
+
+// Records "at least one task completed today" — dedups same-day entries and
+// keeps a 90-day window, which is more than enough for any realistic streak.
+function recordStreakDay() {
+  const todayKey = dateKey(new Date());
+  const log = loadStreakLog();
+  if (log.includes(todayKey)) return log;
+  const trimmed = [...log, todayKey].slice(-90);
+  localStorage.setItem(TASK_STREAK_KEY, JSON.stringify(trimmed));
+  return trimmed;
+}
+
+// Consecutive days ending today with at least one completion. Today doesn't
+// break an existing streak just for being incomplete-so-far — it simply
+// isn't counted until a task is actually finished.
+function computeStreak(log) {
+  const set = new Set(log);
+  let streak = set.has(dateKey(new Date())) ? 1 : 0;
+  for (let i = 1; ; i++) {
+    const d = new Date();
+    d.setDate(d.getDate() - i);
+    if (!set.has(dateKey(d))) break;
+    streak++;
+  }
+  return streak;
+}
+
 function loadInitialCalendarEvents() {
   try {
     const storedEvents = localStorage.getItem('ts-events');
@@ -140,6 +180,9 @@ const TaskManager = () => {
   const [taskFilter, setTaskFilter] = useState('all');
   const [expandedTasks, setExpandedTasks] = useState({});
   const [hoveredDay, setHoveredDay] = useState(null);
+  const [justCompletedTaskId, setJustCompletedTaskId] = useState(null);
+  const [streakLog, setStreakLog] = useState(loadStreakLog);
+  const streak = computeStreak(streakLog);
 
   const toggleSubtasks = (taskId) => {
     setExpandedTasks(prev => ({ ...prev, [taskId]: !prev[taskId] }));
@@ -258,6 +301,13 @@ const TaskManager = () => {
     const task = updatedTasks[taskIndex];
     const isNowCompleted = !task.completed;
     updatedTasks[taskIndex] = { ...task, completed: isNowCompleted };
+
+    if (isNowCompleted) {
+      setJustCompletedTaskId(id);
+      setTimeout(() => setJustCompletedTaskId(curr => (curr === id ? null : curr)), 900);
+      setStreakLog(recordStreakDay());
+      playCompleteChime();
+    }
 
     // Handle Recurrence (Spawn new task)
     if (isNowCompleted && task.recurring && task.recurring !== 'none') {
@@ -568,7 +618,22 @@ const TaskManager = () => {
   }
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: '32px', minHeight: 'calc(100vh - 100px)', alignItems: 'start' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+
+      <div
+        className="glass-panel task-manager-hero"
+        style={{
+          '--hero-image': `url(${taskManagerHero})`, '--hero-image-light': `url(${taskManagerHeroLight})`,
+          padding: '24px 28px',
+        }}
+      >
+        <h1 style={{ fontSize: '2rem', fontWeight: '900', marginBottom: '8px', letterSpacing: '-0.5px' }}>
+          Task <span className="gradient-text">Manager</span>
+        </h1>
+        <p style={{ color: 'var(--text-secondary)', fontSize: '0.95rem' }}>Plan your day, track deadlines, and stay on top of recurring work.</p>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: '32px', minHeight: 'calc(100vh - 100px)', alignItems: 'start' }}>
 
       {/* Left Column: Calendar */}
       <div className="glass-panel" style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
@@ -802,7 +867,20 @@ const TaskManager = () => {
           {/* Header & Radial Progress */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div>
-              <h4 style={{ fontWeight: '800', fontSize: '1.3rem', marginBottom: '4px', color: 'var(--text-primary)', margin: 0 }}>Tasks Queue</h4>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <h4 style={{ fontWeight: '800', fontSize: '1.3rem', color: 'var(--text-primary)', margin: 0 }}>Tasks Queue</h4>
+                {streak > 0 && (
+                  <span style={{
+                    display: 'flex', alignItems: 'center', gap: '4px',
+                    background: 'color-mix(in srgb, var(--accent-orange) 15%, transparent)',
+                    border: '1px solid color-mix(in srgb, var(--accent-orange) 35%, transparent)',
+                    color: 'var(--accent-orange)', borderRadius: '999px', padding: '2px 9px',
+                    fontSize: '0.72rem', fontWeight: '700',
+                  }}>
+                    <Flame size={11} /> {streak} day{streak === 1 ? '' : 's'}
+                  </span>
+                )}
+              </div>
               <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', margin: 0, marginTop: '4px' }}>
                 {completedCount} of {totalCount} tasks completed
               </p>
@@ -877,8 +955,8 @@ const TaskManager = () => {
 
           <div className="custom-scrollbar" style={{ display: 'flex', flexDirection: 'column', gap: '12px', maxHeight: '500px', overflowY: 'auto', paddingRight: '8px' }}>
             {sortedTasks.length === 0 ? (
-              <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--text-muted)' }}>
-                <CheckSquare size={48} style={{ strokeWidth: '1.5', opacity: 0.3, marginBottom: '12px' }} />
+              <div style={{ textAlign: 'center', padding: '20px 0', color: 'var(--text-muted)' }}>
+                <img src={checklistEmptyIllustration} alt="" style={{ width: '150px', maxWidth: '100%', opacity: 0.9, marginBottom: '8px' }} />
                 <p style={{ fontSize: '0.9rem', fontWeight: '500', margin: 0 }}>No tasks found.</p>
                 <p style={{ fontSize: '0.75rem', marginTop: '4px' }}>Add a task above to schedule it on the calendar!</p>
               </div>
@@ -926,7 +1004,7 @@ const TaskManager = () => {
                         onClick={() => handleToggleTask(task.id)}
                         style={{
                           cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                          marginTop: '2px', flexShrink: 0,
+                          marginTop: '2px', flexShrink: 0, position: 'relative',
                           color: task.completed ? badgeColor : 'var(--text-muted)',
                           transition: 'all 0.2s ease', opacity: task.completed ? 1 : 0.6
                         }}
@@ -934,6 +1012,13 @@ const TaskManager = () => {
                         onMouseOut={(e) => { e.currentTarget.style.opacity = task.completed ? 1 : 0.6; e.currentTarget.style.color = task.completed ? badgeColor : 'var(--text-muted)'; }}
                       >
                         {task.completed ? <CheckSquare size={22} /> : <Square size={22} />}
+                        {justCompletedTaskId === task.id && (
+                          <Lottie
+                            animationData={successCheckmarkAnim}
+                            loop={false}
+                            style={{ position: 'absolute', width: '48px', height: '48px', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', pointerEvents: 'none' }}
+                          />
+                        )}
                       </div>
 
                       <div style={{ flex: 1 }}>
@@ -1048,6 +1133,7 @@ const TaskManager = () => {
           </div>
         </div>
 
+      </div>
       </div>
     </div>
   );

@@ -26,6 +26,7 @@ const CSVOrganizer = lazy(() => import('./pages/CSVOrganizer'));
 const SSBucket = lazy(() => import('./pages/SSBucket'));
 const TestCaseDashboard = lazy(() => import('./pages/TestCaseDashboard'));
 const CypressRunner = lazy(() => import('./pages/CypressRunner'));
+const NotFound = lazy(() => import('./pages/NotFound'));
 
 const PAGE_TITLES = {
   '/':             'Dashboard',
@@ -51,6 +52,19 @@ function App() {
   const navigate = useNavigate();
 
   const pageTitle = PAGE_TITLES[location.pathname] || 'Portal';
+
+  /* ── Page transition: crossfade instead of the old page snapping away ──
+     The rendered <Routes> stays pinned to `displayLocation` (the outgoing
+     page) until its fade-out finishes, then swaps to the real location and
+     fades the new page in. */
+  const [displayLocation, setDisplayLocation] = useState(location);
+  const [transitionStage, setTransitionStage] = useState('fadeIn');
+
+  useEffect(() => {
+    if (location.pathname !== displayLocation.pathname) {
+      setTransitionStage('fadeOut');
+    }
+  }, [location, displayLocation]);
 
   /* ── Keyboard shortcuts ── */
   useEffect(() => {
@@ -132,9 +146,18 @@ function App() {
 
         {/* ── Page Content ── */}
         <main className="app-content">
-          <div key={location.pathname} style={{ animation: 'fadeIn 0.25s ease-out forwards' }}>
+          <div
+            key={displayLocation.pathname}
+            style={{ animation: `${transitionStage === 'fadeOut' ? 'pageFadeOut' : 'fadeIn'} 0.18s ease forwards` }}
+            onAnimationEnd={() => {
+              if (transitionStage === 'fadeOut') {
+                setDisplayLocation(location);
+                setTransitionStage('fadeIn');
+              }
+            }}
+          >
             <Suspense fallback={<div className="app-route-loading"><div className="spinner" /></div>}>
-              <Routes>
+              <Routes location={displayLocation}>
                 <Route path="/"             element={<Dashboard />} />
                 <Route path="/synchub"      element={<SyncHub />} />
                 <Route path="/notebook"     element={<Notebook />} />
@@ -150,6 +173,7 @@ function App() {
                 <Route path="/testcase-dashboard" element={<TestCaseDashboard />} />
                 <Route path="/cypress-runner" element={<CypressRunner />} />
                 <Route path="/settings"      element={<Settings />} />
+                <Route path="*"              element={<NotFound />} />
               </Routes>
             </Suspense>
           </div>
