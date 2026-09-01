@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   RefreshCw, ChevronsDown, ChevronsUp, Copy, Download, FilePlus2, AlertTriangle, Search,
-  Settings as SettingsIcon, BookmarkPlus, X, FolderSearch, SlidersHorizontal,
+  Settings as SettingsIcon, BookmarkPlus, X, FolderSearch, SlidersHorizontal, RotateCcw,
 } from 'lucide-react';
 import { useToast } from '../contexts/ToastContext';
 import { showPrompt, showConfirm } from '../utils/Alerts';
@@ -11,6 +11,8 @@ import HeroStats from './testcase-dashboard/HeroStats';
 import CoverageCard from './testcase-dashboard/CoverageCard';
 import RunStatusCard from './testcase-dashboard/RunStatusCard';
 import JobActivityCard from './testcase-dashboard/JobActivityCard';
+import JobQueueProgress from './testcase-dashboard/JobQueueProgress';
+import BugsCard from './testcase-dashboard/BugsCard';
 import FileTree from './testcase-dashboard/FileTree';
 import RunsPanel from './testcase-dashboard/RunsPanel';
 import ManifestModal from './testcase-dashboard/ManifestModal';
@@ -25,12 +27,18 @@ import {
   csvEscape, normCat, timeAgo, copyText, SORT_OPTIONS, isImageArtifact, numericId,
   todayDateKey, filterHistoryByDate, formatReportDateLabel, buildReportText, buildJobReportBlock,
   STATUS_FILTER_KEYS, STATUS_FILTER_LABELS,
+  tcdAvgDurationByPath, tcdGlobalAvgDuration, tcdEstimateDuration, formatEta, tcdGroupBugLinks,
 } from './testcase-dashboard/helpers';
 import './testcase-dashboard/TestCaseDashboard.css';
 import testcaseDashboardHero from '../assets/hero-banners/testcase-dashboard-hero.webp';
 import testcaseDashboardHeroLight from '../assets/hero-banners/testcase-dashboard-hero-light.webp';
 
 const EMPTY_DATA = { rows: [], missing: [], catCounts: {}, fileCounts: {}, totalCases: 0, totalFiles: 0, unknownIds: [], caseIdCheck: {}, manifestPath: '', e2eRoot: '' };
+
+// "Retry failed" treats ERROR/ABORTED the same as FAILURE — a build that
+// errored out or got cancelled still needs a real re-run, not just one that
+// scored an explicit FAILURE verdict.
+const FAILED_STATUSES = new Set(['FAILURE', 'ERROR', 'ABORTED']);
 
 function loadPrefs() {
   try { return JSON.parse(localStorage.getItem('tcd_prefs') || '{}'); } catch { return {}; }
@@ -74,9 +82,17 @@ const TestCaseDashboard = () => {
 
   const [jenkinsConfig, setJenkinsConfig] = useState({ jobs: { OFFLINE: [], ONLINE: [], E2E: [] }, defaultEnvironment: 'qa', environments: ['qa'], testrailUrl: null });
   const [runsState, setRunsState] = useState({ queue: [], running: [], history: [] });
+
+  // Tracks every job id that's entered the queue/running set since it was
+  // last empty — the "batch" the Queue Progress card reports on. State (not
+  // a ref) since batchProgress below reads it during render. Same pattern as
+  // Cypress Runner's own batchIds/batchStart.
+  const [batchIds, setBatchIds] = useState(() => new Set());
+  const [batchStart, setBatchStart] = useState(null);
   const [notes, setNotes] = useState({});
   const [tags, setTags] = useState({});
   const [manualStatus, setManualStatus] = useState({});
+  const [bugLinks, setBugLinks] = useState({});
   const [selectedCases, setSelectedCases] = useState(new Set());
 
   const [modal, setModal] = useState(null); // { type: 'addManifest'|'run'|'note'|'runDetails', ...props }
@@ -124,9 +140,17 @@ const TestCaseDashboard = () => {
     fetch('/api/testcases/tags', { cache: 'no-store' }).then((r) => r.json()).then(setTags).catch(() => {});
   }, [setTags]);
 
+  // Jenkins Runner's own manual-status/bug-links stores — deliberately
+  // separate from Cypress Runner's (/api/testcases/manual-status,
+  // /api/testcases/bug-links), so a mark or bug link made on one page never
+  // shows up on the other.
   const fetchManualStatus = useCallback(() => {
-    fetch('/api/testcases/manual-status', { cache: 'no-store' }).then((r) => r.json()).then(setManualStatus).catch(() => {});
+    fetch('/api/testcases/jenkins-manual-status', { cache: 'no-store' }).then((r) => r.json()).then(setManualStatus).catch(() => {});
   }, [setManualStatus]);
+
+  const fetchBugLinks = useCallback(() => {
+    fetch('/api/testcases/jenkins-bug-links', { cache: 'no-store' }).then((r) => r.json()).then(setBugLinks).catch(() => {});
+  }, [setBugLinks]);
 
   // Self-scheduling rather than a fixed setInterval so it can poll faster
   // (2s) while anything is actually queued/running — that's exactly when a
@@ -150,7 +174,7 @@ const TestCaseDashboard = () => {
   useEffect(() => { pollRunsRef.current = fetchRunsState; }, [fetchRunsState]);
 
   useEffect(() => {
-    fetchData(); fetchJenkinsConfig(); fetchNotes(); fetchTags(); fetchManualStatus(); fetchRunsState(); fetchConnStatus();
+    fetchData(); fetchJenkinsConfig(); fetchNotes(); fetchTags(); fetchManualStatus(); fetchBugLinks(); fetchRunsState(); fetchConnStatus();
     const dData = setInterval(fetchData, 60000);
     const dTick = setInterval(() => setNow(Date.now()), 1000);
     const onVisible = () => { if (document.visibilityState === 'visible') fetchRunsState(); };
@@ -160,7 +184,36 @@ const TestCaseDashboard = () => {
       if (runsPollTimeoutRef.current) clearTimeout(runsPollTimeoutRef.current);
       document.removeEventListener('visibilitychange', onVisible);
     };
-  }, [fetchData, fetchJenkinsConfig, fetchNotes, fetchTags, fetchManualStatus, fetchRunsState, fetchConnStatus]);
+  }, [fetchData, fetchJenkinsConfig, fetchNotes, fetchTags, fetchManualStatus, fetchBugLinks, fetchRunsState, fetchConnStatus]);
+
+  // Queue Progress's "batch" — every job id seen in queue+running
+  // accumulates into batchIds until both drain empty at once, at which point
+  // the next enqueue starts a fresh batch, and batchStart is stamped the
+  // moment the first item arrives. batchIds is memory of past renders (which
+  // ids have ever been live), not something derivable from the current props
+  // alone, so this can only be synced from an effect — the
+  // set-state-in-effect rule is deliberately silenced for it. Doesn't
+  // retroactively count jobs already queued/running before this page loaded
+  // (batchIds starts empty on mount) — acceptable since a refresh mid-batch
+  // is rare on a single-user local tool.
+  /* eslint-disable react-hooks/set-state-in-effect */
+  useEffect(() => {
+    const queueIds = (runsState.queue || []).map((q) => q.id);
+    const runningIds = (runsState.running || []).map((r) => r.id);
+    const liveIds = [...runningIds, ...queueIds];
+    if (liveIds.length === 0) {
+      setBatchIds((prev) => (prev.size === 0 ? prev : new Set()));
+      setBatchStart(null);
+      return;
+    }
+    setBatchIds((prev) => {
+      const next = new Set(prev);
+      liveIds.forEach((id) => next.add(id));
+      return next;
+    });
+    setBatchStart((prev) => prev ?? Date.now());
+  }, [runsState.queue, runsState.running]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   const pullRunStatus = useCallback((runId) => {
     if (!/^\d+$/.test(runId)) { searchInputRef.current?.focus(); return; }
@@ -346,6 +399,61 @@ const TestCaseDashboard = () => {
     }
   };
 
+  // Marks a case pass/fail/blocked/retest by hand — for statuses no Jenkins
+  // build can produce (blocked/retest) or when a case was verified outside
+  // Jenkins entirely. Clicking the currently-active status again clears the
+  // override (back to whatever the pulled TestRail run says) instead of
+  // leaving it stuck. Posts to Jenkins Runner's own manual-status store —
+  // deliberately NOT the same one Cypress Runner uses, so a mark made here
+  // never shows up there, and vice versa.
+  const handleSetManualStatus = (caseId, status) => {
+    const next = manualStatus[caseId]?.status === status ? null : status;
+    setManualStatus((prev) => {
+      const copy = { ...prev };
+      if (next) copy[caseId] = { status: next, updatedAt: Date.now() }; else delete copy[caseId];
+      return copy;
+    });
+    fetch('/api/testcases/jenkins-manual-status', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ caseId, status: next }),
+    })
+      .then((res) => res.json().then((body) => ({ ok: res.ok, body })))
+      .then(({ ok, body }) => { if (!ok) showToast(body.error || 'Failed to save status', 'error'); })
+      .catch((err) => showToast(err.message, 'error'));
+  };
+
+  // Shared by both the prompt-based edit and the chip's direct clear button —
+  // optimistic local update ahead of the server ack, same pattern as
+  // handleSetManualStatus. Posts to Jenkins Runner's own bug-links store —
+  // deliberately NOT the same one Cypress Runner uses.
+  const saveBugLink = (caseId, bugId) => {
+    setBugLinks((prev) => {
+      const copy = { ...prev };
+      if (bugId) copy[caseId] = { bugId, updatedAt: Date.now() }; else delete copy[caseId];
+      return copy;
+    });
+    fetch('/api/testcases/jenkins-bug-links', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ caseId, bugId }),
+    })
+      .then((res) => res.json().then((body) => ({ ok: res.ok, body })))
+      .then(({ ok, body }) => { if (!ok) showToast(body.error || 'Failed to save bug link', 'error'); })
+      .catch((err) => showToast(err.message, 'error'));
+  };
+
+  // Prompts for a ticket id (pre-filled with the existing one, if any) —
+  // submitting blank clears the link, cancelling (null) leaves it untouched.
+  const handleEditBugLink = async (caseId) => {
+    const current = bugLinks[caseId]?.bugId || '';
+    const val = await showPrompt(`Bug ID for ${caseId} (e.g. EVB-1234):`, current);
+    if (val === null) return;
+    saveBugLink(caseId, val.trim());
+  };
+
+  const handleClearBugLink = (caseId) => saveBugLink(caseId, '');
+
   const saveTags = async (caseId, nextTags) => {
     try {
       const res = await fetch('/api/testcases/tags', {
@@ -431,6 +539,72 @@ const TestCaseDashboard = () => {
     return Array.from(set).sort();
   }, [selectedCases, tags]);
 
+  /* ── Queue progress / ETA ── */
+  const avgDurationByPath = useMemo(() => tcdAvgDurationByPath(runsState.history), [runsState.history]);
+  const globalAvgDuration = useMemo(() => tcdGlobalAvgDuration(runsState.history), [runsState.history]);
+
+  // Batch progress for the Queue Progress card — batchIds accumulates job
+  // ids in an effect above; "done" is whichever of those ids are no longer
+  // in the live queue/running set, looked up in history for their verdict.
+  const batchProgress = useMemo(() => {
+    if (batchIds.size === 0) return null;
+    const liveIds = new Set([
+      ...(runsState.queue || []).map((q) => q.id),
+      ...(runsState.running || []).map((r) => r.id),
+    ]);
+    let passed = 0, failed = 0, done = 0;
+    batchIds.forEach((id) => {
+      if (liveIds.has(id)) return;
+      const h = runsState.history.find((x) => x.id === id);
+      if (!h) return;
+      done++;
+      if (String(h.status).toUpperCase() === 'SUCCESS') passed++; else failed++;
+    });
+    return { total: batchIds.size, done, passed, failed };
+  }, [batchIds, runsState.queue, runsState.running, runsState.history]);
+
+  const queueEtaMs = useMemo(() => {
+    const running = runsState.running || [];
+    const queue = runsState.queue || [];
+    if (running.length === 0 && queue.length === 0) return 0;
+    let ms = tcdEstimateDuration(queue.map((q) => q.path), avgDurationByPath, globalAvgDuration);
+    running.forEach((r) => {
+      const pathAvg = avgDurationByPath[r.path] || globalAvgDuration || 90000;
+      const elapsed = now - r.startedAt;
+      ms += Math.max(pathAvg - elapsed, 3000);
+    });
+    return ms;
+  }, [runsState.running, runsState.queue, avgDurationByPath, globalAvgDuration, now]);
+
+  const batchElapsedMs = batchProgress && batchStart ? now - batchStart : 0;
+
+  // Drives "Retry failed" — one entry per file whose most recent build
+  // failed, in the same {path, cat} shape RunModal/queueBuilds expect.
+  // History is newest-first, so the first entry seen per path is that
+  // file's last build.
+  const failedFileItems = useMemo(() => {
+    const seen = new Set();
+    const items = [];
+    (runsState.history || []).forEach((h) => {
+      if (!h.path || seen.has(h.path)) return;
+      seen.add(h.path);
+      if (FAILED_STATUSES.has(String(h.status || '').toUpperCase())) items.push({ path: h.path, cat: h.category || null });
+    });
+    return items;
+  }, [runsState.history]);
+
+  const retryEtaMs = useMemo(
+    () => tcdEstimateDuration(failedFileItems.map((i) => i.path), avgDurationByPath, globalAvgDuration),
+    [failedFileItems, avgDurationByPath, globalAvgDuration]
+  );
+
+  const handleRetryFailed = () => {
+    if (failedFileItems.length === 0) return;
+    setModal({ type: 'run', filesToRun: failedFileItems });
+  };
+
+  const bugGroups = useMemo(() => tcdGroupBugLinks(bugLinks), [bugLinks]);
+
   // Drives the filter bar's Passed/Failed/Blocked/Retest/Untested chips — a
   // manual override (set from any page, since manual-status.json is shared)
   // always wins as the "last" status regardless of what the pulled TestRail
@@ -491,6 +665,27 @@ const TestCaseDashboard = () => {
       fetchRunsState();
     } catch (err) {
       showToast(`Couldn't cancel: ${err.message}`, 'error');
+    }
+  };
+
+  const cancelAllJobs = async () => {
+    const queuedCount = runsState.queue?.length || 0;
+    const runningCount = runsState.running?.length || 0;
+    if (queuedCount === 0 && runningCount === 0) return;
+    const msg = runningCount > 0 && queuedCount > 0
+      ? `Stop ${runningCount} running build${runningCount === 1 ? '' : 's'} and cancel ${queuedCount} queued item${queuedCount === 1 ? '' : 's'}?`
+      : runningCount > 0
+        ? `Stop ${runningCount} running build${runningCount === 1 ? '' : 's'}? This aborts ${runningCount === 1 ? 'it' : 'them'} on Jenkins.`
+        : `Cancel ${queuedCount} queued item${queuedCount === 1 ? '' : 's'}?`;
+    if (!(await showConfirm(msg))) return;
+    try {
+      const res = await fetch('/api/testcases/cancel-all', { method: 'POST' });
+      const body = await res.json();
+      if (!res.ok) { showToast(body.error || "Couldn't cancel all", 'error'); return; }
+      showToast('Queue cancelled', 'info');
+      fetchRunsState();
+    } catch (err) {
+      showToast(`Couldn't cancel all: ${err.message}`, 'error');
     }
   };
 
@@ -700,6 +895,15 @@ const TestCaseDashboard = () => {
             <button className="tcd-btn" title="Copy visible file paths" onClick={copyVisible}><Copy size={14} /> Copy</button>
             <button className="tcd-btn" title="Export filtered cases as CSV" onClick={exportCsv}><Download size={14} /> CSV</button>
           </div>
+          <button
+            className={`tcd-btn${failedFileItems.length > 0 ? ' warn' : ''}`}
+            title={failedFileItems.length > 0 ? `Re-queue the ${failedFileItems.length} file(s) whose last build failed` : 'No files currently failing their last build'}
+            disabled={failedFileItems.length === 0}
+            onClick={handleRetryFailed}
+          >
+            <RotateCcw size={14} /> Retry failed {failedFileItems.length > 0 ? `(${failedFileItems.length})` : ''}
+            {failedFileItems.length > 0 && <span className="tcd-eta-badge">{formatEta(retryEtaMs)}</span>}
+          </button>
           <button className="tcd-btn primary" title="View, add, remove, and download manifest entries" onClick={() => setModal({ type: 'manifest' })}><FilePlus2 size={14} /> Manifest</button>
           <button className="tcd-btn" title="TestRail, Jenkins &amp; Telegram credentials (Settings → Integrations)" aria-label="TestRail, Jenkins &amp; Telegram credentials (Settings → Integrations)" onClick={() => navigate('/settings?tab=integrations')}><SettingsIcon size={14} /></button>
         </div>
@@ -766,13 +970,14 @@ const TestCaseDashboard = () => {
         )}
         {isLoading ? (
           <div className="tcd-cards-row">
-            {Array.from({ length: 3 }, (_, i) => <div key={i} className="tcd-card tcd-skeleton" style={{ height: '180px' }} />)}
+            {Array.from({ length: 4 }, (_, i) => <div key={i} className="tcd-card tcd-skeleton" style={{ height: '180px' }} />)}
           </div>
         ) : (
           <div className="tcd-cards-row">
             <CoverageCard data={data} />
             <RunStatusCard data={data} runStatus={runStatus} onFocusRunId={() => runIdInputRef.current?.focus()} />
             <JobActivityCard runsState={runsState} />
+            <BugsCard groups={bugGroups} onFocusCase={(caseId) => { setSearchTerm(caseId); searchInputRef.current?.focus(); }} />
           </div>
         )}
       </div>
@@ -787,6 +992,18 @@ const TestCaseDashboard = () => {
             <button type="button" className="tcd-link-btn" onClick={() => setModal({ type: 'manifest' })}>Manifest</button> to remove them.
           </div>
         </div>
+      )}
+
+      {batchProgress && (
+        <JobQueueProgress
+          total={batchProgress.total}
+          done={batchProgress.done}
+          passed={batchProgress.passed}
+          failed={batchProgress.failed}
+          activePaths={(runsState.running || []).map((r) => r.path)}
+          etaMs={queueEtaMs}
+          elapsedMs={batchElapsedMs}
+        />
       )}
 
       {!isLoading && connOk && data.totalCases === 0 ? (
@@ -851,6 +1068,11 @@ const TestCaseDashboard = () => {
               onToggleCaseSelect={toggleCaseSelect}
               onSelectManyCases={selectManyCases}
               getCaseStatus={getCaseStatus}
+              manualStatus={manualStatus}
+              onSetManualStatus={handleSetManualStatus}
+              bugLinks={bugLinks}
+              onEditBugLink={handleEditBugLink}
+              onClearBugLink={handleClearBugLink}
             />
             <RunsPanel
               runsState={runsState}
@@ -861,6 +1083,7 @@ const TestCaseDashboard = () => {
               onCopyTodayReport={copyTodayReport}
               onSendTelegramReport={openSendReportModal}
               onCancelJob={cancelJob}
+              onCancelAll={cancelAllJobs}
               reportDate={reportDate}
               onReportDateChange={setReportDate}
               reportSelectMode={reportSelectMode}

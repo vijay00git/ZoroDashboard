@@ -164,6 +164,73 @@ export function recentBuildStats(history, limit = 20) {
   return { recent, success, failed, rate, lastAt: recent[0] ? (recent[0].completedAt || recent[0].startedAt) : null };
 }
 
+// ── Bug links ────────────────────────────────────────────────────────────
+// Groups the flat caseId -> {bugId, updatedAt} store (server's bug-links.json)
+// by ticket, since one ticket commonly covers several failing cases — sorted
+// most-linked-first so the highest-impact bug surfaces at the top of the
+// card. Mirrors cyrGroupBugLinks (cypress-runner/helpers.js) — both pages
+// read/write the exact same bug-links.json.
+export function tcdGroupBugLinks(bugLinks) {
+  const groups = {};
+  Object.entries(bugLinks || {}).forEach(([caseId, entry]) => {
+    if (!entry || !entry.bugId) return;
+    (groups[entry.bugId] = groups[entry.bugId] || []).push({ caseId, updatedAt: entry.updatedAt });
+  });
+  return Object.entries(groups)
+    .map(([bugId, cases]) => ({ bugId, cases: cases.sort((a, b) => a.caseId.localeCompare(b.caseId)) }))
+    .sort((a, b) => b.cases.length - a.cases.length || a.bugId.localeCompare(b.bugId));
+}
+
+// ── Duration tracking & ETA (Jenkins job queue) ─────────────────────────
+// Mirrors cyrAvgDurationByPath/cyrGlobalAvgDuration/cyrEstimateDuration
+// (cypress-runner/helpers.js) for the Jenkins-backed queue instead of local
+// Cypress runs. ERROR is excluded from sampling since tcdRunToCompletion
+// never sets `duration` on that path (it's thrown before a build number
+// exists), so it would never contribute a real sample anyway.
+const TCD_DURATION_STATUSES = new Set(['SUCCESS', 'FAILURE', 'ABORTED']);
+const TCD_DURATION_SAMPLE_LIMIT = 5;
+export const TCD_DEFAULT_ESTIMATE_MS = 90000;
+
+// Rolling average duration per file path — most-recent-first, capped at
+// TCD_DURATION_SAMPLE_LIMIT samples so a job that's recently sped up or
+// slowed down is reflected quickly rather than smoothed out by old runs.
+export function tcdAvgDurationByPath(history) {
+  const byPath = {};
+  (history || []).forEach((h) => {
+    if (!h.path || !TCD_DURATION_STATUSES.has(String(h.status || '').toUpperCase()) || !h.duration) return;
+    const arr = (byPath[h.path] = byPath[h.path] || []);
+    if (arr.length < TCD_DURATION_SAMPLE_LIMIT) arr.push(h.duration);
+  });
+  const avg = {};
+  Object.keys(byPath).forEach((p) => { avg[p] = byPath[p].reduce((a, b) => a + b, 0) / byPath[p].length; });
+  return avg;
+}
+
+// Fallback for a file with no local build history yet — average of the last
+// 50 terminal builds across every file.
+export function tcdGlobalAvgDuration(history) {
+  const durations = (history || [])
+    .filter((h) => TCD_DURATION_STATUSES.has(String(h.status || '').toUpperCase()) && h.duration)
+    .slice(0, 50)
+    .map((h) => h.duration);
+  if (durations.length === 0) return null;
+  return durations.reduce((a, b) => a + b, 0) / durations.length;
+}
+
+// Estimated total ms to run this set of file paths — used for the live queue
+// ETA.
+export function tcdEstimateDuration(paths, avgByPath, globalAvg) {
+  const fallback = globalAvg || TCD_DEFAULT_ESTIMATE_MS;
+  return (paths || []).reduce((sum, p) => sum + (avgByPath[p] || fallback), 0);
+}
+
+// "~2m" / "~45s" — prefixed so an estimate is never mistaken for a recorded
+// duration at the call site.
+export function formatEta(ms) {
+  if (!ms || ms <= 0) return '~0s';
+  return `~${formatDuration(ms) || '0s'}`;
+}
+
 export function buildTree(rows) {
   const tree = {};
   rows.forEach((r) => {

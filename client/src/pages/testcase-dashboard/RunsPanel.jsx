@@ -78,7 +78,7 @@ const RunItem = ({ item, isHistory, onRemove, onOpenDetails, selectable, selecte
 };
 
 const RunsPanel = ({
-  runsState, collapsed, onToggleCollapsed, onRemoveHistory, onOpenDetails, onCopyTodayReport, onSendTelegramReport, onCancelJob,
+  runsState, collapsed, onToggleCollapsed, onRemoveHistory, onOpenDetails, onCopyTodayReport, onSendTelegramReport, onCancelJob, onCancelAll,
   reportDate, onReportDateChange, reportSelectMode, onToggleReportSelectMode, selectedJobIds, onToggleJobSelected, onClearJobSelection,
 }) => {
   const HISTORY_LIMIT = 100;
@@ -120,6 +120,11 @@ const RunsPanel = ({
         <button type="button" className="tcd-icon-btn" title={`Send report to Telegram (${reportTitle})…`} aria-label={`Send report to Telegram (${reportTitle})…`} onClick={onSendTelegramReport}>
           <Send size={14} />
         </button>
+        {activeCount > 0 && onCancelAll && (
+          <button type="button" className="tcd-icon-btn tcd-cancel-all-btn" title="Stop all running builds and cancel the queue" aria-label="Stop all running builds and cancel the queue" onClick={onCancelAll}>
+            <XCircle size={14} />
+          </button>
+        )}
         <button type="button" className="tcd-icon-btn" title={collapsed ? 'Expand' : 'Collapse'} aria-label={collapsed ? 'Expand' : 'Collapse'} onClick={onToggleCollapsed}>
           {collapsed ? <ChevronDown size={14} /> : <ChevronUp size={14} />}
         </button>

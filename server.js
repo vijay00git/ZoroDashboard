@@ -1112,6 +1112,13 @@ const TCD_NOTES_PATH = path.join(TCD_DIR, 'notes.json');
 const TCD_MANUAL_STATUS_PATH = path.join(TCD_DIR, 'manual-status.json');
 const TCD_TAGS_PATH = path.join(TCD_DIR, 'tags.json');
 const TCD_BUG_LINKS_PATH = path.join(TCD_DIR, 'bug-links.json');
+// Jenkins Runner (TestCaseDashboard) keeps its own manual-status/bug-links
+// stores, deliberately separate from Cypress Runner's — a case run through
+// Jenkins and one run locally via Cypress are different executions, and
+// marking one pass/fail (or linking a bug on one) shouldn't silently apply
+// to the other.
+const TCD_JENKINS_MANUAL_STATUS_PATH = path.join(TCD_DIR, 'jenkins-manual-status.json');
+const TCD_JENKINS_BUG_LINKS_PATH = path.join(TCD_DIR, 'jenkins-bug-links.json');
 const TCD_HISTORY_PATH = path.join(TCD_DIR, 'job-history.json');
 const TCD_QUEUE_STATE_PATH = path.join(TCD_DIR, 'queue-state.json');
 const TCD_MANIFEST_PATH = process.env.TCD_MANIFEST_PATH || path.join(os.homedir(), '.claude', 'ic-tokyo-file-manifest.md');
@@ -1156,6 +1163,27 @@ function tcdSaveManualStatus() {
     }
 }
 
+// Jenkins Runner's own manual-status store — same shape as
+// tcdManualStatusCache above, kept in a separate file so a mark made here
+// never shows up on the Cypress Runner page or vice versa.
+let tcdJenkinsManualStatusCache = null;
+function tcdLoadJenkinsManualStatus() {
+    if (tcdJenkinsManualStatusCache) return tcdJenkinsManualStatusCache;
+    try {
+        tcdJenkinsManualStatusCache = JSON.parse(fs.readFileSync(TCD_JENKINS_MANUAL_STATUS_PATH, 'utf8'));
+    } catch (e) {
+        tcdJenkinsManualStatusCache = {};
+    }
+    return tcdJenkinsManualStatusCache;
+}
+function tcdSaveJenkinsManualStatus() {
+    try {
+        writeJsonAtomic(TCD_JENKINS_MANUAL_STATUS_PATH, tcdJenkinsManualStatusCache || {});
+    } catch (e) {
+        console.error('[testcases] failed to save Jenkins manual status:', e.message);
+    }
+}
+
 // Free-form tags per case id, keyed the same way notes/manual-status are.
 // Stored as { [caseId]: string[] } — lowercased, trimmed, deduped on the way in.
 let tcdTagsCache = null;
@@ -1195,6 +1223,27 @@ function tcdSaveBugLinks() {
         writeJsonAtomic(TCD_BUG_LINKS_PATH, tcdBugLinksCache || {});
     } catch (e) {
         console.error('[testcases] failed to save bug links:', e.message);
+    }
+}
+
+// Jenkins Runner's own bug-links store — same shape as tcdBugLinksCache
+// above, kept in a separate file so a link made here never shows up on the
+// Cypress Runner page or vice versa.
+let tcdJenkinsBugLinksCache = null;
+function tcdLoadJenkinsBugLinks() {
+    if (tcdJenkinsBugLinksCache) return tcdJenkinsBugLinksCache;
+    try {
+        tcdJenkinsBugLinksCache = JSON.parse(fs.readFileSync(TCD_JENKINS_BUG_LINKS_PATH, 'utf8'));
+    } catch (e) {
+        tcdJenkinsBugLinksCache = {};
+    }
+    return tcdJenkinsBugLinksCache;
+}
+function tcdSaveJenkinsBugLinks() {
+    try {
+        writeJsonAtomic(TCD_JENKINS_BUG_LINKS_PATH, tcdJenkinsBugLinksCache || {});
+    } catch (e) {
+        console.error('[testcases] failed to save Jenkins bug links:', e.message);
     }
 }
 function tcdNormalizeTagList(list) {
@@ -2389,6 +2438,27 @@ app.post('/api/testcases/manual-status', (req, res) => {
     res.json({ caseId, entry: statuses[caseId] || null });
 });
 
+// Jenkins Runner's own manual-status endpoints — deliberately not the same
+// store as /api/testcases/manual-status above, so a mark made on this page
+// never syncs to Cypress Runner or vice versa.
+app.get('/api/testcases/jenkins-manual-status', (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    res.json(tcdLoadJenkinsManualStatus());
+});
+
+app.post('/api/testcases/jenkins-manual-status', (req, res) => {
+    const { caseId, status } = req.body;
+    if (!caseId) return res.status(400).json({ error: 'caseId is required' });
+    const statuses = tcdLoadJenkinsManualStatus();
+    if (status && TCD_MANUAL_STATUSES.has(status)) {
+        statuses[caseId] = { status, updatedAt: Date.now() };
+    } else {
+        delete statuses[caseId];
+    }
+    tcdSaveJenkinsManualStatus();
+    res.json({ caseId, entry: statuses[caseId] || null });
+});
+
 app.get('/api/testcases/tags', (req, res) => {
     res.set('Cache-Control', 'no-store');
     res.json(tcdLoadTags());
@@ -2447,6 +2517,28 @@ app.post('/api/testcases/bug-links', (req, res) => {
         delete store[caseId]; // blank clears the link
     }
     tcdSaveBugLinks();
+    res.json({ caseId, entry: store[caseId] || null });
+});
+
+// Jenkins Runner's own bug-links endpoints — deliberately not the same store
+// as /api/testcases/bug-links above, so a link made on this page never syncs
+// to Cypress Runner or vice versa.
+app.get('/api/testcases/jenkins-bug-links', (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    res.json(tcdLoadJenkinsBugLinks());
+});
+
+app.post('/api/testcases/jenkins-bug-links', (req, res) => {
+    const { caseId, bugId } = req.body;
+    if (!caseId) return res.status(400).json({ error: 'caseId is required' });
+    const store = tcdLoadJenkinsBugLinks();
+    const trimmed = (bugId || '').trim();
+    if (trimmed) {
+        store[caseId] = { bugId: trimmed, updatedAt: Date.now() };
+    } else {
+        delete store[caseId];
+    }
+    tcdSaveJenkinsBugLinks();
     res.json({ caseId, entry: store[caseId] || null });
 });
 
@@ -2531,6 +2623,25 @@ app.post('/api/testcases/cancel-job', async (req, res) => {
     } catch (err) {
         res.status(502).json({ error: String(err && err.message || err) });
     }
+});
+
+// Single-click "cancel everything" — drops every not-yet-dispatched queue
+// entry and asks Jenkins to stop every currently-building/queued-on-Jenkins
+// job, mirroring what repeatedly calling cancel-job on each item would do.
+// Same finalization path as a single cancel: tcdRunToCompletion's polling
+// loop notices cancelRequested and lands each running job in history as
+// ABORTED on its own next poll.
+app.post('/api/testcases/cancel-all', async (req, res) => {
+    const queuedCount = tcdJobQueue.length;
+    const runningIds = tcdRunningJobs.map((r) => r.id);
+    tcdJobQueue = [];
+    tcdSaveQueueState();
+
+    const results = await Promise.allSettled(runningIds.map((id) => tcdCancelRunningJob(id)));
+    const stopped = results.filter((r) => r.status === 'fulfilled' && r.value.ok).length;
+    tcdSaveQueueState();
+
+    res.json({ success: true, dequeued: queuedCount, stopping: stopped });
 });
 
 app.post('/api/testcases/remove-history', (req, res) => {
