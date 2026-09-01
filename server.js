@@ -959,6 +959,30 @@ app.delete('/api/screenshots/img/:filename', (req, res) => {
     }
 });
 
+// Bundle a chosen set of screenshots into a zip for bulk download
+app.post('/api/screenshots/zip', (req, res) => {
+    try {
+        const { items } = req.body;
+        if (!Array.isArray(items) || items.length === 0) return res.status(400).json({ error: 'items must be a non-empty array' });
+        const zip = new AdmZip();
+        items.forEach(({ filename, name }, idx) => {
+            if (!filename) return;
+            const safeFilename = path.basename(filename);
+            const fp = path.join(SS_DIR, safeFilename);
+            if (!fs.existsSync(fp)) return;
+            const ext = path.extname(safeFilename);
+            const safeName = (name || safeFilename).replace(/[^a-z0-9_-]/gi, '_');
+            zip.addLocalFile(fp, '', `${String(idx + 1).padStart(2, '0')}_${safeName}${ext}`);
+        });
+        const zipBuffer = zip.toBuffer();
+        res.setHeader('Content-Type', 'application/zip');
+        res.setHeader('Content-Disposition', 'attachment; filename="screenshots.zip"');
+        res.send(zipBuffer);
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
 // ════════════════════════════════════════════
 // SETTINGS / BACKUP ENDPOINTS
 // ════════════════════════════════════════════
