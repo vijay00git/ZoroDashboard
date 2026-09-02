@@ -7,6 +7,10 @@ import GlobalClock from './components/GlobalClock';
 import { GlobalAlert } from './components/GlobalAlert';
 import CommandPalette from './components/CommandPalette';
 import { PomodoroProvider } from './contexts/PomodoroContext';
+import { WaterReminderProvider } from './contexts/WaterReminderContext';
+import WaterReminder from './components/WaterReminder';
+import WaterGoalCelebration from './components/WaterGoalCelebration';
+import WaterMiniIndicator from './components/WaterMiniIndicator';
 
 // Lazy-loaded per route so navigating to one page doesn't also download
 // every other page's code in the same bundle (see the Vite build's
@@ -116,9 +120,12 @@ function App() {
 
   return (
     <PomodoroProvider>
+    <WaterReminderProvider>
     <div className="app-shell">
       <GlobalAlert />
       <FocusMode />
+      <WaterReminder />
+      <WaterGoalCelebration />
       <CommandPalette theme={theme} onToggleTheme={toggleTheme} />
       <Navbar />
 
@@ -131,6 +138,7 @@ function App() {
 
           <div className="app-header-right">
             <PomodoroTimer />
+            <WaterMiniIndicator />
             <GlobalClock />
 
             <button
@@ -180,6 +188,7 @@ function App() {
         </main>
       </div>
     </div>
+    </WaterReminderProvider>
     </PomodoroProvider>
   );
 }

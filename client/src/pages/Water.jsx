@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState } from 'react';
 import {
   Droplet,
   Plus,
@@ -6,170 +6,40 @@ import {
   Volume2,
   VolumeX,
   Bell,
-  Settings,
+  BellOff,
   Trash2,
   Flame
 } from 'lucide-react';
 import { showConfirm } from '../utils/Alerts';
+import { useWaterReminder } from '../contexts/WaterReminderContext';
 import waterHero from '../assets/hero-banners/water-hero.webp';
 import waterHeroLight from '../assets/hero-banners/water-hero-light.webp';
 import waterEmptyIllustration from '../assets/illustrations/water-empty.svg';
 
-const dateKey = (d) => d.toISOString().slice(0, 10);
+const REMINDER_INTERVALS = [15, 30, 45, 60, 90, 120];
 
 const Water = () => {
-  const [goal, setGoal] = useState(2000);
-  const [intake, setIntake] = useState(0);
-  const [logs, setLogs] = useState([]);
-  const [history, setHistory] = useState([]);
-  const [soundEnabled, setSoundEnabled] = useState(true);
+  const {
+    goal, intake, logs, pct, last7, streak,
+    soundEnabled, toggleSound,
+    addWater, resetToday, updateGoal, deleteLog,
+    reminderEnabled, setReminderEnabled, reminderIntervalMins, setReminderIntervalMins,
+    quietHoursEnabled, setQuietHoursEnabled, quietStart, setQuietStart, quietEnd, setQuietEnd,
+  } = useWaterReminder();
+
   const [customAmount, setCustomAmount] = useState('');
 
-  // Reminders
-  const [reminderEnabled, setReminderEnabled] = useState(false);
-  const [reminderInterval, setReminderInterval] = useState(60); // minutes
-
-  // Load from local storage
-  useEffect(() => {
-    const now = new Date();
-    const todayStr = now.toDateString();
-    const lastSavedDate = localStorage.getItem('tr-water-date');
-    const savedGoal = localStorage.getItem('tr-water-goal');
-    const parsedGoal = savedGoal ? parseInt(savedGoal) : 2000;
-
-    if (savedGoal) setGoal(parsedGoal);
-
-    let savedHistory = JSON.parse(localStorage.getItem('tr-water-history') || '[]');
-
-    if (lastSavedDate === todayStr) {
-      setIntake(parseInt(localStorage.getItem('tr-water-intake-ml') || '0'));
-      setLogs(JSON.parse(localStorage.getItem('tr-water-log') || '[]'));
-    } else {
-      // Archive the previous day's final total before clearing today's stats,
-      // so the 7-day chart/streak has something to look back on.
-      if (lastSavedDate) {
-        const prevIntake = parseInt(localStorage.getItem('tr-water-intake-ml') || '0');
-        const prevKey = dateKey(new Date(lastSavedDate));
-        savedHistory = [...savedHistory.filter(h => h.date !== prevKey), { date: prevKey, intake: prevIntake, goal: parsedGoal }].slice(-30);
-        localStorage.setItem('tr-water-history', JSON.stringify(savedHistory));
-      }
-      setIntake(0);
-      setLogs([]);
-      localStorage.setItem('tr-water-intake-ml', '0');
-      localStorage.setItem('tr-water-log', '[]');
-      localStorage.setItem('tr-water-date', todayStr);
-    }
-
-    setHistory(savedHistory);
-
-    const savedSound = localStorage.getItem('tr-water-sound-enabled');
-    if (savedSound) setSoundEnabled(savedSound === 'true');
-  }, []);
-
-  const playBloop = () => {
-    if (!soundEnabled) return;
-    try {
-      const ctx = new (window.AudioContext || window.webkitAudioContext)();
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      
-      osc.type = 'sine';
-      osc.frequency.setValueAtTime(800, ctx.currentTime);
-      osc.frequency.exponentialRampToValueAtTime(300, ctx.currentTime + 0.1);
-      
-      gain.gain.setValueAtTime(0, ctx.currentTime);
-      gain.gain.linearRampToValueAtTime(0.4, ctx.currentTime + 0.05);
-      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.3);
-      
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      
-      osc.start();
-      osc.stop(ctx.currentTime + 0.3);
-    } catch (e) {
-      console.error(e);
-    }
-  };
-
-  const handleAddWater = (amount) => {
-    const updatedIntake = intake + amount;
-    const now = new Date();
-    const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    const newLog = { id: Date.now(), time: timeStr, amount };
-    const updatedLogs = [newLog, ...logs];
-
-    setIntake(updatedIntake);
-    setLogs(updatedLogs);
-    playBloop();
-
-    localStorage.setItem('tr-water-intake-ml', String(updatedIntake));
-    localStorage.setItem('tr-water-log', JSON.stringify(updatedLogs));
-    localStorage.setItem('tr-water-date', new Date().toDateString());
-  };
-
   const handleReset = async () => {
-    if (await showConfirm("Are you sure you want to clear today's hydration logs?")) {
-      setIntake(0);
-      setLogs([]);
-      localStorage.setItem('tr-water-intake-ml', '0');
-      localStorage.setItem('tr-water-log', '[]');
-    }
-  };
-
-  const handleUpdateGoal = (val) => {
-    const newGoal = parseInt(val) || 2000;
-    setGoal(newGoal);
-    localStorage.setItem('tr-water-goal', String(newGoal));
+    if (await showConfirm("Are you sure you want to clear today's hydration logs?")) resetToday();
   };
 
   const handleDeleteLog = async (id) => {
-    const logItem = logs.find(l => l.id === id);
-    if (!logItem) return;
-    if (!(await showConfirm('Delete this hydration log entry?'))) return;
-    const updatedIntake = Math.max(0, intake - logItem.amount);
-    const updatedLogs = logs.filter(l => l.id !== id);
-
-    setIntake(updatedIntake);
-    setLogs(updatedLogs);
-    localStorage.setItem('tr-water-intake-ml', String(updatedIntake));
-    localStorage.setItem('tr-water-log', JSON.stringify(updatedLogs));
+    if (await showConfirm('Delete this hydration log entry?')) deleteLog(id);
   };
-
-  const pct = Math.min(100, Math.round((intake / goal) * 100));
-
-  // Last 7 calendar days (today included, live) for the mini bar chart.
-  const last7 = Array.from({ length: 7 }, (_, i) => {
-    const d = new Date();
-    d.setDate(d.getDate() - (6 - i));
-    const isToday = i === 6;
-    const entry = isToday ? { intake, goal } : history.find(h => h.date === dateKey(d));
-    return {
-      label: d.toLocaleDateString([], { weekday: 'short' }).slice(0, 1),
-      intake: entry?.intake ?? 0,
-      goal: entry?.goal ?? goal,
-      hasData: !!entry,
-      isToday,
-    };
-  });
-
-  // Consecutive days ending today that hit the goal. Today doesn't break an
-  // existing streak just for being incomplete-so-far — it's simply not
-  // counted until the goal is actually reached.
-  const streak = (() => {
-    let count = intake >= goal ? 1 : 0;
-    for (let i = 1; ; i++) {
-      const d = new Date();
-      d.setDate(d.getDate() - i);
-      const entry = history.find(h => h.date === dateKey(d));
-      if (!entry || entry.intake < entry.goal) break;
-      count++;
-    }
-    return count;
-  })();
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-      
+
       {/* Header */}
       <div
         className="glass-panel water-hero"
@@ -190,7 +60,7 @@ const Water = () => {
         gap: '24px',
         alignItems: 'start'
       }}>
-        
+
         {/* Left Column: Glass Visualizer */}
         <div className="glass-panel" style={{
           padding: '24px',
@@ -199,7 +69,7 @@ const Water = () => {
           alignItems: 'center',
           gap: '20px'
         }}>
-          
+
           <h3 style={{ fontWeight: 'bold', fontSize: '1.1rem' }}>Daily Cylinder</h3>
 
           {/* Visual Cylinder Glass */}
@@ -261,7 +131,7 @@ const Water = () => {
 
           <div style={{ display: 'flex', gap: '8px', width: '100%' }}>
             <button
-              onClick={() => setSoundEnabled(!soundEnabled)}
+              onClick={toggleSound}
               style={{
                 flex: 1,
                 background: 'var(--bg-tertiary)',
@@ -300,7 +170,7 @@ const Water = () => {
 
         {/* Right Column: Hydration Workspace Controls & Logs */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-          
+
           {/* Quick Logs */}
           <div className="glass-panel" style={{ padding: '20px' }}>
             <h3 style={{ fontSize: '1.1rem', fontWeight: 'bold', marginBottom: '16px' }}>Log Water Intake</h3>
@@ -318,7 +188,7 @@ const Water = () => {
               ].map((item, idx) => (
                 <button
                   key={idx}
-                  onClick={() => handleAddWater(item.amount)}
+                  onClick={() => addWater(item.amount)}
                   style={{
                     background: 'var(--bg-tertiary)',
                     border: '1px solid var(--border-color)',
@@ -361,9 +231,9 @@ const Water = () => {
               />
               <button
                 onClick={() => {
-                  const amt = parseInt(customAmount);
+                  const amt = parseInt(customAmount, 10);
                   if (amt > 0) {
-                    handleAddWater(amt);
+                    addWater(amt);
                     setCustomAmount('');
                   }
                 }}
@@ -381,13 +251,13 @@ const Water = () => {
 
           {/* Goal & Settings Panel */}
           <div className="glass-panel" style={{ padding: '20px', display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
-            
+
             <div style={{ flex: 1, minWidth: '160px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
               <label style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: '600' }}>Daily Target Goal (ml)</label>
               <input
                 type="number"
                 value={goal}
-                onChange={(e) => handleUpdateGoal(e.target.value)}
+                onChange={(e) => updateGoal(e.target.value)}
                 style={{
                   background: 'var(--bg-tertiary)',
                   border: '1px solid var(--border-color)',
@@ -401,17 +271,9 @@ const Water = () => {
             </div>
 
             <div style={{ flex: 1, minWidth: '160px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-              <label style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: '600' }}>Desktop Reminders</label>
+              <label style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: '600' }}>App-wide Reminders</label>
               <button
-                onClick={() => {
-                  if (!reminderEnabled) {
-                    // Check perm
-                    if (Notification.permission !== 'granted') {
-                      Notification.requestPermission();
-                    }
-                  }
-                  setReminderEnabled(!reminderEnabled);
-                }}
+                onClick={() => setReminderEnabled(!reminderEnabled)}
                 style={{
                   background: reminderEnabled ? 'rgba(16, 185, 129, 0.1)' : 'var(--bg-tertiary)',
                   color: reminderEnabled ? 'var(--accent-green)' : 'var(--text-primary)',
@@ -431,7 +293,102 @@ const Water = () => {
                 {reminderEnabled ? 'Reminders On' : 'Reminders Off'}
               </button>
             </div>
+
+            {reminderEnabled && (
+              <div style={{ flex: 1, minWidth: '160px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                <label style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: '600' }}>Remind me every</label>
+                <select
+                  value={reminderIntervalMins}
+                  onChange={(e) => setReminderIntervalMins(e.target.value)}
+                  style={{
+                    background: 'var(--bg-tertiary)',
+                    border: '1px solid var(--border-color)',
+                    color: 'var(--text-primary)',
+                    padding: '8px 12px',
+                    borderRadius: '8px',
+                    outline: 'none',
+                    fontSize: '0.85rem',
+                  }}
+                >
+                  {REMINDER_INTERVALS.map((m) => (
+                    <option key={m} value={m}>{m} minutes</option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            {reminderEnabled && (
+              <div style={{ flex: 1, minWidth: '160px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                <label style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: '600' }}>Quiet Hours</label>
+                <button
+                  onClick={() => setQuietHoursEnabled(!quietHoursEnabled)}
+                  style={{
+                    background: quietHoursEnabled ? 'rgba(16, 185, 129, 0.1)' : 'var(--bg-tertiary)',
+                    color: quietHoursEnabled ? 'var(--accent-green)' : 'var(--text-primary)',
+                    border: quietHoursEnabled ? '1px solid rgba(16, 185, 129, 0.2)' : '1px solid var(--border-color)',
+                    borderRadius: '8px',
+                    padding: '8px 12px',
+                    cursor: 'pointer',
+                    fontSize: '0.85rem',
+                    fontWeight: '600',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    justifyContent: 'center'
+                  }}
+                >
+                  <BellOff size={14} />
+                  {quietHoursEnabled ? 'Quiet Hours On' : 'Quiet Hours Off'}
+                </button>
+              </div>
+            )}
+
+            {reminderEnabled && quietHoursEnabled && (
+              <>
+                <div style={{ flex: 1, minWidth: '120px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  <label style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: '600' }}>From</label>
+                  <input
+                    type="time"
+                    value={quietStart}
+                    onChange={(e) => setQuietStart(e.target.value)}
+                    style={{
+                      background: 'var(--bg-tertiary)',
+                      border: '1px solid var(--border-color)',
+                      color: 'var(--text-primary)',
+                      padding: '8px 12px',
+                      borderRadius: '8px',
+                      outline: 'none',
+                      fontSize: '0.85rem',
+                    }}
+                  />
+                </div>
+                <div style={{ flex: 1, minWidth: '120px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  <label style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: '600' }}>To</label>
+                  <input
+                    type="time"
+                    value={quietEnd}
+                    onChange={(e) => setQuietEnd(e.target.value)}
+                    style={{
+                      background: 'var(--bg-tertiary)',
+                      border: '1px solid var(--border-color)',
+                      color: 'var(--text-primary)',
+                      padding: '8px 12px',
+                      borderRadius: '8px',
+                      outline: 'none',
+                      fontSize: '0.85rem',
+                    }}
+                  />
+                </div>
+              </>
+            )}
           </div>
+
+          {reminderEnabled && (
+            <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', margin: '-8px 0 0' }}>
+              A full-page reminder will pop up over whichever page you're on, every {reminderIntervalMins} minutes, until you hit today's goal.
+              {quietHoursEnabled && ` Silenced from ${quietStart} to ${quietEnd}.`}
+            </p>
+          )}
 
           {/* Last 7 Days & Streak */}
           <div className="glass-panel" style={{ padding: '20px' }}>

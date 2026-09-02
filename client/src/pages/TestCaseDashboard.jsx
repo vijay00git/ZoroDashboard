@@ -21,6 +21,7 @@ import NoteModal from './testcase-dashboard/NoteModal';
 import TagModal from './testcase-dashboard/TagModal';
 import BulkTagBar from './testcase-dashboard/BulkTagBar';
 import RunDetailsModal from './testcase-dashboard/RunDetailsModal';
+import FileHistoryModal from './testcase-dashboard/FileHistoryModal';
 import SendReportModal, { ATTACHMENT_CAP } from './testcase-dashboard/SendReportModal';
 import ModalPortal from './testcase-dashboard/ModalPortal';
 import {
@@ -96,6 +97,7 @@ const TestCaseDashboard = () => {
   const [selectedCases, setSelectedCases] = useState(new Set());
 
   const [modal, setModal] = useState(null); // { type: 'addManifest'|'run'|'note'|'runDetails', ...props }
+  const [historyModalPath, setHistoryModalPath] = useState(null);
 
   const searchInputRef = useRef(null);
   const runIdInputRef = useRef(null);
@@ -1073,6 +1075,7 @@ const TestCaseDashboard = () => {
               bugLinks={bugLinks}
               onEditBugLink={handleEditBugLink}
               onClearBugLink={handleClearBugLink}
+              onViewHistory={(path) => setHistoryModalPath(path)}
             />
             <RunsPanel
               runsState={runsState}
@@ -1167,6 +1170,18 @@ const TestCaseDashboard = () => {
           item={modal.item}
           onClose={() => setModal(null)}
           onRetry={(item) => setModal({ type: 'run', filesToRun: [{ path: item.path, cat: item.category }] })}
+        />
+      )}
+
+      {historyModalPath && (
+        <FileHistoryModal
+          path={historyModalPath}
+          queue={runsState.queue}
+          running={runsState.running}
+          history={runsState.history}
+          onClose={() => setHistoryModalPath(null)}
+          onOpenDetails={(item) => setModal({ type: 'runDetails', item })}
+          onCancelJob={cancelJob}
         />
       )}
     </div>

@@ -34,7 +34,8 @@ const TCD_DIR = path.join(__dirname, 'data', 'testcase-dashboard');
 const SETTINGS_DIR = path.join(__dirname, 'data', 'settings');
 const CYR_DIR = path.join(__dirname, 'data', 'cypress-runs');
 const CYR_SCREENSHOTS_DIR = path.join(__dirname, 'data', 'cypress-screenshots');
-[DATA_DIR, NOTES_DIR, TS_DIR, QL_DIR, CSV_DIR, SS_DIR, TCD_DIR, SETTINGS_DIR, CYR_DIR, CYR_SCREENSHOTS_DIR].forEach(dir => {
+const RUNNER_VAULT_DIR = path.join(__dirname, 'data', 'runner-vault');
+[DATA_DIR, NOTES_DIR, TS_DIR, QL_DIR, CSV_DIR, SS_DIR, TCD_DIR, SETTINGS_DIR, CYR_DIR, CYR_SCREENSHOTS_DIR, RUNNER_VAULT_DIR].forEach(dir => {
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 });
 
@@ -151,6 +152,67 @@ app.delete('/api/matrix/:id', (req, res) => {
     try {
         fs.unlinkSync(filePath);
         res.status(200).json({ success: true, message: 'Deleted successfully.' });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// --- Runner Vault API (SyncHub) ---
+// Lets SyncHub pull a point-in-time snapshot from the Cypress Runner
+// (/api/cypress/state) or Jenkins Runner (/api/testcases/job-queue) — both
+// already page-independent, server-held state — and optionally persist that
+// snapshot for later reference. One JSON file per save, same
+// read/write/atomic-rename convention as the matrix vault above.
+app.post('/api/runner-vault/save', (req, res) => {
+    const { runner, name, folder, snapshot, summary } = req.body;
+    if (runner !== 'cypress' && runner !== 'jenkins') return res.status(400).json({ error: 'runner must be "cypress" or "jenkins"' });
+    if (!name || !snapshot) return res.status(400).json({ error: 'Missing name or snapshot' });
+
+    const safeName = name.replace(/[^a-z0-9_-]/gi, '_').toLowerCase();
+    const id = `${runner}_${Date.now()}_${safeName}`;
+    const filePath = path.join(RUNNER_VAULT_DIR, `${id}.json`);
+
+    try {
+        writeJsonAtomic(filePath, { id, runner, name, folder: folder || 'Uncategorized', savedAt: Date.now(), summary: summary || null, snapshot });
+        res.status(200).json({ success: true, id });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.get('/api/runner-vault', (req, res) => {
+    const { runner } = req.query;
+    try {
+        const files = fs.readdirSync(RUNNER_VAULT_DIR).filter(f => f.endsWith('.json'));
+        const entries = files.map(f => {
+            const content = JSON.parse(fs.readFileSync(path.join(RUNNER_VAULT_DIR, f)));
+            return { id: content.id, runner: content.runner, name: content.name, folder: content.folder, savedAt: content.savedAt, summary: content.summary };
+        }).filter(e => !runner || e.runner === runner)
+          .sort((a, b) => b.savedAt - a.savedAt);
+        res.status(200).json({ entries });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.get('/api/runner-vault/:id', (req, res) => {
+    const id = path.basename(req.params.id); // prevents traversal
+    const filePath = path.join(RUNNER_VAULT_DIR, `${id}.json`);
+    if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'Snapshot not found' });
+    try {
+        res.status(200).json(JSON.parse(fs.readFileSync(filePath)));
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.delete('/api/runner-vault/:id', (req, res) => {
+    const id = path.basename(req.params.id); // prevents traversal
+    const filePath = path.join(RUNNER_VAULT_DIR, `${id}.json`);
+    if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'Snapshot not found' });
+    try {
+        fs.unlinkSync(filePath);
+        res.status(200).json({ success: true });
     } catch (e) {
         res.status(500).json({ error: e.message });
     }

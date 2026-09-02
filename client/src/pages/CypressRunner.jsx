@@ -21,6 +21,7 @@ import FlakySpecsCard from './cypress-runner/FlakySpecsCard';
 import BugsCard from './cypress-runner/BugsCard';
 import QueueProgress from './cypress-runner/QueueProgress';
 import CompareRunsModal from './cypress-runner/CompareRunsModal';
+import FileHistoryModal from './cypress-runner/FileHistoryModal';
 import {
   latestCaseResultsForPaths, latestCaseResultsByPath, latestRunStatusByPath,
   localCaseStatus, localRunTally, buildCyrReportText, buildCyrDateReportText, mergeManualIntoResultMap,
@@ -76,6 +77,7 @@ const CypressRunner = () => {
   const [viewLog, setViewLog] = useState(null); // { id, log }
   const [lightbox, setLightbox] = useState(null); // { images, startIndex }
   const [compareModal, setCompareModal] = useState(null); // { current, previous }
+  const [historyModalPath, setHistoryModalPath] = useState(null);
 
   const [runStatus, setRunStatus] = useState(null);
   const [runPulling, setRunPulling] = useState(false);
@@ -1164,6 +1166,7 @@ const CypressRunner = () => {
               onSelectManyCases={selectManyCases}
               onSetManualStatus={handleSetManualStatus}
               getCaseStatus={getCaseStatus}
+              onViewHistory={(path) => setHistoryModalPath(path)}
             />
           </div>
         </div>
@@ -1244,6 +1247,18 @@ const CypressRunner = () => {
 
       {compareModal && (
         <CompareRunsModal current={compareModal.current} previous={compareModal.previous} onClose={() => setCompareModal(null)} />
+      )}
+
+      {historyModalPath && (
+        <FileHistoryModal
+          path={historyModalPath}
+          queue={runState.queue}
+          active={runState.active}
+          history={runState.history}
+          onClose={() => setHistoryModalPath(null)}
+          onViewLog={handleViewLog}
+          onViewScreenshots={handleViewScreenshots}
+        />
       )}
 
       {tagModal && (

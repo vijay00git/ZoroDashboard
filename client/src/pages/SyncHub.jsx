@@ -28,11 +28,142 @@ import {
   X,
   MessageSquare,
   HelpCircle,
+  FlaskConical,
+  Server,
+  CloudDownload,
+  Eye,
 } from 'lucide-react';
 import { showAlert, showConfirm, showPrompt } from '../utils/Alerts';
 import syncHubHero from '../assets/hero-banners/synchub-hero.webp';
 import syncHubHeroLight from '../assets/hero-banners/synchub-hero-light.webp';
 import syncEmptyIllustration from '../assets/illustrations/sync-empty.svg';
+
+// Shared UI for the Cypress / Jenkins Runner Vault panels — pull a live
+// snapshot from the runner's own state endpoint, preview a quick summary,
+// and optionally persist it under a name for later reference. Both runners
+// render through this one component; only icon/color/labels/data differ.
+const RunnerVaultPanel = ({
+  icon: Icon, accent, title,
+  pulling, pulled, pulledAt, summaryFields, computeSummary,
+  onPull, name, onNameChange, folder, onFolderChange, onSave,
+  savedList, onDelete, onViewInLedger,
+}) => {
+  const summary = pulled ? computeSummary(pulled) : null;
+  return (
+    <div className="glass-panel" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <Icon size={16} style={{ color: accent }} />
+          <h3 style={{ fontSize: '0.85rem', fontWeight: 'bold', textTransform: 'uppercase', color: 'var(--text-secondary)', margin: 0 }}>{title}</h3>
+        </div>
+        <button
+          onClick={onPull}
+          disabled={pulling}
+          style={{
+            display: 'flex', alignItems: 'center', gap: '5px',
+            background: 'transparent', border: `1px solid ${accent}`, color: accent,
+            borderRadius: '8px', padding: '5px 10px', fontSize: '0.72rem', fontWeight: '700',
+            cursor: pulling ? 'default' : 'pointer', opacity: pulling ? 0.6 : 1,
+          }}
+        >
+          <CloudDownload size={13} style={{ animation: pulling ? 'spin 1s linear infinite' : 'none' }} />
+          {pulling ? 'Pulling…' : 'Pull Data'}
+        </button>
+      </div>
+
+      {!pulled ? (
+        <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', textAlign: 'center', padding: '8px 0' }}>
+          Nothing pulled yet — click "Pull Data" to fetch the latest state from the {title.replace(' Vault', '')}.
+        </span>
+      ) : (
+        <>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+            {summaryFields.map(f => (
+              <div key={f.key} style={{
+                display: 'flex', alignItems: 'center', gap: '5px', fontSize: '0.72rem', fontWeight: '600',
+                background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)', borderRadius: '10px', padding: '3px 9px',
+              }}>
+                <span style={{ color: 'var(--text-secondary)' }}>{f.label}</span>
+                <span style={{ color: f.color || 'var(--text-primary)', fontWeight: '800' }}>{summary[f.key] ?? 0}</span>
+              </div>
+            ))}
+          </div>
+          <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>Pulled {pulledAt ? new Date(pulledAt).toLocaleTimeString() : ''}</span>
+
+          <button
+            onClick={onViewInLedger}
+            style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
+              background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border-color)', color: 'var(--text-primary)',
+              borderRadius: '8px', padding: '7px 10px', fontSize: '0.78rem', fontWeight: '700', cursor: 'pointer',
+            }}
+          >
+            <Eye size={13} /> View in Ledger
+          </button>
+
+          <div style={{ display: 'flex', gap: '8px', borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '12px' }}>
+            <input
+              type="text"
+              placeholder="Save this snapshot as..."
+              value={name}
+              onChange={(e) => onNameChange(e.target.value)}
+              style={{
+                flex: 1, minWidth: 0, boxSizing: 'border-box',
+                background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)',
+                padding: '7px 10px', borderRadius: '8px', outline: 'none', fontSize: '0.78rem',
+              }}
+            />
+            <input
+              type="text"
+              placeholder="Folder..."
+              value={folder}
+              onChange={(e) => onFolderChange(e.target.value)}
+              style={{
+                width: '90px', flexShrink: 0, boxSizing: 'border-box',
+                background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)',
+                padding: '7px 8px', borderRadius: '8px', outline: 'none', fontSize: '0.78rem',
+              }}
+            />
+            <button
+              onClick={onSave}
+              style={{
+                background: accent, border: 'none', color: '#fff', borderRadius: '8px', padding: '0 12px',
+                cursor: 'pointer', fontSize: '0.78rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '5px', flexShrink: 0,
+              }}
+            >
+              <Save size={13} /> Save
+            </button>
+          </div>
+        </>
+      )}
+
+      {savedList.length > 0 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', maxHeight: '160px', overflowY: 'auto', borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '10px' }} className="custom-scrollbar">
+          {savedList.map(entry => (
+            <div key={entry.id} style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px',
+              background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '6px 10px',
+            }}>
+              <div style={{ minWidth: 0, flex: 1 }}>
+                <div style={{ fontSize: '0.75rem', fontWeight: '700', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{entry.name}</div>
+                <div style={{ fontSize: '0.62rem', color: 'var(--text-muted)' }}>
+                  {entry.folder || 'Uncategorized'} · {new Date(entry.savedAt).toLocaleString()}
+                </div>
+              </div>
+              <button
+                onClick={() => onDelete(entry.id)}
+                title="Delete snapshot"
+                style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '4px', flexShrink: 0 }}
+              >
+                <Trash2 size={13} />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
 
 const SyncHub = () => {
   // TestRail credentials
@@ -155,6 +286,21 @@ const SyncHub = () => {
   const [syncLogs, setSyncLogs] = useState([]);
   const [isSyncing, setIsSyncing] = useState(false);
 
+  // Runner Vault — pull-and-save snapshots from Cypress Runner / Jenkins Runner
+  const [cyPulled, setCyPulled] = useState(null);
+  const [cyPulledAt, setCyPulledAt] = useState(null);
+  const [cyPulling, setCyPulling] = useState(false);
+  const [cyVaultName, setCyVaultName] = useState('');
+  const [cyVaultFolder, setCyVaultFolder] = useState('');
+  const [cySavedVault, setCySavedVault] = useState([]);
+
+  const [jkPulled, setJkPulled] = useState(null);
+  const [jkPulledAt, setJkPulledAt] = useState(null);
+  const [jkPulling, setJkPulling] = useState(false);
+  const [jkVaultName, setJkVaultName] = useState('');
+  const [jkVaultFolder, setJkVaultFolder] = useState('');
+  const [jkSavedVault, setJkSavedVault] = useState([]);
+
   // Sync success animation
   const [syncSuccessAnim, setSyncSuccessAnim] = useState(null);
   const [syncAnimCounts, setSyncAnimCounts] = useState({ total: 0, PASSED: 0, FAILED: 0, BLOCKED: 0, UNTESTED: 0, RETEST: 0 });
@@ -192,7 +338,234 @@ const SyncHub = () => {
 
   useEffect(() => {
     fetchSavedStates();
+    fetchRunnerVault('cypress');
+    fetchRunnerVault('jenkins');
   }, []);
+
+  const fetchRunnerVault = async (runner) => {
+    try {
+      const res = await fetch(`http://localhost:3000/api/runner-vault?runner=${runner}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      if (runner === 'cypress') setCySavedVault(data.entries || []);
+      else setJkSavedVault(data.entries || []);
+    } catch (e) {
+      console.error(`Failed to load ${runner} runner vault:`, e);
+    }
+  };
+
+  // Counts here must match what "View in Ledger" will actually load — both
+  // read off the same manifest-driven rows (see cypressManifestToTestCases
+  // below), not a raw tally of history entries (which double-counts reruns
+  // and doesn't line up with the manifest's per-case total at all).
+  const summarizeCypressPull = (data) => {
+    const rows = data.manifestRows ? cypressManifestToTestCases(data.manifestRows, data) : [];
+    const counts = { passed: 0, failed: 0, untested: 0 };
+    rows.forEach((r) => { if (r.status === 'PASSED') counts.passed++; else if (r.status === 'FAILED') counts.failed++; else counts.untested++; });
+    return { queueCount: (data.queue || []).length, activeCount: data.active ? 1 : 0, historyCount: (data.history || []).length, totalCases: rows.length, ...counts };
+  };
+
+  const summarizeJenkinsPull = (data) => {
+    const rows = data.manifestRows ? jenkinsManifestToTestCases(data.manifestRows, data) : [];
+    const counts = { passed: 0, failed: 0, untested: 0 };
+    rows.forEach((r) => { if (r.status === 'PASSED') counts.passed++; else if (r.status === 'FAILED') counts.failed++; else counts.untested++; });
+    return { queueCount: (data.queue || []).length, runningCount: (data.running || []).length, historyCount: (data.history || []).length, totalCases: rows.length, ...counts };
+  };
+
+  // TestRail status_id convention used everywhere else in this file (see
+  // handleStartSync below) — Cypress caseResults values are already these
+  // same numeric codes, straight from the log parser.
+  const TR_STATUS_ID_MAP = { 1: 'PASSED', 2: 'BLOCKED', 3: 'UNTESTED', 4: 'RETEST', 5: 'FAILED' };
+
+  // The runner's own /state or /job-queue history is NOT the list of test
+  // cases — it's a log of past runs, and a spec can be missing from it,
+  // rerun many times, or run outside the tracked manifest. The manifest at
+  // GET /api/testcases/data (the same endpoint CypressRunner.jsx and
+  // TestCaseDashboard.jsx use for their own "total test cases" tile) is the
+  // one canonical list both runner pages already agree on, so the ledger
+  // is built FROM that list — one row per manifest case — and run history
+  // is only consulted to attach each case's latest known status.
+
+  // specPath -> its runs, most-recent-first status derived per case (or per
+  // spec, when a run has no case-level results) from Cypress's history.
+  const buildCypressStatusIndex = (data) => {
+    const bySpec = new Map();
+    (data.history || []).forEach((h) => {
+      if (!h.specPath) return;
+      if (!bySpec.has(h.specPath)) bySpec.set(h.specPath, []);
+      bySpec.get(h.specPath).push(h);
+    });
+    const caseStatusId = new Map(); // bare caseId -> TestRail status_id, from that spec's latest run
+    const specStatus = new Map(); // specPath -> 'passed'|'failed'|... , from that spec's latest run
+    bySpec.forEach((runs, specPath) => {
+      const latest = runs.reduce((a, b) => ((b.completedAt || b.startedAt || 0) > (a.completedAt || a.startedAt || 0) ? b : a));
+      specStatus.set(specPath, latest.status);
+      if (latest.caseResults) {
+        Object.entries(latest.caseResults).forEach(([caseId, statusId]) => caseStatusId.set(caseId, statusId));
+      }
+    });
+    return { caseStatusId, specStatus };
+  };
+
+  // Same idea for Jenkins — jobs don't carry per-case results, so only a
+  // per-path (whole-job) status is available.
+  const buildJenkinsStatusIndex = (data) => {
+    const byPath = new Map();
+    (data.history || []).forEach((h) => {
+      if (!h.path) return;
+      if (!byPath.has(h.path)) byPath.set(h.path, []);
+      byPath.get(h.path).push(h);
+    });
+    const pathStatus = new Map();
+    byPath.forEach((runs, path) => {
+      const latest = runs.reduce((a, b) => ((b.completedAt || b.startedAt || 0) > (a.completedAt || a.startedAt || 0) ? b : a));
+      pathStatus.set(path, latest.status);
+    });
+    return pathStatus;
+  };
+
+  // Turns the canonical manifest (GET /api/testcases/data `rows`) into
+  // ledger rows shaped like a CSV import (see parseSingleCSV above),
+  // overlaying each case's latest Cypress status. A case a spec has
+  // resolved before but that spec's latest run didn't report — e.g. it got
+  // killed early, before Cypress logged per-case results — is NOT
+  // backfilled with a stale old status; it shows UNTESTED, since the
+  // latest attempt didn't actually confirm it.
+  const cypressManifestToTestCases = (manifestRows, pulled) => {
+    const { caseStatusId, specStatus } = buildCypressStatusIndex(pulled);
+    return manifestRows.map((row) => {
+      const tags = [row.cat, row.grp].filter(Boolean).join(', ');
+      const notes = `Pulled from Cypress Runner · ${row.path || ''}`;
+      if (row.id) {
+        const bareId = String(row.id).replace(/^C/i, '');
+        const statusId = caseStatusId.get(bareId);
+        return {
+          id: row.id, title: row.title || row.path || '', tags, notes,
+          status: statusId !== undefined ? (TR_STATUS_ID_MAP[statusId] || 'UNTESTED') : 'UNTESTED',
+          mapAction: 'Map', syncStatus: 'Unsynced', reason: '',
+        };
+      }
+      const spec = specStatus.get(row.path);
+      return {
+        id: '', title: row.title || row.path || '(unknown spec)', tags, notes,
+        status: spec === 'passed' ? 'PASSED' : spec === 'failed' ? 'FAILED' : 'UNTESTED',
+        mapAction: "Don't Map", syncStatus: 'Unsynced', reason: '',
+      };
+    });
+  };
+
+  // Same manifest source for Jenkins, overlaying each job's latest status.
+  // A run that ended without an actual pass/fail verdict (ABORTED, ERROR,
+  // or anything else Jenkins didn't finish confirming) reports UNTESTED
+  // rather than a guessed BLOCKED — the last attempt didn't establish a
+  // real result, so nothing should be asserted about it.
+  const jenkinsManifestToTestCases = (manifestRows, pulled) => {
+    const pathStatus = buildJenkinsStatusIndex(pulled);
+    return manifestRows.map((row) => {
+      const tags = [row.cat, row.grp].filter(Boolean).join(', ');
+      const notes = `Pulled from Jenkins Runner · ${row.path || ''}`;
+      const jobStatus = pathStatus.get(row.path);
+      const status = jobStatus === 'SUCCESS' ? 'PASSED' : jobStatus === 'FAILURE' ? 'FAILED' : 'UNTESTED';
+      return {
+        id: row.id || '', title: row.title || row.path || '(unknown job)', tags, notes,
+        status, mapAction: row.id ? 'Map' : "Don't Map", syncStatus: 'Unsynced', reason: '',
+      };
+    });
+  };
+
+  const handleViewRunnerInLedger = (runner) => {
+    const pulled = runner === 'cypress' ? cyPulled : jkPulled;
+    if (!pulled) { addLog(`Nothing pulled yet from ${runner === 'cypress' ? 'Cypress' : 'Jenkins'} Runner.`, 'error'); return; }
+    const rows = runner === 'cypress' ? cypressManifestToTestCases(pulled.manifestRows || [], pulled) : jenkinsManifestToTestCases(pulled.manifestRows || [], pulled);
+    const newCases = rows.map((tc, idx) => ({ ...tc, _uid: Date.now() + '_' + idx }));
+    setTestCases(newCases);
+    setLoadedFiles([]);
+    setLoadedStateId(null);
+    setFileName(`Pulled from ${runner === 'cypress' ? 'Cypress Runner' : 'Jenkins Runner'}`);
+    addLog(`Loaded ${newCases.length} row${newCases.length === 1 ? '' : 's'} from the ${runner === 'cypress' ? 'Cypress' : 'Jenkins'} Runner Vault into the ledger.`, 'success');
+  };
+
+  // Pulls both the runner's own run state AND the canonical test case
+  // manifest (see cypressManifestToTestCases below for why) in one shot, so
+  // the summary chips shown right here already match what "View in Ledger"
+  // will load — no separate fetch needed when that button is clicked.
+  const handlePullCypress = async () => {
+    setCyPulling(true);
+    try {
+      const [stateRes, manifestRes] = await Promise.all([
+        fetch('http://localhost:3000/api/cypress/state'),
+        fetch('http://localhost:3000/api/testcases/data'),
+      ]);
+      if (!stateRes.ok) throw new Error(`Server returned ${stateRes.status}`);
+      if (!manifestRes.ok) throw new Error(`Manifest fetch returned ${manifestRes.status}`);
+      const data = await stateRes.json();
+      const manifest = await manifestRes.json();
+      setCyPulled({ ...data, manifestRows: manifest.rows || [] });
+      setCyPulledAt(Date.now());
+      addLog('Pulled latest data from Cypress Runner.', 'success');
+    } catch (e) {
+      addLog(`Failed to pull Cypress Runner data: ${e.message}`, 'error');
+    } finally {
+      setCyPulling(false);
+    }
+  };
+
+  const handlePullJenkins = async () => {
+    setJkPulling(true);
+    try {
+      const [stateRes, manifestRes] = await Promise.all([
+        fetch('http://localhost:3000/api/testcases/job-queue'),
+        fetch('http://localhost:3000/api/testcases/data'),
+      ]);
+      if (!stateRes.ok) throw new Error(`Server returned ${stateRes.status}`);
+      if (!manifestRes.ok) throw new Error(`Manifest fetch returned ${manifestRes.status}`);
+      const data = await stateRes.json();
+      const manifest = await manifestRes.json();
+      setJkPulled({ ...data, manifestRows: manifest.rows || [] });
+      setJkPulledAt(Date.now());
+      addLog('Pulled latest data from Jenkins Runner.', 'success');
+    } catch (e) {
+      addLog(`Failed to pull Jenkins Runner data: ${e.message}`, 'error');
+    } finally {
+      setJkPulling(false);
+    }
+  };
+
+  const handleSaveRunnerVault = async (runner) => {
+    const isCy = runner === 'cypress';
+    const pulled = isCy ? cyPulled : jkPulled;
+    const name = (isCy ? cyVaultName : jkVaultName).trim();
+    const folder = isCy ? cyVaultFolder : jkVaultFolder;
+    if (!pulled) { addLog(`Nothing pulled yet from ${isCy ? 'Cypress' : 'Jenkins'} Runner to save.`, 'error'); return; }
+    if (!name) { addLog('Give the snapshot a name before saving.', 'error'); return; }
+    const summary = isCy ? summarizeCypressPull(pulled) : summarizeJenkinsPull(pulled);
+    try {
+      const res = await fetch('http://localhost:3000/api/runner-vault/save', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ runner, name, folder, snapshot: pulled, summary }),
+      });
+      if (!res.ok) throw new Error(`Server returned ${res.status}`);
+      addLog(`Saved "${name}" to the ${isCy ? 'Cypress' : 'Jenkins'} Runner Vault.`, 'success');
+      if (isCy) { setCyVaultName(''); setCyVaultFolder(''); } else { setJkVaultName(''); setJkVaultFolder(''); }
+      fetchRunnerVault(runner);
+    } catch (e) {
+      addLog(`Failed to save runner vault snapshot: ${e.message}`, 'error');
+    }
+  };
+
+  const handleDeleteRunnerVaultEntry = async (runner, id) => {
+    const ok = await showConfirm('Delete this saved snapshot? This cannot be undone.');
+    if (!ok) return;
+    try {
+      const res = await fetch(`http://localhost:3000/api/runner-vault/${id}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error(`Server returned ${res.status}`);
+      addLog('Deleted runner vault snapshot.', 'success');
+      fetchRunnerVault(runner);
+    } catch (e) {
+      addLog(`Failed to delete snapshot: ${e.message}`, 'error');
+    }
+  };
 
   const fetchSavedStates = async () => {
     try {
@@ -2364,6 +2737,62 @@ const SyncHub = () => {
               </div>
             )}
           </div>
+
+          {/* Cypress Runner Vault — pull + optionally save a snapshot of the Cypress Runner's live queue/history */}
+          <RunnerVaultPanel
+            icon={FlaskConical}
+            accent="#10b981"
+            title="Cypress Runner Vault"
+            pulling={cyPulling}
+            pulled={cyPulled}
+            pulledAt={cyPulledAt}
+            computeSummary={summarizeCypressPull}
+            summaryFields={[
+              { key: 'queueCount', label: 'Queue' },
+              { key: 'activeCount', label: 'Active' },
+              { key: 'historyCount', label: 'History' },
+              { key: 'passed', label: 'Passed', color: '#10b981' },
+              { key: 'failed', label: 'Failed', color: 'var(--accent-red)' },
+              { key: 'untested', label: 'Untested', color: '#6b7280' },
+            ]}
+            onPull={handlePullCypress}
+            name={cyVaultName}
+            onNameChange={setCyVaultName}
+            folder={cyVaultFolder}
+            onFolderChange={setCyVaultFolder}
+            onSave={() => handleSaveRunnerVault('cypress')}
+            savedList={cySavedVault}
+            onDelete={(id) => handleDeleteRunnerVaultEntry('cypress', id)}
+            onViewInLedger={() => handleViewRunnerInLedger('cypress')}
+          />
+
+          {/* Jenkins Runner Vault — pull + optionally save a snapshot of the Jenkins Runner's live queue/history */}
+          <RunnerVaultPanel
+            icon={Server}
+            accent="#d24939"
+            title="Jenkins Runner Vault"
+            pulling={jkPulling}
+            pulled={jkPulled}
+            pulledAt={jkPulledAt}
+            computeSummary={summarizeJenkinsPull}
+            summaryFields={[
+              { key: 'queueCount', label: 'Queue' },
+              { key: 'runningCount', label: 'Running' },
+              { key: 'historyCount', label: 'History' },
+              { key: 'passed', label: 'Passed', color: '#10b981' },
+              { key: 'failed', label: 'Failed', color: 'var(--accent-red)' },
+              { key: 'untested', label: 'Untested', color: '#6b7280' },
+            ]}
+            onPull={handlePullJenkins}
+            name={jkVaultName}
+            onNameChange={setJkVaultName}
+            folder={jkVaultFolder}
+            onFolderChange={setJkVaultFolder}
+            onSave={() => handleSaveRunnerVault('jenkins')}
+            savedList={jkSavedVault}
+            onDelete={(id) => handleDeleteRunnerVaultEntry('jenkins', id)}
+            onViewInLedger={() => handleViewRunnerInLedger('jenkins')}
+          />
 
           {/* Sync Console Logs */}
           <div className="glass-panel" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '10px' }}>

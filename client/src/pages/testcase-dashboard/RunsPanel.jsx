@@ -13,7 +13,10 @@ const STATUS_ICON = {
   'rp-unknown': HelpCircle,
 };
 
-const RunItem = ({ item, isHistory, onRemove, onOpenDetails, selectable, selected, onToggleSelect, onCancel }) => {
+// Exported so FileHistoryModal (a per-spec filtered view opened from a file
+// card's History button) can render the exact same row instead of
+// duplicating this markup.
+export const RunItem = ({ item, isHistory, onRemove, onOpenDetails, selectable, selected, onToggleSelect, onCancel }) => {
   const statusLabel = isHistory ? (item.status || 'unknown') : (item.status || 'queued');
   const statusCls = runStatusClass(statusLabel);
   const StatusIcon = STATUS_ICON[statusCls] || HelpCircle;

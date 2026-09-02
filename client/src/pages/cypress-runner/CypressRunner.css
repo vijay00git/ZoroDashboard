@@ -428,6 +428,10 @@
 
 /* ── Run comparison modal ── */
 .cyr-cmp-modal { max-width: 720px; overflow-y: auto; }
+
+/* ── File history modal (per-spec queue/active/history filtered view) ── */
+.cyr-history-modal { max-width: 640px; overflow-y: auto; }
+.cyr-history-modal-list { max-height: 55vh; overflow-y: auto; }
 .cyr-cmp-spec { font-family: var(--font-mono); font-size: 0.78rem; color: var(--text-muted); margin-top: -0.4rem; word-break: break-word; }
 .cyr-cmp-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 0.8rem; }
 .cyr-cmp-col {

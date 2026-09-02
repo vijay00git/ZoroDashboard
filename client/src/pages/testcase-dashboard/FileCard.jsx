@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Copy, Check, Play, ChevronRight, StickyNote, ExternalLink, UploadCloud, Tag as TagIcon, X, Zap, Bug } from 'lucide-react';
+import { Copy, Check, Play, ChevronRight, StickyNote, ExternalLink, UploadCloud, Tag as TagIcon, X, Zap, Bug, History } from 'lucide-react';
 import { splitPath, numericId, statusClass, tallyFor, trendDotClass, isFlakyTrend, formatDateTime, copyText, highlightParts, testRailCaseUrl, tagColorClass } from './helpers';
 import { MANUAL_STATUS_TO_ID } from '../cypress-runner/helpers';
 import SelectAllCasesCheckbox from './SelectAllCasesCheckbox';
@@ -25,7 +25,7 @@ const FileCard = ({
   notes, selectable, selected, onToggleSelect, onRun, canRun, onOpenNote, showToast, testrailUrl,
   runLabel = 'Run on Jenkins', onSync, runCaseResults, manualStatus, onSetManualStatus,
   tags, onOpenTagModal, onRemoveTag, selectedCases, onToggleCaseSelect, onSelectManyCases,
-  bugLinks, onEditBugLink, onClearBugLink,
+  bugLinks, onEditBugLink, onClearBugLink, onViewHistory,
 }) => {
   const [copied, setCopied] = useState(false);
   const sp = splitPath(path);
@@ -126,6 +126,17 @@ const FileCard = ({
         <button type="button" className={`tcd-icon-btn${copied ? ' copied' : ''}`} title="Copy file path" aria-label="Copy file path" onClick={handleCopy}>
           {copied ? <Check size={13} /> : <Copy size={13} />}
         </button>
+        {onViewHistory && (
+          <button
+            type="button"
+            className="tcd-icon-btn"
+            title="View run history for this spec"
+            aria-label="View run history for this spec"
+            onClick={(e) => { e.preventDefault(); e.stopPropagation(); onViewHistory(path, cat); }}
+          >
+            <History size={13} />
+          </button>
+        )}
         <button
           type="button"
           className="tcd-icon-btn"
