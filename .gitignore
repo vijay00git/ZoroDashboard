@@ -16,6 +16,7 @@ data/settings/
 data/cypress-runs/
 data/cypress-screenshots/
 data/runner-vault/
+data/automation-finder/
 data/calendar.ics
 data/local_storage.json
 # Server Logs

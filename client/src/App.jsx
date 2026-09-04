@@ -30,6 +30,7 @@ const CSVOrganizer = lazy(() => import('./pages/CSVOrganizer'));
 const SSBucket = lazy(() => import('./pages/SSBucket'));
 const TestCaseDashboard = lazy(() => import('./pages/TestCaseDashboard'));
 const CypressRunner = lazy(() => import('./pages/CypressRunner'));
+const AutomationFinder = lazy(() => import('./pages/AutomationFinder'));
 const NotFound = lazy(() => import('./pages/NotFound'));
 
 const PAGE_TITLES = {
@@ -47,6 +48,7 @@ const PAGE_TITLES = {
   '/ss-bucket':      'SS Bucket',
   '/testcase-dashboard': 'Jenkins Runner',
   '/cypress-runner': 'Cypress Runner',
+  '/automation-finder': 'Automation Finder',
   '/settings':       'Settings',
 };
 
@@ -180,6 +182,7 @@ function App() {
                 <Route path="/ss-bucket"    element={<SSBucket />} />
                 <Route path="/testcase-dashboard" element={<TestCaseDashboard />} />
                 <Route path="/cypress-runner" element={<CypressRunner />} />
+                <Route path="/automation-finder" element={<AutomationFinder />} />
                 <Route path="/settings"      element={<Settings />} />
                 <Route path="*"              element={<NotFound />} />
               </Routes>

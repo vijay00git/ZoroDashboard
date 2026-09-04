@@ -16,6 +16,7 @@ import {
   GalleryHorizontalEnd,
   ListChecks,
   TerminalSquare,
+  Radar,
   Settings,
 } from 'lucide-react';
 
@@ -34,6 +35,7 @@ export const MAIN_NAV = [
   { path: '/ss-bucket',      label: 'SS Bucket',     icon: GalleryHorizontalEnd },
   { path: '/testcase-dashboard', label: 'Jenkins Runner', icon: ListChecks },
   { path: '/cypress-runner', label: 'Cypress Runner', icon: TerminalSquare },
+  { path: '/automation-finder', label: 'Automation Finder', icon: Radar },
 ];
 
 export const SETTINGS_NAV_ITEM = { path: '/settings', label: 'Settings', icon: Settings };
