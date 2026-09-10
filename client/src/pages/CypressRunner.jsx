@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { PlayCircle, Square, SkipForward, XCircle, FolderOpen, Terminal, ListChecks, SlidersHorizontal, Clipboard, Download, Eye, EyeOff, ChevronRight, Search, RotateCcw, FilePlus2, AlertTriangle } from 'lucide-react';
+import { PlayCircle, Square, SkipForward, XCircle, FolderOpen, Terminal, ListChecks, SlidersHorizontal, Clipboard, Download, Eye, EyeOff, ChevronRight, Search, RotateCcw, FilePlus2, AlertTriangle, History, X, Archive, FileText } from 'lucide-react';
 import { useToast } from '../contexts/ToastContext';
 import { showConfirm, showPrompt } from '../utils/Alerts';
 import ModalPortal from './testcase-dashboard/ModalPortal';
 import FileTree from './testcase-dashboard/FileTree';
 import ManifestModal from './testcase-dashboard/ManifestModal';
+import CaseTrackingHistoryModal from './testcase-dashboard/CaseTrackingHistoryModal';
 import TagModal from './testcase-dashboard/TagModal';
 import BulkTagBar from './testcase-dashboard/BulkTagBar';
 import StatsBar from './testcase-dashboard/StatsBar';
@@ -36,7 +37,7 @@ import './testcase-dashboard/TestCaseDashboard.css';
 import './cypress-runner/CypressRunner.css';
 
 const BROWSERS = ['electron', 'chrome', 'firefox', 'edge'];
-const EMPTY_MANIFEST = { rows: [], catCounts: {}, fileCounts: {}, totalCases: 0, totalFiles: 0, unknownIds: [], e2eRoot: '' };
+const EMPTY_MANIFEST = { rows: [], catCounts: {}, fileCounts: {}, totalCases: 0, totalFiles: 0, unknownIds: [], e2eRoot: '', trackedCaseCount: 0, missingCases: [] };
 
 // cyr's own (lowercase) statuses -> the Jenkins-style uppercase statuses
 // trendDotClass (testcase-dashboard/helpers.js) already knows how to color,
@@ -62,6 +63,7 @@ const CypressRunner = () => {
   const [selectedCases, setSelectedCases] = useState(new Set());
   const [tagModal, setTagModal] = useState(null); // { caseId, caseTitle }
   const [manifestModalOpen, setManifestModalOpen] = useState(false);
+  const [caseHistoryOpen, setCaseHistoryOpen] = useState(false);
   const [activeCats, setActiveCats] = useState({ OFFLINE: true, ONLINE: true, E2E: true });
   const [issueFilter, setIssueFilter] = useState(null);
   const [searchTerm, setSearchTerm] = useState(() => localStorage.getItem('cyr_search_term') || '');
@@ -84,6 +86,12 @@ const CypressRunner = () => {
   const [runError, setRunError] = useState(null);
 
   const [reportDate, setReportDate] = useState(() => todayDateKey());
+  // "Select runs" mirrors Jenkins Runner's own report-select-mode — a
+  // hand-picked set of checked runs wins over the date picker whenever it's
+  // non-empty, for the report/export actions below.
+  const [reportSelectMode, setReportSelectMode] = useState(false);
+  const [selectedRunIds, setSelectedRunIds] = useState(new Set());
+  const [exporting, setExporting] = useState(null); // 'zip' | 'txt' | null
   const [runsHidden, setRunsHidden] = useState(() => localStorage.getItem('cyr_runs_hidden') === '1');
   const [setupCollapsed, setSetupCollapsed] = useState(() => localStorage.getItem('cyr_setup_collapsed') === '1');
 
@@ -599,12 +607,80 @@ const CypressRunner = () => {
       .catch((err) => showToast(err.message, 'error'));
   };
 
+  // A hand-picked selection (checkboxes) wins over the date picker whenever
+  // any runs are checked — same precedence Jenkins Runner's getReportJobs()
+  // uses — so Copy report / Export TXT / Export ZIP all agree on which runs
+  // "the current selection" means.
+  const getExportRuns = () => (
+    selectedRunIds.size > 0
+      ? (runState.history || []).filter((h) => selectedRunIds.has(h.id))
+      : filterHistoryByDate(runState.history, reportDate)
+  );
+
+  const toggleRunSelected = (id) => {
+    setSelectedRunIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+  const clearRunSelection = () => setSelectedRunIds(new Set());
+  const toggleReportSelectMode = () => {
+    setReportSelectMode((v) => !v);
+    setSelectedRunIds(new Set());
+  };
+
   const handleCopyReport = () => {
-    const jobs = filterHistoryByDate(runState.history, reportDate);
-    const built = buildCyrDateReportText(jobs, formatReportDateLabel(reportDate));
-    if (!built) { showToast(`No runs on ${formatReportDateLabel(reportDate)}`, 'warning'); return; }
+    const jobs = getExportRuns();
+    const label = selectedRunIds.size > 0 ? `${jobs.length} selected run${jobs.length === 1 ? '' : 's'}` : formatReportDateLabel(reportDate);
+    const built = buildCyrDateReportText(jobs, label);
+    if (!built) {
+      showToast(selectedRunIds.size > 0 ? 'No runs selected' : `No runs on ${formatReportDateLabel(reportDate)}`, 'warning');
+      return;
+    }
     copyText(built.text);
     showToast(`Copied report (${built.count} run${built.count === 1 ? '' : 's'})`, 'success');
+  };
+
+  // Downloads the current selection's logs (txt: just logs, zip: logs +
+  // screenshots) — the server re-reads each run's full log.txt from disk
+  // rather than trusting anything the client has cached (it may only hold
+  // whatever log text was last viewed for a single run).
+  const handleExport = async (format) => {
+    const runs = getExportRuns();
+    if (runs.length === 0) {
+      showToast(selectedRunIds.size > 0 ? 'No runs selected' : `No runs on ${formatReportDateLabel(reportDate)}`, 'warning');
+      return;
+    }
+    setExporting(format);
+    try {
+      const res = await fetch('/api/cypress/export', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ runIds: runs.map((h) => h.id), format }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        showToast(body.error || `Failed to export ${format}`, 'error');
+        return;
+      }
+      const blob = await res.blob();
+      const match = (res.headers.get('Content-Disposition') || '').match(/filename="([^"]+)"/);
+      const filename = match ? match[1] : `cypress-runs.${format}`;
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      showToast(`Exported ${runs.length} run${runs.length === 1 ? '' : 's'} as ${format.toUpperCase()}`, 'success');
+    } catch (err) {
+      showToast(err.message, 'error');
+    } finally {
+      setExporting(null);
+    }
   };
 
   const toggleCat = (cat) => {
@@ -1029,6 +1105,16 @@ const CypressRunner = () => {
 
       <StatsBar data={manifestData} activeCats={activeCats} onToggleCat={toggleCat} issueFilter={issueFilter} onToggleIssue={toggleIssue} statusCounts={statusCounts} flakyCount={flakySpecCaseCount} />
 
+      {manifestData.missingCases && manifestData.missingCases.length > 0 && (
+        <div className="tcd-banner">
+          <AlertTriangle size={16} />
+          <div>
+            <strong>{manifestData.missingCases.length} test ID{manifestData.missingCases.length === 1 ? '' : 's'}</strong> tracked previously {manifestData.missingCases.length === 1 ? "is" : "are"} no longer found in the codebase — open{' '}
+            <button type="button" className="tcd-link-btn" onClick={() => setCaseHistoryOpen(true)}>Test ID history</button> for details.
+          </div>
+        </div>
+      )}
+
       {manifestData.missing && manifestData.missing.length > 0 && (
         <div className="tcd-banner">
           <AlertTriangle size={16} />
@@ -1093,6 +1179,14 @@ const CypressRunner = () => {
               </button>
               <button type="button" className="cyr-btn small" title="View, add, remove, and download manifest entries" onClick={() => setManifestModalOpen(true)}>
                 <FilePlus2 size={12} /> Manifest
+              </button>
+              <button
+                type="button"
+                className={`cyr-btn small${manifestData.missingCases && manifestData.missingCases.length > 0 ? ' warn' : ''}`}
+                title="Test IDs remembered from the manifest's spec files, and any that have gone missing from the codebase"
+                onClick={() => setCaseHistoryOpen(true)}
+              >
+                <History size={12} /> Test ID history {manifestData.missingCases && manifestData.missingCases.length > 0 ? `(${manifestData.missingCases.length})` : ''}
               </button>
               <button type="button" className="cyr-btn small" title="Export local run status for every test case" onClick={() => handleExportCsv('all')}>
                 <Download size={12} /> Export CSV (all)
@@ -1191,16 +1285,49 @@ const CypressRunner = () => {
                     <span className="cyr-runs-count">{(runState.queue?.length || 0) + (runState.history?.length || 0)}</span>
                   </h3>
                   <div className="cyr-report-controls">
-                    <input
-                      type="date"
-                      className="tcd-report-date-input"
-                      value={reportDate}
-                      max={todayDateKey()}
-                      onChange={(e) => setReportDate(e.target.value)}
-                      title="Report date"
-                    />
-                    <button type="button" className="cyr-btn small" title="Copy this date's report" onClick={handleCopyReport}>
+                    {selectedRunIds.size > 0 ? (
+                      <span className="tcd-report-selection-note">
+                        {selectedRunIds.size} run{selectedRunIds.size === 1 ? '' : 's'} selected
+                        <button type="button" onClick={clearRunSelection} title="Clear selection" aria-label="Clear selection"><X size={12} /></button>
+                      </span>
+                    ) : (
+                      <input
+                        type="date"
+                        className="tcd-report-date-input"
+                        value={reportDate}
+                        max={todayDateKey()}
+                        onChange={(e) => setReportDate(e.target.value)}
+                        title="Report date"
+                      />
+                    )}
+                    <button
+                      type="button"
+                      className={`cyr-btn small${reportSelectMode ? ' primary' : ''}`}
+                      title={reportSelectMode ? 'Stop picking individual runs' : 'Pick specific runs for reports/exports instead of a whole date'}
+                      onClick={toggleReportSelectMode}
+                    >
+                      <ListChecks size={12} /> {reportSelectMode ? 'Done selecting' : 'Select runs'}
+                    </button>
+                    <button type="button" className="cyr-btn small" title="Copy this selection's report as text" onClick={handleCopyReport}>
                       <Clipboard size={12} /> Copy report
+                    </button>
+                    <button
+                      type="button"
+                      className="cyr-btn small"
+                      disabled={exporting === 'txt'}
+                      title="Download this selection's logs (no screenshots) as a .txt file"
+                      onClick={() => handleExport('txt')}
+                    >
+                      <FileText size={12} /> {exporting === 'txt' ? 'Exporting…' : 'Export TXT'}
+                    </button>
+                    <button
+                      type="button"
+                      className="cyr-btn small"
+                      disabled={exporting === 'zip'}
+                      title="Download this selection's logs + screenshots as a .zip file"
+                      onClick={() => handleExport('zip')}
+                    >
+                      <Archive size={12} /> {exporting === 'zip' ? 'Exporting…' : 'Export ZIP'}
                     </button>
                   </div>
                   <button
@@ -1220,6 +1347,9 @@ const CypressRunner = () => {
                   onViewScreenshots={handleViewScreenshots}
                   onSendTelegram={handleSendTelegram}
                   onCompare={handleCompare}
+                  selectMode={reportSelectMode}
+                  selectedRunIds={selectedRunIds}
+                  onToggleRunSelected={toggleRunSelected}
                 />
               </div>
             )}
@@ -1269,6 +1399,10 @@ const CypressRunner = () => {
           onClose={() => setTagModal(null)}
           onSave={handleSaveTags}
         />
+      )}
+
+      {caseHistoryOpen && (
+        <CaseTrackingHistoryModal missingCases={manifestData.missingCases} onClose={() => setCaseHistoryOpen(false)} />
       )}
 
       {manifestModalOpen && (

@@ -1184,6 +1184,12 @@ const TCD_JENKINS_MANUAL_STATUS_PATH = path.join(TCD_DIR, 'jenkins-manual-status
 const TCD_JENKINS_BUG_LINKS_PATH = path.join(TCD_DIR, 'jenkins-bug-links.json');
 const TCD_HISTORY_PATH = path.join(TCD_DIR, 'job-history.json');
 const TCD_QUEUE_STATE_PATH = path.join(TCD_DIR, 'queue-state.json');
+// "Remember test cases" — shared by both Cypress Runner and Jenkins Runner
+// (same manifest, same files on disk) since it's tracking an objective fact
+// about the codebase, not a per-runner annotation like manual-status/tags/
+// bug-links above.
+const TCD_CASE_TRACKING_PATH = path.join(TCD_DIR, 'case-tracking.json');
+const TCD_CASE_HISTORY_PATH = path.join(TCD_DIR, 'case-tracking-history.json');
 const TCD_MANIFEST_PATH = process.env.TCD_MANIFEST_PATH || path.join(os.homedir(), '.claude', 'ic-tokyo-file-manifest.md');
 const TCD_E2E_ROOT = process.env.TCD_E2E_ROOT || path.join(os.homedir(), 'ic-tokyo', 'services', 'polaris-web-client', 'e2e');
 
@@ -1316,6 +1322,139 @@ function tcdNormalizeTagList(list) {
         if (clean) seen.add(clean);
     });
     return Array.from(seen);
+}
+
+// ── "Remember test cases" ───────────────────────────────────────────────
+// Snapshot of every case id ever seen in the manifest's spec files, kept up
+// to date on every /api/testcases/data poll (tcdTrackCaseIds, called from
+// tcdBuildData below). Lets the runner notice a case id that used to be in
+// the codebase and now isn't — deleted from its it() block, or its whole
+// file deleted from disk while still listed in the manifest — as distinct
+// from a case id that was never tracked at all.
+// { seeded: bool, cases: { [caseId]: { path, cat, grp, title, status:
+//   'present'|'missing', firstSeenAt, lastSeenAt, missingSince, reason } } }
+const TCD_CASE_HISTORY_MAX = 500;
+
+let tcdCaseTrackingCache = null;
+function tcdLoadCaseTracking() {
+    if (tcdCaseTrackingCache) return tcdCaseTrackingCache;
+    try {
+        tcdCaseTrackingCache = JSON.parse(fs.readFileSync(TCD_CASE_TRACKING_PATH, 'utf8'));
+    } catch (e) {
+        tcdCaseTrackingCache = { seeded: false, cases: {} };
+    }
+    if (!tcdCaseTrackingCache.cases) tcdCaseTrackingCache.cases = {};
+    return tcdCaseTrackingCache;
+}
+function tcdSaveCaseTracking() {
+    try {
+        writeJsonAtomic(TCD_CASE_TRACKING_PATH, tcdCaseTrackingCache || { seeded: false, cases: {} });
+    } catch (e) {
+        console.error('[testcases] failed to save case tracking:', e.message);
+    }
+}
+
+let tcdCaseTrackingHistory = [];
+(function tcdLoadCaseHistoryOnBoot() {
+    try {
+        tcdCaseTrackingHistory = JSON.parse(fs.readFileSync(TCD_CASE_HISTORY_PATH, 'utf8'));
+    } catch (e) {
+        tcdCaseTrackingHistory = [];
+    }
+})();
+function tcdSaveCaseTrackingHistory() {
+    try {
+        writeJsonAtomic(TCD_CASE_HISTORY_PATH, tcdCaseTrackingHistory.slice(0, TCD_CASE_HISTORY_MAX));
+    } catch (e) {
+        console.error('[testcases] failed to save case tracking history:', e.message);
+    }
+}
+function tcdLogCaseHistory(entry) {
+    tcdCaseTrackingHistory.unshift({
+        id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        detectedAt: new Date().toISOString(),
+        ...entry,
+    });
+    if (tcdCaseTrackingHistory.length > TCD_CASE_HISTORY_MAX) tcdCaseTrackingHistory.length = TCD_CASE_HISTORY_MAX;
+    tcdSaveCaseTrackingHistory();
+}
+
+// Diffs this poll's live rows (fresh from tcdExtractFromFile, across every
+// manifest file) against the last-known snapshot. The very first run after
+// this feature ships seeds the snapshot from whatever the manifest already
+// contains without logging anything — otherwise every pre-existing case id
+// would look like a brand-new "added" event. After that, every transition
+// (new id, id gone missing, id back again) is logged to history.
+function tcdTrackCaseIds(rows, missing) {
+    const tracking = tcdLoadCaseTracking();
+    const cases = tracking.cases;
+    const now = new Date().toISOString();
+    const seenIds = new Set();
+    const missingPaths = new Set(missing.map((m) => m.path));
+    let changed = false;
+
+    for (const r of rows) {
+        seenIds.add(r.id);
+        const existing = cases[r.id];
+        if (!existing) {
+            cases[r.id] = {
+                path: r.path, cat: r.cat, grp: r.grp, title: r.title,
+                status: 'present', firstSeenAt: now, lastSeenAt: now, missingSince: null, reason: null,
+            };
+            changed = true;
+            if (tracking.seeded) {
+                tcdLogCaseHistory({ type: 'case_added', caseId: r.id, path: r.path, cat: r.cat, grp: r.grp, title: r.title });
+            }
+            continue;
+        }
+        existing.lastSeenAt = now;
+        if (existing.path !== r.path || existing.grp !== r.grp || existing.title !== r.title) {
+            existing.path = r.path; existing.cat = r.cat; existing.grp = r.grp; existing.title = r.title;
+            changed = true;
+        }
+        if (existing.status === 'missing') {
+            existing.status = 'present';
+            existing.missingSince = null;
+            existing.reason = null;
+            changed = true;
+            tcdLogCaseHistory({ type: 'case_restored', caseId: r.id, path: r.path, cat: r.cat, grp: r.grp, title: r.title });
+        }
+    }
+
+    for (const [caseId, existing] of Object.entries(cases)) {
+        if (seenIds.has(caseId) || existing.status === 'missing') continue;
+        existing.status = 'missing';
+        existing.missingSince = now;
+        existing.reason = missingPaths.has(existing.path) ? 'file_deleted' : 'id_removed';
+        changed = true;
+        if (tracking.seeded) {
+            tcdLogCaseHistory({ type: 'case_missing', caseId, path: existing.path, cat: existing.cat, grp: existing.grp, title: existing.title, reason: existing.reason });
+        }
+    }
+
+    if (!tracking.seeded) { tracking.seeded = true; changed = true; }
+    if (changed) tcdSaveCaseTracking();
+
+    const missingCases = Object.entries(cases)
+        .filter(([, v]) => v.status === 'missing')
+        .map(([caseId, v]) => ({ caseId, ...v }));
+    return { trackedCount: Object.keys(cases).length, missingCount: missingCases.length, missingCases };
+}
+
+// Called when a file is deliberately removed from the manifest (as opposed
+// to disappearing from disk unexpectedly) — its case ids are dropped from
+// tracking outright rather than flagged "missing", since this was an
+// intentional action, not codebase drift.
+function tcdUntrackFile(relPath) {
+    const tracking = tcdLoadCaseTracking();
+    const removedIds = [];
+    for (const [caseId, v] of Object.entries(tracking.cases)) {
+        if (v.path === relPath) { removedIds.push(caseId); delete tracking.cases[caseId]; }
+    }
+    if (removedIds.length) {
+        tcdSaveCaseTracking();
+        tcdLogCaseHistory({ type: 'file_untracked', path: relPath, caseIds: removedIds, count: removedIds.length });
+    }
 }
 
 let TCD_TR_CONFIG = null;
@@ -2392,6 +2531,8 @@ function tcdBuildData() {
         caseIdCheck = { available: true, checkedAt: new Date(tcdCaseIdCacheAt).toISOString(), knownCount: tcdCaseIdCache.size };
     }
 
+    const caseTracking = tcdTrackCaseIds(rows, missing);
+
     return {
         rows,
         missing,
@@ -2404,6 +2545,8 @@ function tcdBuildData() {
         manifestPath: TCD_MANIFEST_PATH,
         e2eRoot: TCD_E2E_ROOT,
         generatedAt: new Date().toISOString(),
+        trackedCaseCount: caseTracking.trackedCount,
+        missingCases: caseTracking.missingCases,
     };
 }
 
@@ -2444,10 +2587,26 @@ app.post('/api/testcases/manifest/remove-file', (req, res) => {
         const md = fs.readFileSync(TCD_MANIFEST_PATH, 'utf8');
         const updated = tcdRemoveFileFromManifest(md, category, relPath);
         writeFileAtomic(TCD_MANIFEST_PATH, updated);
+        tcdUntrackFile(relPath);
         res.json({ removed: relPath });
     } catch (err) {
         res.status(400).json({ error: String(err && err.message || err) });
     }
+});
+
+// "Remember test cases" history — every case id that ever went missing (or
+// came back) across the whole manifest, most recent first. Separate from
+// the main /api/testcases/data payload since it's an append-only log, not
+// current state.
+app.get('/api/testcases/case-tracking/history', (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    res.json({ history: tcdCaseTrackingHistory });
+});
+
+app.post('/api/testcases/case-tracking/clear-history', (req, res) => {
+    tcdCaseTrackingHistory = [];
+    tcdSaveCaseTrackingHistory();
+    res.json({ cleared: true });
 });
 
 app.get('/api/testcases/manifest/download', (req, res) => {
@@ -3509,6 +3668,47 @@ function cyrSaveHistory() {
     }
 }
 
+// A finished run's full output only lives on disk (or, for the one run
+// that's still active, in its in-memory buffer) — never in the history
+// array itself — so bulk export has to re-read it here rather than
+// trusting anything the client already has cached.
+function cyrReadRunLog(runId) {
+    if (cyrActiveRun && cyrActiveRun.id === runId) return cyrActiveRun.logBuffer || '';
+    try {
+        return fs.readFileSync(path.join(CYR_DIR, runId, 'log.txt'), 'utf8');
+    } catch (e) {
+        return '';
+    }
+}
+
+// Mirrors buildCyrReportText in client/src/pages/cypress-runner/helpers.js —
+// duplicated rather than shared since that file is an ES module the client
+// bundles and this one's a CommonJS server file.
+function cyrBuildRunSummaryText(h) {
+    const verdict = h.status === 'passed' ? 'PASS' : (h.status === 'failed' ? 'FAIL' : String(h.status || 'UNKNOWN').toUpperCase());
+    const statsStr = h.stats
+        ? `${h.stats.passing} passed, ${h.stats.failing} failed${h.stats.pending ? `, ${h.stats.pending} pending` : ''}`
+        : 'no pass/fail data';
+    const lines = [
+        `[${verdict}] ${h.specPath || 'all specs'}`,
+        `${h.category ? h.category + ' — ' : ''}${h.browser || 'electron'}${h.headed ? ' (headed)' : ''}${h.environment ? ` — env: ${h.environment}` : ''}`,
+        statsStr,
+        `Started ${h.startedAt ? new Date(h.startedAt).toLocaleString() : 'unknown'}${h.duration ? ` · took ${cyrFormatDurationForExport(h.duration)}` : ''}`,
+    ];
+    if (h.testrailRunId) lines.push(`TestRail run #${h.testrailRunId}`);
+    return lines.join('\n');
+}
+
+function cyrFormatDurationForExport(ms) {
+    if (!ms || ms <= 0) return '0s';
+    const totalSec = Math.round(ms / 1000);
+    if (totalSec < 60) return `${totalSec}s`;
+    const min = Math.floor(totalSec / 60), sec = totalSec % 60;
+    if (min < 60) return `${min}m ${sec}s`;
+    const hr = Math.floor(min / 60), remMin = min % 60;
+    return `${hr}h ${remMin}m`;
+}
+
 // Persists just enough to detect + report an orphaned run if the server
 // restarts mid-run — there's no way to reattach to a lost child process, so
 // this is read back once on boot and turned into an 'interrupted' history
@@ -3988,6 +4188,60 @@ app.post('/api/cypress/telegram/send', async (req, res) => {
     } catch (err) {
         res.status(502).json({ error: String(err && err.message || err) });
     }
+});
+
+// Bulk export for the Runs history panel's multi-select — either every run
+// on a chosen date, or a hand-picked set of checked runs (same
+// selection-wins-over-date precedence the client applies before calling
+// this). 'txt' bundles just the summaries + full logs into one text file
+// (screenshots can't go in a text file, so that format never touches them);
+// 'zip' additionally walks each run's screenshot folder into the archive.
+app.post('/api/cypress/export', (req, res) => {
+    const { runIds, format } = req.body || {};
+    if (!Array.isArray(runIds) || runIds.length === 0) {
+        return res.status(400).json({ error: 'runIds[] is required' });
+    }
+    if (format !== 'zip' && format !== 'txt') {
+        return res.status(400).json({ error: "format must be 'zip' or 'txt'" });
+    }
+    const runIdSet = new Set(runIds);
+    const runs = cyrRunHistory.filter((h) => runIdSet.has(h.id));
+    if (cyrActiveRun && runIdSet.has(cyrActiveRun.id) && !runs.some((h) => h.id === cyrActiveRun.id)) {
+        runs.push(cyrSerializeRun(cyrActiveRun));
+    }
+    if (runs.length === 0) return res.status(404).json({ error: 'None of the given run ids were found' });
+
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+
+    if (format === 'txt') {
+        const parts = runs.map((h) => [
+            '='.repeat(70),
+            cyrBuildRunSummaryText(h),
+            '-'.repeat(70),
+            cyrReadRunLog(h.id) || '(no log captured for this run)',
+        ].join('\n'));
+        res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+        res.setHeader('Content-Disposition', `attachment; filename="cypress-runs-${stamp}.txt"`);
+        return res.send(parts.join('\n\n\n'));
+    }
+
+    const zip = new AdmZip();
+    runs.forEach((h, idx) => {
+        const specName = (h.specPath ? path.basename(h.specPath, path.extname(h.specPath)) : 'run').replace(/[^a-z0-9_-]/gi, '_');
+        const folder = `${String(idx + 1).padStart(2, '0')}_${specName}_${h.id}`;
+        zip.addFile(`${folder}/summary.txt`, Buffer.from(cyrBuildRunSummaryText(h), 'utf8'));
+        zip.addFile(`${folder}/log.txt`, Buffer.from(cyrReadRunLog(h.id) || '(no log captured for this run)', 'utf8'));
+        const shotsDir = path.join(CYR_SCREENSHOTS_DIR, h.id);
+        cyrWalkScreenshots(shotsDir, h.id).forEach((s) => {
+            const fp = path.join(shotsDir, s.name);
+            if (!fs.existsSync(fp)) return;
+            const shotFolder = `${folder}/screenshots/${path.dirname(s.name)}`.replace(/\/\.$/, '');
+            zip.addLocalFile(fp, shotFolder, path.basename(s.name));
+        });
+    });
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', `attachment; filename="cypress-runs-${stamp}.zip"`);
+    res.send(zip.toBuffer());
 });
 
 app.get('/api/cypress/state', (req, res) => {

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   RefreshCw, ChevronsDown, ChevronsUp, Copy, Download, FilePlus2, AlertTriangle, Search,
-  Settings as SettingsIcon, BookmarkPlus, X, FolderSearch, SlidersHorizontal, RotateCcw,
+  Settings as SettingsIcon, BookmarkPlus, X, FolderSearch, SlidersHorizontal, RotateCcw, History,
 } from 'lucide-react';
 import { useToast } from '../contexts/ToastContext';
 import { showPrompt, showConfirm } from '../utils/Alerts';
@@ -22,6 +22,7 @@ import TagModal from './testcase-dashboard/TagModal';
 import BulkTagBar from './testcase-dashboard/BulkTagBar';
 import RunDetailsModal from './testcase-dashboard/RunDetailsModal';
 import FileHistoryModal from './testcase-dashboard/FileHistoryModal';
+import CaseTrackingHistoryModal from './testcase-dashboard/CaseTrackingHistoryModal';
 import SendReportModal, { ATTACHMENT_CAP } from './testcase-dashboard/SendReportModal';
 import ModalPortal from './testcase-dashboard/ModalPortal';
 import {
@@ -34,7 +35,7 @@ import './testcase-dashboard/TestCaseDashboard.css';
 import testcaseDashboardHero from '../assets/hero-banners/testcase-dashboard-hero.webp';
 import testcaseDashboardHeroLight from '../assets/hero-banners/testcase-dashboard-hero-light.webp';
 
-const EMPTY_DATA = { rows: [], missing: [], catCounts: {}, fileCounts: {}, totalCases: 0, totalFiles: 0, unknownIds: [], caseIdCheck: {}, manifestPath: '', e2eRoot: '' };
+const EMPTY_DATA = { rows: [], missing: [], catCounts: {}, fileCounts: {}, totalCases: 0, totalFiles: 0, unknownIds: [], caseIdCheck: {}, manifestPath: '', e2eRoot: '', trackedCaseCount: 0, missingCases: [] };
 
 // "Retry failed" treats ERROR/ABORTED the same as FAILURE — a build that
 // errored out or got cancelled still needs a real re-run, not just one that
@@ -907,6 +908,13 @@ const TestCaseDashboard = () => {
             {failedFileItems.length > 0 && <span className="tcd-eta-badge">{formatEta(retryEtaMs)}</span>}
           </button>
           <button className="tcd-btn primary" title="View, add, remove, and download manifest entries" onClick={() => setModal({ type: 'manifest' })}><FilePlus2 size={14} /> Manifest</button>
+          <button
+            className={`tcd-btn${data.missingCases && data.missingCases.length > 0 ? ' warn' : ''}`}
+            title="Test IDs remembered from the manifest's spec files, and any that have gone missing from the codebase"
+            onClick={() => setModal({ type: 'caseHistory' })}
+          >
+            <History size={14} /> Test ID history {data.missingCases && data.missingCases.length > 0 ? `(${data.missingCases.length})` : ''}
+          </button>
           <button className="tcd-btn" title="TestRail, Jenkins &amp; Telegram credentials (Settings → Integrations)" aria-label="TestRail, Jenkins &amp; Telegram credentials (Settings → Integrations)" onClick={() => navigate('/settings?tab=integrations')}><SettingsIcon size={14} /></button>
         </div>
 
@@ -985,6 +993,16 @@ const TestCaseDashboard = () => {
       </div>
 
       {runError && <div className="tcd-conn-banner">Couldn't pull run status: {runError}</div>}
+
+      {data.missingCases && data.missingCases.length > 0 && (
+        <div className="tcd-banner">
+          <AlertTriangle size={16} />
+          <div>
+            <strong>{data.missingCases.length} test ID{data.missingCases.length === 1 ? '' : 's'}</strong> tracked previously {data.missingCases.length === 1 ? "is" : "are"} no longer found in the codebase — open{' '}
+            <button type="button" className="tcd-link-btn" onClick={() => setModal({ type: 'caseHistory' })}>Test ID history</button> for details.
+          </div>
+        </div>
+      )}
 
       {data.missing && data.missing.length > 0 && (
         <div className="tcd-banner">
@@ -1183,6 +1201,10 @@ const TestCaseDashboard = () => {
           onOpenDetails={(item) => setModal({ type: 'runDetails', item })}
           onCancelJob={cancelJob}
         />
+      )}
+
+      {modal?.type === 'caseHistory' && (
+        <CaseTrackingHistoryModal missingCases={data.missingCases} onClose={() => setModal(null)} />
       )}
     </div>
   );

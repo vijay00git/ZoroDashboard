@@ -34,8 +34,18 @@ const QueueItem = ({ item, onDequeue }) => (
   </div>
 );
 
-const HistoryItem = ({ h, previous, onViewLog, onViewScreenshots, onSendTelegram, onCompare }) => (
+const HistoryItem = ({ h, previous, onViewLog, onViewScreenshots, onSendTelegram, onCompare, selectable, selected, onToggleSelect }) => (
   <div className="cyr-history-item">
+    {selectable && (
+      <input
+        type="checkbox"
+        className="tcd-file-select"
+        title="Select for export"
+        checked={selected}
+        onClick={(e) => e.stopPropagation()}
+        onChange={() => onToggleSelect(h.id)}
+      />
+    )}
     <RunStatusPill status={h.status} />
     <span className="cyr-history-spec">{h.specPath || 'all specs'}</span>
     {h.category && <span className="cyr-badge">{h.category}</span>}
@@ -70,7 +80,10 @@ const HistoryItem = ({ h, previous, onViewLog, onViewScreenshots, onSendTelegram
   </div>
 );
 
-const RunsList = ({ queue, history, onDequeue, onViewLog, onViewScreenshots, onSendTelegram, onCompare }) => {
+const RunsList = ({
+  queue, history, onDequeue, onViewLog, onViewScreenshots, onSendTelegram, onCompare,
+  selectMode, selectedRunIds, onToggleRunSelected,
+}) => {
   const [runSearch, setRunSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [visibleLimit, setVisibleLimit] = useState(PAGE_SIZE);
@@ -114,6 +127,9 @@ const RunsList = ({ queue, history, onDequeue, onViewLog, onViewScreenshots, onS
         onViewScreenshots={onViewScreenshots}
         onSendTelegram={onSendTelegram}
         onCompare={onCompare}
+        selectable={selectMode}
+        selected={selectedRunIds ? selectedRunIds.has(h.id) : false}
+        onToggleSelect={onToggleRunSelected}
       />
     );
   });
