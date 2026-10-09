@@ -17,6 +17,7 @@ import {
   ListChecks,
   TerminalSquare,
   Radar,
+  Wrench,
   Settings,
 } from 'lucide-react';
 
@@ -36,6 +37,7 @@ export const MAIN_NAV = [
   { path: '/testcase-dashboard', label: 'Jenkins Runner', icon: ListChecks },
   { path: '/cypress-runner', label: 'Cypress Runner', icon: TerminalSquare },
   { path: '/automation-finder', label: 'Automation Finder', icon: Radar },
+  { path: '/helper-tools',   label: 'Helper Tools',  icon: Wrench },
 ];
 
 export const SETTINGS_NAV_ITEM = { path: '/settings', label: 'Settings', icon: Settings };

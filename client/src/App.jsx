@@ -31,6 +31,7 @@ const SSBucket = lazy(() => import('./pages/SSBucket'));
 const TestCaseDashboard = lazy(() => import('./pages/TestCaseDashboard'));
 const CypressRunner = lazy(() => import('./pages/CypressRunner'));
 const AutomationFinder = lazy(() => import('./pages/AutomationFinder'));
+const HelperTools = lazy(() => import('./pages/HelperTools'));
 const NotFound = lazy(() => import('./pages/NotFound'));
 
 const PAGE_TITLES = {
@@ -183,6 +184,7 @@ function App() {
                 <Route path="/testcase-dashboard" element={<TestCaseDashboard />} />
                 <Route path="/cypress-runner" element={<CypressRunner />} />
                 <Route path="/automation-finder" element={<AutomationFinder />} />
+                <Route path="/helper-tools"  element={<HelperTools />} />
                 <Route path="/settings"      element={<Settings />} />
                 <Route path="*"              element={<NotFound />} />
               </Routes>

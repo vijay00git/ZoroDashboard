@@ -142,6 +142,29 @@ export function latestCaseResultsForPaths(history, paths) {
   return merged;
 }
 
+// Latest wins between a manual mark and an actual run: drops any manual
+// entry whose case's file has finished a local run SINCE the mark was made,
+// so a fresh Cypress result replaces a stale manual pass/fail instead of
+// being hidden behind it forever. Marks made after the latest run are kept.
+// Commented-out cases never execute when their file runs, so a run says
+// nothing new about them and their manual mark is always kept.
+export function activeManualStatus(manualStatus, rows, history) {
+  if (!manualStatus) return manualStatus;
+  const lastRunAtByPath = {};
+  (history || []).forEach((h) => {
+    if (!h.specPath || h.specPath in lastRunAtByPath) return;
+    lastRunAtByPath[h.specPath] = h.completedAt || h.startedAt || 0;
+  });
+  const out = { ...manualStatus };
+  (rows || []).forEach((r) => {
+    const manual = out[r.id];
+    if (!manual || r.commented) return;
+    const lastRunAt = lastRunAtByPath[r.path];
+    if (lastRunAt && (manual.updatedAt || 0) < lastRunAt) delete out[r.id];
+  });
+  return out;
+}
+
 // Overlays manual overrides onto an auto-detected resultMap (case id ->
 // TestRail status id) before it's posted to TestRail — manual wins over
 // whatever the local run itself produced, matching localCaseStatus's

@@ -25,7 +25,7 @@ import CompareRunsModal from './cypress-runner/CompareRunsModal';
 import FileHistoryModal from './cypress-runner/FileHistoryModal';
 import {
   latestCaseResultsForPaths, latestCaseResultsByPath, latestRunStatusByPath,
-  localCaseStatus, localRunTally, buildCyrReportText, buildCyrDateReportText, mergeManualIntoResultMap,
+  localCaseStatus, localRunTally, buildCyrReportText, buildCyrDateReportText, mergeManualIntoResultMap, activeManualStatus,
   cyrFlakySpecs, cyrAvgDurationByPath, cyrGlobalAvgDuration, cyrEstimateDuration, formatEta,
   CYR_DEFAULT_ESTIMATE_MS, cyrGroupBugLinks,
 } from './cypress-runner/helpers';
@@ -72,6 +72,14 @@ const CypressRunner = () => {
   const [collapsedGroups, setCollapsedGroups] = useState(new Set());
 
   const [runState, setRunState] = useState({ queue: [], active: null, history: [] });
+
+  // Manual marks with any mark older than its file's latest local run
+  // dropped — see activeManualStatus. Everything that displays, tallies or
+  // syncs a case verdict uses this, never the raw manualStatus.
+  const effectiveManualStatus = useMemo(
+    () => activeManualStatus(manualStatus, manifestData.rows, runState.history),
+    [manualStatus, manifestData.rows, runState.history]
+  );
   const [logText, setLogText] = useState('');
   const [triggering, setTriggering] = useState(false);
   const [killing, setKilling] = useState(false);
@@ -428,7 +436,7 @@ const CypressRunner = () => {
     const pathSet = new Set(paths);
     const rowsInScope = manifestData.rows.filter((r) => pathSet.has(r.path));
     const autoResultMap = latestCaseResultsForPaths(runState.history, paths);
-    const resultMap = mergeManualIntoResultMap(autoResultMap, rowsInScope, manualStatus);
+    const resultMap = mergeManualIntoResultMap(autoResultMap, rowsInScope, effectiveManualStatus);
     const caseCount = Object.keys(resultMap).length;
     if (caseCount === 0) { showToast(`No local run results yet for ${label}`, 'warning'); return; }
     const runId = await showPrompt(`Enter TestRail Run ID to sync ${caseCount} case result${caseCount === 1 ? '' : 's'} for ${label}:`, testrailRunId);
@@ -449,7 +457,7 @@ const CypressRunner = () => {
   // Clicking the currently-active status again clears the override (back to
   // whatever the auto-detected status is) instead of leaving it stuck.
   const handleSetManualStatus = (caseId, status) => {
-    const next = manualStatus[caseId]?.status === status ? null : status;
+    const next = effectiveManualStatus[caseId]?.status === status ? null : status;
     setManualStatus((prev) => {
       const copy = { ...prev };
       if (next) copy[caseId] = { status: next, updatedAt: Date.now() }; else delete copy[caseId];
@@ -771,12 +779,12 @@ const CypressRunner = () => {
   // same per-case verdict (manual override > local run > file's overall
   // status) the status pills and CSV export already use.
   const getCaseStatus = useCallback(
-    (r) => localCaseStatus(r, caseResultsByPath, runStatusByPath, manualStatus),
-    [caseResultsByPath, runStatusByPath, manualStatus]
+    (r) => localCaseStatus(r, caseResultsByPath, runStatusByPath, effectiveManualStatus),
+    [caseResultsByPath, runStatusByPath, effectiveManualStatus]
   );
   const statusCounts = useMemo(
-    () => localRunTally(manifestData.rows, caseResultsByPath, runStatusByPath, manualStatus),
-    [manifestData.rows, caseResultsByPath, runStatusByPath, manualStatus]
+    () => localRunTally(manifestData.rows, caseResultsByPath, runStatusByPath, effectiveManualStatus),
+    [manifestData.rows, caseResultsByPath, runStatusByPath, effectiveManualStatus]
   );
 
   const flakySpecs = useMemo(() => cyrFlakySpecs(fileTrendMap), [fileTrendMap]);
@@ -860,7 +868,7 @@ const CypressRunner = () => {
 
     const lines = [['ID', 'Title', 'Status', 'Tags']];
     rows.forEach((r) => {
-      const status = STATUS_LABEL_CSV[localCaseStatus(r, caseResultsByPath, runStatusByPath, manualStatus)];
+      const status = STATUS_LABEL_CSV[localCaseStatus(r, caseResultsByPath, runStatusByPath, effectiveManualStatus)];
       lines.push([r.id, r.title, status, (tags[r.id] || []).join('; ')]);
     });
     const csv = lines.map((row) => row.map(csvEscape).join(',')).join('\r\n');
@@ -1091,7 +1099,7 @@ const CypressRunner = () => {
         <CyrHeroStats manifestData={manifestData} runState={runState} />
         <div className="tcd-cards-row">
           <CoverageCard data={manifestData} activeCats={activeCats} onToggleCat={toggleCat} />
-          <LocalRunStatusCard data={manifestData} caseResultsByPath={caseResultsByPath} statusByPath={runStatusByPath} manualStatus={manualStatus} />
+          <LocalRunStatusCard data={manifestData} caseResultsByPath={caseResultsByPath} statusByPath={runStatusByPath} manualStatus={effectiveManualStatus} />
           <RunStatusCard data={manifestData} runStatus={runStatus} onFocusRunId={() => testrailRunIdInputRef.current?.focus()} />
           <CyrActivityCard history={runState.history} />
           <FlakySpecsCard
@@ -1248,7 +1256,7 @@ const CypressRunner = () => {
               onSyncGroup={(paths) => handleSyncPaths(paths, `this group (${paths.length} file${paths.length === 1 ? '' : 's'})`)}
               onSyncCategory={(paths, cat) => handleSyncPaths(paths, `${cat} (${paths.length} file${paths.length === 1 ? '' : 's'})`)}
               caseResultsByPath={caseResultsByPath}
-              manualStatus={manualStatus}
+              manualStatus={effectiveManualStatus}
               tags={tags}
               onOpenTagModal={(caseId, caseTitle) => setTagModal({ caseId, caseTitle })}
               onRemoveTag={handleRemoveTag}

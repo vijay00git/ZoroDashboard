@@ -34,6 +34,8 @@ import {
   Eye,
 } from 'lucide-react';
 import { showAlert, showConfirm, showPrompt } from '../utils/Alerts';
+import { latestCaseResultsByPath, latestRunStatusByPath, localCaseStatus, activeManualStatus } from './cypress-runner/helpers';
+import { numericId } from './testcase-dashboard/helpers';
 import syncHubHero from '../assets/hero-banners/synchub-hero.webp';
 import syncHubHeroLight from '../assets/hero-banners/synchub-hero-light.webp';
 import syncEmptyIllustration from '../assets/illustrations/sync-empty.svg';
@@ -360,22 +362,22 @@ const SyncHub = () => {
   // and doesn't line up with the manifest's per-case total at all).
   const summarizeCypressPull = (data) => {
     const rows = data.manifestRows ? cypressManifestToTestCases(data.manifestRows, data) : [];
-    const counts = { passed: 0, failed: 0, untested: 0 };
-    rows.forEach((r) => { if (r.status === 'PASSED') counts.passed++; else if (r.status === 'FAILED') counts.failed++; else counts.untested++; });
+    const counts = { passed: 0, failed: 0, blocked: 0, retest: 0, untested: 0 };
+    rows.forEach((r) => { const k = r.status.toLowerCase(); counts[k in counts ? k : 'untested']++; });
     return { queueCount: (data.queue || []).length, activeCount: data.active ? 1 : 0, historyCount: (data.history || []).length, totalCases: rows.length, ...counts };
   };
 
+  // Tallied straight off jenkinsCaseStatus (not the ledger rows) so a case
+  // missing from the pulled TestRail run is left out of every chip, exactly
+  // like the Jenkins Runner page's own filter bar does.
   const summarizeJenkinsPull = (data) => {
-    const rows = data.manifestRows ? jenkinsManifestToTestCases(data.manifestRows, data) : [];
-    const counts = { passed: 0, failed: 0, untested: 0 };
-    rows.forEach((r) => { if (r.status === 'PASSED') counts.passed++; else if (r.status === 'FAILED') counts.failed++; else counts.untested++; });
-    return { queueCount: (data.queue || []).length, runningCount: (data.running || []).length, historyCount: (data.history || []).length, totalCases: rows.length, ...counts };
+    const counts = { passed: 0, failed: 0, blocked: 0, retest: 0, untested: 0 };
+    (data.manifestRows || []).forEach((r) => {
+      const s = jenkinsCaseStatus(r, data);
+      if (s && Object.prototype.hasOwnProperty.call(counts, s)) counts[s]++;
+    });
+    return { queueCount: (data.queue || []).length, runningCount: (data.running || []).length, historyCount: (data.history || []).length, totalCases: (data.manifestRows || []).length, ...counts };
   };
-
-  // TestRail status_id convention used everywhere else in this file (see
-  // handleStartSync below) — Cypress caseResults values are already these
-  // same numeric codes, straight from the log parser.
-  const TR_STATUS_ID_MAP = { 1: 'PASSED', 2: 'BLOCKED', 3: 'UNTESTED', 4: 'RETEST', 5: 'FAILED' };
 
   // The runner's own /state or /job-queue history is NOT the list of test
   // cases — it's a log of past runs, and a spec can be missing from it,
@@ -386,92 +388,53 @@ const SyncHub = () => {
   // is built FROM that list — one row per manifest case — and run history
   // is only consulted to attach each case's latest known status.
 
-  // specPath -> its runs, most-recent-first status derived per case (or per
-  // spec, when a run has no case-level results) from Cypress's history.
-  const buildCypressStatusIndex = (data) => {
-    const bySpec = new Map();
-    (data.history || []).forEach((h) => {
-      if (!h.specPath) return;
-      if (!bySpec.has(h.specPath)) bySpec.set(h.specPath, []);
-      bySpec.get(h.specPath).push(h);
-    });
-    const caseStatusId = new Map(); // bare caseId -> TestRail status_id, from that spec's latest run
-    const specStatus = new Map(); // specPath -> 'passed'|'failed'|... , from that spec's latest run
-    bySpec.forEach((runs, specPath) => {
-      const latest = runs.reduce((a, b) => ((b.completedAt || b.startedAt || 0) > (a.completedAt || a.startedAt || 0) ? b : a));
-      specStatus.set(specPath, latest.status);
-      if (latest.caseResults) {
-        Object.entries(latest.caseResults).forEach(([caseId, statusId]) => caseStatusId.set(caseId, statusId));
-      }
-    });
-    return { caseStatusId, specStatus };
-  };
-
-  // Same idea for Jenkins — jobs don't carry per-case results, so only a
-  // per-path (whole-job) status is available.
-  const buildJenkinsStatusIndex = (data) => {
-    const byPath = new Map();
-    (data.history || []).forEach((h) => {
-      if (!h.path) return;
-      if (!byPath.has(h.path)) byPath.set(h.path, []);
-      byPath.get(h.path).push(h);
-    });
-    const pathStatus = new Map();
-    byPath.forEach((runs, path) => {
-      const latest = runs.reduce((a, b) => ((b.completedAt || b.startedAt || 0) > (a.completedAt || a.startedAt || 0) ? b : a));
-      pathStatus.set(path, latest.status);
-    });
-    return pathStatus;
-  };
-
   // Turns the canonical manifest (GET /api/testcases/data `rows`) into
-  // ledger rows shaped like a CSV import (see parseSingleCSV above),
-  // overlaying each case's latest Cypress status. A case a spec has
-  // resolved before but that spec's latest run didn't report — e.g. it got
-  // killed early, before Cypress logged per-case results — is NOT
-  // backfilled with a stale old status; it shows UNTESTED, since the
-  // latest attempt didn't actually confirm it.
+  // ledger rows shaped like a CSV import (see parseSingleCSV above). Each
+  // case's status comes from localCaseStatus — the exact verdict the Cypress
+  // Runner's own Passed/Failed/Untested chips use (manual override >
+  // per-file case result > club sibling > file's overall run status), so the
+  // pulled numbers always match what the Runner page shows.
   const cypressManifestToTestCases = (manifestRows, pulled) => {
-    const { caseStatusId, specStatus } = buildCypressStatusIndex(pulled);
+    const caseResultsByPath = latestCaseResultsByPath(pulled.history);
+    const runStatusByPath = latestRunStatusByPath(pulled.history);
+    const manualStatus = activeManualStatus(pulled.manualStatus || {}, manifestRows, pulled.history);
     return manifestRows.map((row) => {
       const tags = [row.cat, row.grp].filter(Boolean).join(', ');
       const notes = `Pulled from Cypress Runner · ${row.path || ''}`;
-      if (row.id) {
-        const bareId = String(row.id).replace(/^C/i, '');
-        const statusId = caseStatusId.get(bareId);
-        return {
-          id: row.id, title: row.title || row.path || '', tags, notes,
-          status: statusId !== undefined ? (TR_STATUS_ID_MAP[statusId] || 'UNTESTED') : 'UNTESTED',
-          mapAction: 'Map', syncStatus: 'Unsynced', reason: '',
-        };
-      }
-      const spec = specStatus.get(row.path);
+      const status = localCaseStatus(row, caseResultsByPath, runStatusByPath, manualStatus).toUpperCase();
       return {
-        id: '', title: row.title || row.path || '(unknown spec)', tags, notes,
-        status: spec === 'passed' ? 'PASSED' : spec === 'failed' ? 'FAILED' : 'UNTESTED',
-        mapAction: "Don't Map", syncStatus: 'Unsynced', reason: '',
+        id: row.id || '', title: row.title || row.path || '(unknown spec)', tags, notes, status,
+        mapAction: row.id ? 'Map' : "Don't Map", syncStatus: 'Unsynced', reason: '',
       };
     });
   };
 
-  // Same manifest source for Jenkins, overlaying each job's latest status.
-  // A run that ended without an actual pass/fail verdict (ABORTED, ERROR,
-  // or anything else Jenkins didn't finish confirming) reports UNTESTED
-  // rather than a guessed BLOCKED — the last attempt didn't establish a
-  // real result, so nothing should be asserted about it.
-  const jenkinsManifestToTestCases = (manifestRows, pulled) => {
-    const pathStatus = buildJenkinsStatusIndex(pulled);
-    return manifestRows.map((row) => {
-      const tags = [row.cat, row.grp].filter(Boolean).join(', ');
-      const notes = `Pulled from Jenkins Runner · ${row.path || ''}`;
-      const jobStatus = pathStatus.get(row.path);
-      const status = jobStatus === 'SUCCESS' ? 'PASSED' : jobStatus === 'FAILURE' ? 'FAILED' : 'UNTESTED';
-      return {
-        id: row.id || '', title: row.title || row.path || '(unknown job)', tags, notes,
-        status, mapAction: row.id ? 'Map' : "Don't Map", syncStatus: 'Unsynced', reason: '',
-      };
-    });
+  // Jenkins Runner page's own per-case verdict (see getCaseStatus in
+  // TestCaseDashboard.jsx): a Jenkins manual mark wins, otherwise the case's
+  // status in the TestRail run pulled on that page (Run ID saved under
+  // tcd_run_id). Jenkins build history isn't consulted at all — builds are
+  // per spec file and don't carry per-case results. Returns null for a case
+  // that isn't in the pulled run.
+  const jenkinsCaseStatus = (row, pulled) => {
+    const manual = (pulled.manualStatus || {})[row.id];
+    if (manual) return manual.status;
+    const entry = pulled.runStatus?.statuses?.[numericId(row.id)];
+    return entry ? String(entry.status).toLowerCase() : null;
   };
+
+  const LEDGER_STATUSES = new Set(['PASSED', 'FAILED', 'BLOCKED', 'RETEST', 'UNTESTED']);
+  const jenkinsManifestToTestCases = (manifestRows, pulled) => manifestRows.map((row) => {
+    const tags = [row.cat, row.grp].filter(Boolean).join(', ');
+    const notes = `Pulled from Jenkins Runner · ${row.path || ''}`;
+    const s = jenkinsCaseStatus(row, pulled);
+    const upper = s ? s.toUpperCase() : null;
+    return {
+      id: row.id || '', title: row.title || row.path || '(unknown job)', tags, notes,
+      status: LEDGER_STATUSES.has(upper) ? upper : 'UNTESTED',
+      mapAction: row.id ? 'Map' : "Don't Map", syncStatus: 'Unsynced',
+      reason: s ? '' : (pulled.runStatus ? `Not in TestRail run ${pulled.runStatus.runId}` : 'No TestRail run pulled on Jenkins Runner'),
+    };
+  });
 
   const handleViewRunnerInLedger = (runner) => {
     const pulled = runner === 'cypress' ? cyPulled : jkPulled;
@@ -492,15 +455,17 @@ const SyncHub = () => {
   const handlePullCypress = async () => {
     setCyPulling(true);
     try {
-      const [stateRes, manifestRes] = await Promise.all([
+      const [stateRes, manifestRes, manualRes] = await Promise.all([
         fetch('http://localhost:3000/api/cypress/state'),
         fetch('http://localhost:3000/api/testcases/data'),
+        fetch('http://localhost:3000/api/testcases/manual-status', { cache: 'no-store' }),
       ]);
       if (!stateRes.ok) throw new Error(`Server returned ${stateRes.status}`);
       if (!manifestRes.ok) throw new Error(`Manifest fetch returned ${manifestRes.status}`);
       const data = await stateRes.json();
       const manifest = await manifestRes.json();
-      setCyPulled({ ...data, manifestRows: manifest.rows || [] });
+      const manualStatus = manualRes.ok ? await manualRes.json() : {};
+      setCyPulled({ ...data, manifestRows: manifest.rows || [], manualStatus });
       setCyPulledAt(Date.now());
       addLog('Pulled latest data from Cypress Runner.', 'success');
     } catch (e) {
@@ -513,15 +478,32 @@ const SyncHub = () => {
   const handlePullJenkins = async () => {
     setJkPulling(true);
     try {
-      const [stateRes, manifestRes] = await Promise.all([
+      // Same TestRail run the Jenkins Runner page last pulled — its chips
+      // are driven by that run, not by Jenkins build history.
+      const runId = localStorage.getItem('tcd_run_id') || '';
+      const [stateRes, manifestRes, manualRes, runRes] = await Promise.all([
         fetch('http://localhost:3000/api/testcases/job-queue'),
         fetch('http://localhost:3000/api/testcases/data'),
+        fetch('http://localhost:3000/api/testcases/jenkins-manual-status', { cache: 'no-store' }),
+        /^\d+$/.test(runId)
+          ? fetch(`http://localhost:3000/api/testcases/run-status?runId=${encodeURIComponent(runId)}`, { cache: 'no-store' })
+          : Promise.resolve(null),
       ]);
       if (!stateRes.ok) throw new Error(`Server returned ${stateRes.status}`);
       if (!manifestRes.ok) throw new Error(`Manifest fetch returned ${manifestRes.status}`);
       const data = await stateRes.json();
       const manifest = await manifestRes.json();
-      setJkPulled({ ...data, manifestRows: manifest.rows || [] });
+      const manualStatus = manualRes.ok ? await manualRes.json() : {};
+      let runStatus = null;
+      if (!runRes) {
+        addLog('No TestRail Run ID set on the Jenkins Runner page — only manual marks will show a status.', 'warning');
+      } else if (runRes.ok) {
+        runStatus = await runRes.json();
+      } else {
+        const body = await runRes.json().catch(() => ({}));
+        addLog(`Couldn't pull TestRail run ${runId}: ${body.error || runRes.status}`, 'warning');
+      }
+      setJkPulled({ ...data, manifestRows: manifest.rows || [], manualStatus, runStatus });
       setJkPulledAt(Date.now());
       addLog('Pulled latest data from Jenkins Runner.', 'success');
     } catch (e) {
@@ -2753,6 +2735,8 @@ const SyncHub = () => {
               { key: 'historyCount', label: 'History' },
               { key: 'passed', label: 'Passed', color: '#10b981' },
               { key: 'failed', label: 'Failed', color: 'var(--accent-red)' },
+              { key: 'blocked', label: 'Blocked', color: '#f59e0b' },
+              { key: 'retest', label: 'Retest', color: '#f97316' },
               { key: 'untested', label: 'Untested', color: '#6b7280' },
             ]}
             onPull={handlePullCypress}
@@ -2781,6 +2765,8 @@ const SyncHub = () => {
               { key: 'historyCount', label: 'History' },
               { key: 'passed', label: 'Passed', color: '#10b981' },
               { key: 'failed', label: 'Failed', color: 'var(--accent-red)' },
+              { key: 'blocked', label: 'Blocked', color: '#f59e0b' },
+              { key: 'retest', label: 'Retest', color: '#f97316' },
               { key: 'untested', label: 'Untested', color: '#6b7280' },
             ]}
             onPull={handlePullJenkins}

@@ -11,7 +11,7 @@ import { useToast } from '../contexts/ToastContext';
 import { usePomo } from '../contexts/PomodoroContext';
 import { getAIConfig } from '../utils/ai';
 import { calcCompleteness } from '../utils/resume';
-import { cyrRecentRunStats, latestCaseResultsByPath, latestRunStatusByPath, localRunTally } from './cypress-runner/helpers';
+import { cyrRecentRunStats, latestCaseResultsByPath, latestRunStatusByPath, localRunTally, activeManualStatus } from './cypress-runner/helpers';
 import { CAT_ORDER, CAT_LABELS, normCat } from './testcase-dashboard/helpers';
 import { DEFAULT_WIDGET_ORDER } from '../dashboardWidgets';
 import { useCountUp } from '../hooks/useCountUp';
@@ -414,7 +414,7 @@ const Dashboard = () => {
 
       const caseResultsByPath = latestCaseResultsByPath(state.history);
       const runStatusByPath = latestRunStatusByPath(state.history);
-      const tally = localRunTally(manifest.rows, caseResultsByPath, runStatusByPath, manual);
+      const tally = localRunTally(manifest.rows, caseResultsByPath, runStatusByPath, activeManualStatus(manual, manifest.rows, state.history));
       setLocalRunStats({ tally, totalCases: manifest.totalCases || 0 });
     } catch (e) { console.warn('Failed to fetch Cypress Runner widget data:', e); }
   };
