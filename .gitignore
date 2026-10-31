@@ -18,6 +18,8 @@ data/cypress-screenshots/
 data/runner-vault/
 data/automation-finder/
 data/helper-tools/
+data/test-runs/
+data/filter-rail/
 data/calendar.ics
 data/local_storage.json
 # Server Logs

@@ -32,6 +32,8 @@ const TestCaseDashboard = lazy(() => import('./pages/TestCaseDashboard'));
 const CypressRunner = lazy(() => import('./pages/CypressRunner'));
 const AutomationFinder = lazy(() => import('./pages/AutomationFinder'));
 const HelperTools = lazy(() => import('./pages/HelperTools'));
+const TestRuns = lazy(() => import('./pages/TestRuns'));
+const FilterRail = lazy(() => import('./pages/FilterRail'));
 const NotFound = lazy(() => import('./pages/NotFound'));
 
 const PAGE_TITLES = {
@@ -50,6 +52,8 @@ const PAGE_TITLES = {
   '/testcase-dashboard': 'Jenkins Runner',
   '/cypress-runner': 'Cypress Runner',
   '/automation-finder': 'Automation Finder',
+  '/test-runs':      'Test Runs',
+  '/filter-rail':    'FilterRail',
   '/settings':       'Settings',
 };
 
@@ -184,6 +188,8 @@ function App() {
                 <Route path="/testcase-dashboard" element={<TestCaseDashboard />} />
                 <Route path="/cypress-runner" element={<CypressRunner />} />
                 <Route path="/automation-finder" element={<AutomationFinder />} />
+                <Route path="/test-runs"     element={<TestRuns />} />
+                <Route path="/filter-rail"   element={<FilterRail />} />
                 <Route path="/helper-tools"  element={<HelperTools />} />
                 <Route path="/settings"      element={<Settings />} />
                 <Route path="*"              element={<NotFound />} />

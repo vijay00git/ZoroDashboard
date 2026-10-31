@@ -17,6 +17,8 @@ import {
   ListChecks,
   TerminalSquare,
   Radar,
+  ChartColumnStacked,
+  Filter,
   Wrench,
   Settings,
 } from 'lucide-react';
@@ -37,6 +39,8 @@ export const MAIN_NAV = [
   { path: '/testcase-dashboard', label: 'Jenkins Runner', icon: ListChecks },
   { path: '/cypress-runner', label: 'Cypress Runner', icon: TerminalSquare },
   { path: '/automation-finder', label: 'Automation Finder', icon: Radar },
+  { path: '/test-runs',      label: 'Test Runs',     icon: ChartColumnStacked },
+  { path: '/filter-rail',    label: 'FilterRail',    icon: Filter },
   { path: '/helper-tools',   label: 'Helper Tools',  icon: Wrench },
 ];
 

@@ -127,7 +127,7 @@ const ManifestModal = ({ data, onClose, onAdd, onRemove, onDownload }) => {
               className="manifest-path-input"
               value={relPath}
               onChange={(e) => setRelPath(e.target.value)}
-              placeholder="cypress/integration/regression/.../offline.ts"
+              placeholder="cypress/e2e/functional_tests/Regression/cloud/.../offline.ts"
             />
             <button type="button" className="tcd-btn primary" disabled={submitting || !effectiveGroup || !relPath.trim()} onClick={handleAdd}>
               <Plus size={14} /> {submitting ? 'Adding…' : 'Add'}

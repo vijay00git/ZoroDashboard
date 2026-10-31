@@ -85,6 +85,8 @@ React 19 SPA using React Router v7. Entry: `main.jsx` → `App.jsx`.
 | `/quicklaunch` | `QuickLaunch` | Bookmark folders |
 | `/status` | `Status` | AI-powered standup reports |
 | `/csv-organizer` | `CSVOrganizer` | Generic CSV viewer/editor |
+| `/test-runs` | `TestRuns` | TestRail run dashboards (status mix, testers, bugs) |
+| `/filter-rail` | `FilterRail` | One TestRail run's full test list: section tree, multi-filter, multi-level sort |
 | `/settings` | `Settings` | API keys, theme, preferences |
 
 **Global state / cross-cutting concerns**:
@@ -106,6 +108,8 @@ data/
 ├── quicklaunch/   # QuickLaunch: single data.json
 ├── templates/     # Daily Status: .md files with <!-- name: ... --> frontmatter
 ├── csv-organizer/ # CSVOrganizer: arbitrary CSV files
+├── test-runs/     # TestRuns: cached run-<id>.json summaries + settings.json (tester names, Jira URL, run list)
+├── filter-rail/   # FilterRail: run-<id>.json (one row per test), suite-<id>.json (section tree + case→section map), index.json
 └── calendar.ics   # Uploaded calendar file
 ```
 

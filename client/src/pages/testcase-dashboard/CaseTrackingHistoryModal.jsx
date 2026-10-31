@@ -1,18 +1,16 @@
 import { useEffect, useState } from 'react';
-import { History, AlertTriangle, PlusCircle, CheckCircle2, FileX2, Trash2 } from 'lucide-react';
+import { History, AlertTriangle, PlusCircle, CheckCircle2, FileX2, Trash2, EyeOff } from 'lucide-react';
 import ModalPortal from './ModalPortal';
 import { showConfirm } from '../../utils/Alerts';
+import { MISSING_REASON_LABEL as REASON_LABEL } from './helpers';
 
-const REASON_LABEL = {
-  file_deleted: 'file deleted from disk',
-  id_removed: 'removed from its spec file',
-};
 
 const EVENT_META = {
   case_added: { icon: PlusCircle, label: 'Started tracking', color: 'var(--accent-cyan)' },
   case_missing: { icon: AlertTriangle, label: 'Went missing', color: 'var(--accent-red)' },
   case_restored: { icon: CheckCircle2, label: 'Back in codebase', color: 'var(--accent-green)' },
   file_untracked: { icon: FileX2, label: 'File removed from manifest', color: 'var(--text-muted)' },
+  case_dismissed: { icon: EyeOff, label: 'Dismissed (stopped tracking)', color: 'var(--text-muted)' },
 };
 
 // Shared by Cypress Runner and Jenkins Runner (Test Case Dashboard) — both

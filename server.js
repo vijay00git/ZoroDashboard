@@ -38,7 +38,8 @@ const CYR_SCREENSHOTS_DIR = path.join(__dirname, 'data', 'cypress-screenshots');
 const RUNNER_VAULT_DIR = path.join(__dirname, 'data', 'runner-vault');
 const AF_DIR = path.join(__dirname, 'data', 'automation-finder');
 const HT_DIR = path.join(__dirname, 'data', 'helper-tools');
-[DATA_DIR, NOTES_DIR, TS_DIR, QL_DIR, CSV_DIR, SS_DIR, TCD_DIR, SETTINGS_DIR, CYR_DIR, CYR_SCREENSHOTS_DIR, RUNNER_VAULT_DIR, AF_DIR, HT_DIR].forEach(dir => {
+const TRR_DIR = path.join(__dirname, 'data', 'test-runs');
+[DATA_DIR, NOTES_DIR, TS_DIR, QL_DIR, CSV_DIR, SS_DIR, TCD_DIR, SETTINGS_DIR, CYR_DIR, CYR_SCREENSHOTS_DIR, RUNNER_VAULT_DIR, AF_DIR, HT_DIR, TRR_DIR].forEach(dir => {
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 });
 
@@ -1193,7 +1194,10 @@ const TCD_QUEUE_STATE_PATH = path.join(TCD_DIR, 'queue-state.json');
 const TCD_CASE_TRACKING_PATH = path.join(TCD_DIR, 'case-tracking.json');
 const TCD_CASE_HISTORY_PATH = path.join(TCD_DIR, 'case-tracking-history.json');
 const TCD_MANIFEST_PATH = process.env.TCD_MANIFEST_PATH || path.join(os.homedir(), '.claude', 'ic-tokyo-file-manifest.md');
-const TCD_E2E_ROOT = process.env.TCD_E2E_ROOT || path.join(os.homedir(), 'ic-tokyo', 'services', 'polaris-web-client', 'e2e');
+// Manifest paths are relative to the polaris-web-client project root (new
+// cypress/e2e/functional_tests/... structure), which is also where
+// cypress.config.ts and node_modules/.bin/cypress live.
+const TCD_E2E_ROOT = process.env.TCD_E2E_ROOT || path.join(os.homedir(), 'ic-tokyo', 'services', 'polaris-web-client');
 
 let tcdNotesCache = null;
 function tcdLoadNotes() {
@@ -1333,8 +1337,11 @@ function tcdNormalizeTagList(list) {
 // the codebase and now isn't — deleted from its it() block, or its whole
 // file deleted from disk while still listed in the manifest — as distinct
 // from a case id that was never tracked at all.
-// { seeded: bool, cases: { [caseId]: { path, cat, grp, title, status:
-//   'present'|'missing', firstSeenAt, lastSeenAt, missingSince, reason } } }
+// { seeded: bool, seededAt, reviewedAt, cases: { [caseId]: { path, cat,
+//   grp, title, status: 'present'|'missing', firstSeenAt, lastSeenAt,
+//   missingSince, reason, restoredAt, movedFrom, movedAt } } }
+// A case is "newly added" when firstSeenAt is after seededAt (the baseline
+// scan); reviewedAt is when the user last acknowledged the new ones.
 const TCD_CASE_HISTORY_MAX = 500;
 
 let tcdCaseTrackingCache = null;
@@ -1346,6 +1353,12 @@ function tcdLoadCaseTracking() {
         tcdCaseTrackingCache = { seeded: false, cases: {} };
     }
     if (!tcdCaseTrackingCache.cases) tcdCaseTrackingCache.cases = {};
+    // Snapshots written before seededAt existed: the baseline scan stamped
+    // every case with the same firstSeenAt, so the earliest one is it.
+    if (tcdCaseTrackingCache.seeded && !tcdCaseTrackingCache.seededAt) {
+        const firsts = Object.values(tcdCaseTrackingCache.cases).map((c) => c.firstSeenAt).filter(Boolean).sort();
+        tcdCaseTrackingCache.seededAt = firsts[0] || new Date().toISOString();
+    }
     return tcdCaseTrackingCache;
 }
 function tcdSaveCaseTracking() {
@@ -1387,7 +1400,7 @@ function tcdLogCaseHistory(entry) {
 // contains without logging anything — otherwise every pre-existing case id
 // would look like a brand-new "added" event. After that, every transition
 // (new id, id gone missing, id back again) is logged to history.
-function tcdTrackCaseIds(rows, missing) {
+function tcdTrackCaseIds(rows, missing, manifestPaths) {
     const tracking = tcdLoadCaseTracking();
     const cases = tracking.cases;
     const now = new Date().toISOString();
@@ -1411,6 +1424,7 @@ function tcdTrackCaseIds(rows, missing) {
         }
         existing.lastSeenAt = now;
         if (existing.path !== r.path || existing.grp !== r.grp || existing.title !== r.title) {
+            if (existing.path !== r.path) { existing.movedFrom = existing.path; existing.movedAt = now; }
             existing.path = r.path; existing.cat = r.cat; existing.grp = r.grp; existing.title = r.title;
             changed = true;
         }
@@ -1418,6 +1432,7 @@ function tcdTrackCaseIds(rows, missing) {
             existing.status = 'present';
             existing.missingSince = null;
             existing.reason = null;
+            existing.restoredAt = now;
             changed = true;
             tcdLogCaseHistory({ type: 'case_restored', caseId: r.id, path: r.path, cat: r.cat, grp: r.grp, title: r.title });
         }
@@ -1427,14 +1442,16 @@ function tcdTrackCaseIds(rows, missing) {
         if (seenIds.has(caseId) || existing.status === 'missing') continue;
         existing.status = 'missing';
         existing.missingSince = now;
-        existing.reason = missingPaths.has(existing.path) ? 'file_deleted' : 'id_removed';
+        existing.reason = manifestPaths && !manifestPaths.has(existing.path)
+            ? 'not_in_manifest'
+            : (missingPaths.has(existing.path) ? 'file_deleted' : 'id_removed');
         changed = true;
         if (tracking.seeded) {
             tcdLogCaseHistory({ type: 'case_missing', caseId, path: existing.path, cat: existing.cat, grp: existing.grp, title: existing.title, reason: existing.reason });
         }
     }
 
-    if (!tracking.seeded) { tracking.seeded = true; changed = true; }
+    if (!tracking.seeded) { tracking.seeded = true; tracking.seededAt = now; changed = true; }
     if (changed) tcdSaveCaseTracking();
 
     const missingCases = Object.entries(cases)
@@ -2215,6 +2232,17 @@ function tcdEnsureCaseIdsFresh() {
         .finally(() => { tcdCaseIdFetchInFlight = null; });
 }
 
+// Turns a manifest bullet's text into the spec path it names, or null when
+// the bullet isn't a real file in the project: placeholders like
+// "*(pending)*" and "⚠️ NOT IN NEW STRUCTURE — old: ..." notes. Trailing
+// annotations after the path ("path.ts  ⚠️ partial: ...") are dropped.
+function tcdBulletPath(text) {
+    const t = String(text || '').trim();
+    if (!t || t.startsWith('*') || t.startsWith('⚠')) return null;
+    const p = t.split(/\s+⚠/)[0].trim();
+    return p || null;
+}
+
 function tcdParseManifest(md) {
     const lines = md.split('\n');
     const entries = []; // { cat, grp, relPath }
@@ -2234,8 +2262,8 @@ function tcdParseManifest(md) {
         }
         const bullet = line.match(/^-\s+(.+)$/);
         if (bullet && cat && grp) {
-            const relPath = bullet[1].trim();
-            if (relPath.startsWith('*')) continue; // placeholder lines like "*(pending)*"
+            const relPath = tcdBulletPath(bullet[1]);
+            if (!relPath) continue;
             entries.push({ cat, grp, relPath });
         }
     }
@@ -2268,7 +2296,7 @@ function tcdAddFileToManifest(md, category, group, relPath) {
     // Duplicate check across the whole category section.
     for (let i = catStart; i < catEnd; i++) {
         const bullet = lines[i].trim().match(/^-\s+(.+)$/);
-        if (bullet && bullet[1].trim() === relPath) {
+        if (bullet && tcdBulletPath(bullet[1]) === relPath) {
             throw new Error(`"${relPath}" is already in the manifest under ${heading}`);
         }
     }
@@ -2356,7 +2384,7 @@ function tcdRemoveFileFromManifest(md, category, relPath) {
         const trimmed = lines[i].trim();
         if (groupHeadRe.test(trimmed)) { groupHeadingIdx = i; continue; }
         const bullet = trimmed.match(/^-\s+(.+)$/);
-        if (bullet && bullet[1].trim() === relPath) { bulletIdx = i; break; }
+        if (bullet && tcdBulletPath(bullet[1]) === relPath) { bulletIdx = i; break; }
     }
     if (bulletIdx === -1) throw new Error(`"${relPath}" was not found under ${heading}`);
 
@@ -2533,7 +2561,7 @@ function tcdBuildData() {
         caseIdCheck = { available: true, checkedAt: new Date(tcdCaseIdCacheAt).toISOString(), knownCount: tcdCaseIdCache.size };
     }
 
-    const caseTracking = tcdTrackCaseIds(rows, missing);
+    const caseTracking = tcdTrackCaseIds(rows, missing, seenPaths);
 
     return {
         rows,
@@ -2603,6 +2631,54 @@ app.post('/api/testcases/manifest/remove-file', (req, res) => {
 app.get('/api/testcases/case-tracking/history', (req, res) => {
     res.set('Cache-Control', 'no-store');
     res.json({ history: tcdCaseTrackingHistory });
+});
+
+// Current tracking state split into the buckets the Cypress Runner's
+// Test ID tracker shows: missing, newly added (first seen after the
+// baseline scan) and restored (went missing, then came back).
+app.get('/api/testcases/case-tracking/summary', (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    const tracking = tcdLoadCaseTracking();
+    const all = Object.entries(tracking.cases).map(([caseId, v]) => ({ caseId, ...v }));
+    const seededAt = tracking.seededAt || null;
+    const byDesc = (key) => (a, b) => String(b[key] || '').localeCompare(String(a[key] || ''));
+    res.json({
+        seededAt,
+        reviewedAt: tracking.reviewedAt || null,
+        trackedCount: all.length,
+        presentCount: all.filter((c) => c.status !== 'missing').length,
+        missing: all.filter((c) => c.status === 'missing').sort(byDesc('missingSince')),
+        added: seededAt ? all.filter((c) => c.status !== 'missing' && c.firstSeenAt > seededAt).sort(byDesc('firstSeenAt')) : [],
+        restored: all.filter((c) => c.status !== 'missing' && c.restoredAt).sort(byDesc('restoredAt')),
+    });
+});
+
+// Stops tracking missing case ids the user has confirmed were removed on
+// purpose, so they stop being flagged. They're re-tracked (as newly added)
+// if they ever show up in a manifest file again.
+app.post('/api/testcases/case-tracking/dismiss', (req, res) => {
+    const caseIds = req.body && req.body.caseIds;
+    if (!Array.isArray(caseIds) || caseIds.length === 0) return res.status(400).json({ error: 'caseIds must be a non-empty array' });
+    const tracking = tcdLoadCaseTracking();
+    const dismissed = [];
+    for (const id of caseIds) {
+        const c = tracking.cases[id];
+        if (!c || c.status !== 'missing') continue;
+        dismissed.push({ caseId: id, path: c.path, title: c.title });
+        delete tracking.cases[id];
+    }
+    if (dismissed.length) {
+        tcdSaveCaseTracking();
+        dismissed.forEach((d) => tcdLogCaseHistory({ type: 'case_dismissed', ...d }));
+    }
+    res.json({ dismissed: dismissed.length });
+});
+
+app.post('/api/testcases/case-tracking/mark-reviewed', (req, res) => {
+    const tracking = tcdLoadCaseTracking();
+    tracking.reviewedAt = new Date().toISOString();
+    tcdSaveCaseTracking();
+    res.json({ reviewedAt: tracking.reviewedAt });
 });
 
 app.post('/api/testcases/case-tracking/clear-history', (req, res) => {
@@ -4913,6 +4989,881 @@ app.post('/api/automation-finder/overrides', (req, res) => {
     }
     afSaveOverrides();
     res.json({ caseId, entry: store[caseId] || null });
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// TEST RUNS — per-run TestRail dashboards (status mix, testers, bugs)
+// ─────────────────────────────────────────────────────────────────────────
+// A big run (~12k tests, ~35k results) takes a minute or two to pull, so a
+// fetch runs in the background and its computed summary (never the raw
+// tests/results) is cached to data/test-runs/run-<id>.json. Runs are fetched
+// one at a time through a queue — several 12k-test runs in parallel is what
+// trips TestRail's 429 rate limit.
+//
+// This API key isn't a TestRail admin, so get_users/get_user are 403 (see
+// afNamesConflict) — testers come back as raw user ids, and the page lets
+// the user name them; those names live in data/test-runs/settings.json.
+const TRR_SETTINGS_PATH = path.join(TRR_DIR, 'settings.json');
+const TRR_PAGE_CONCURRENCY = 4;
+const TRR_DEFAULT_JIRA_URL = 'https://elosystemsteam.atlassian.net';
+const TRR_ATTENTION_LIMIT = 500;
+
+const trrJobs = new Map(); // runId -> { state: 'queued'|'running'|'done'|'error', phase, done, total, error }
+const trrQueue = [];
+let trrWorking = false;
+let trrMetaCache = null; // { statuses, priorities } — instance-wide, fetched once
+
+function trrRunPath(runId) {
+    return path.join(TRR_DIR, `run-${runId}.json`);
+}
+
+function trrLoadSettings() {
+    try {
+        return JSON.parse(fs.readFileSync(TRR_SETTINGS_PATH, 'utf8'));
+    } catch (e) {
+        return { jiraUrl: TRR_DEFAULT_JIRA_URL, userNames: {}, savedRunIds: [] };
+    }
+}
+
+// 429s are expected on big runs — back off and retry instead of failing the
+// whole fetch on one page.
+async function trrGet(endpoint, attempt) {
+    attempt = attempt || 1;
+    try {
+        return await tcdTrGet(endpoint);
+    } catch (e) {
+        if (attempt >= 5 || /TestRail 4(0[0-4])/.test(e.message)) throw e;
+        await tcdSleep((/429/.test(e.message) ? 5000 : 1000) * attempt);
+        return trrGet(endpoint, attempt + 1);
+    }
+}
+
+async function trrGetMeta() {
+    if (trrMetaCache) return trrMetaCache;
+    const [statuses, priorities] = await Promise.all([
+        trrGet('/index.php?/api/v2/get_statuses'),
+        trrGet('/index.php?/api/v2/get_priorities').catch(() => []),
+    ]);
+    trrMetaCache = {
+        statuses: statuses.map((s) => ({
+            id: s.id,
+            label: s.label || s.name,
+            color: '#' + Number(s.color_medium || 0).toString(16).padStart(6, '0'),
+            isUntested: !!s.is_untested,
+        })),
+        priorities: (Array.isArray(priorities) ? priorities : []).map((p) => ({ id: p.id, name: p.short_name || p.name })),
+    };
+    return trrMetaCache;
+}
+
+// Results have no total count up front, so pages are fetched in waves of
+// TRR_PAGE_CONCURRENCY until a wave comes back with a short page.
+async function trrFetchAllResults(runId, onProgress) {
+    const all = [];
+    let offset = 0;
+    for (;;) {
+        const offsets = Array.from({ length: TRR_PAGE_CONCURRENCY }, (_, i) => offset + i * TCD_PAGE_SIZE);
+        const pages = await Promise.all(offsets.map((o) =>
+            trrGet(`/index.php?/api/v2/get_results_for_run/${runId}&limit=${TCD_PAGE_SIZE}&offset=${o}`)
+                .then((p) => (Array.isArray(p) ? p : (p.results || []))),
+        ));
+        pages.forEach((p) => all.push(...p));
+        onProgress(all.length);
+        if (pages.some((p) => p.length < TCD_PAGE_SIZE)) return all;
+        offset += TRR_PAGE_CONCURRENCY * TCD_PAGE_SIZE;
+    }
+}
+
+async function trrFetchAllTests(runId, total, onProgress) {
+    const all = [];
+    const totalPages = Math.ceil(total / TCD_PAGE_SIZE);
+    let nextPage = 0;
+    const worker = async () => {
+        while (nextPage < totalPages) {
+            const offset = (nextPage++) * TCD_PAGE_SIZE;
+            const page = await trrGet(`/index.php?/api/v2/get_tests/${runId}&limit=${TCD_PAGE_SIZE}&offset=${offset}`);
+            all.push(...(Array.isArray(page) ? page : (page.tests || [])));
+            onProgress(all.length);
+        }
+    };
+    await Promise.all(Array.from({ length: Math.min(TRR_PAGE_CONCURRENCY, totalPages) }, worker));
+    return all;
+}
+
+function trrLocalDate(epochSec) {
+    const d = new Date(epochSec * 1000);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function trrPlainText(html, max) {
+    if (!html) return '';
+    const text = String(html)
+        .replace(/<br\s*\/?>|<\/p>/gi, ' ')
+        .replace(/<[^>]+>/g, '')
+        .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'")
+        .replace(/\s+/g, ' ')
+        .trim();
+    return text.length > max ? text.slice(0, max - 1) + '…' : text;
+}
+
+function trrBump(counts, statusId) {
+    counts[statusId] = (counts[statusId] || 0) + 1;
+}
+
+function trrBuildSummary(run, milestoneName, tests, results, meta) {
+    const untestedIds = new Set(meta.statuses.filter((s) => s.isUntested).map((s) => s.id));
+    const passedId = 1;
+
+    const statusCounts = {};
+    tests.forEach((t) => trrBump(statusCounts, t.status_id));
+    const total = tests.length;
+    const untested = [...untestedIds].reduce((s, id) => s + (statusCounts[id] || 0), 0);
+    const executed = total - untested;
+
+    // Only results that actually set a status count as "testing" — the rest
+    // (status_id null) are comment-only or reassignment entries.
+    const statusResults = results.filter((r) => r.status_id);
+    const latestByTest = new Map();
+    statusResults.forEach((r) => {
+        const prev = latestByTest.get(r.test_id);
+        if (!prev || r.created_on > prev.created_on || (r.created_on === prev.created_on && r.id > prev.id)) latestByTest.set(r.test_id, r);
+    });
+    const testById = new Map(tests.map((t) => [t.id, t]));
+
+    // Testers: "tested" = tests whose CURRENT status they set (so the
+    // per-tester counts add up to the run's executed total); "results" =
+    // every status result they posted, retests included.
+    const testers = new Map();
+    const tester = (id) => {
+        if (!testers.has(id)) testers.set(id, { userId: id, tested: 0, statusCounts: {}, results: 0, testsTouched: new Set(), defects: new Set(), firstAt: null, lastAt: null, days: new Set() });
+        return testers.get(id);
+    };
+    statusResults.forEach((r) => {
+        const t = tester(r.created_by);
+        t.results += 1;
+        t.testsTouched.add(r.test_id);
+        t.days.add(trrLocalDate(r.created_on));
+        if (t.firstAt === null || r.created_on < t.firstAt) t.firstAt = r.created_on;
+        if (t.lastAt === null || r.created_on > t.lastAt) t.lastAt = r.created_on;
+    });
+    // Attributed by the test's own current status, so a test reset to
+    // Untested after a result doesn't count, and the totals match the run.
+    // userId 0 = executed with no status result on record.
+    tests.forEach((t) => {
+        if (untestedIds.has(t.status_id)) return;
+        const r = latestByTest.get(t.id);
+        const owner = tester(r ? r.created_by : 0);
+        owner.tested += 1;
+        trrBump(owner.statusCounts, t.status_id);
+    });
+
+    // Defects, deduped per (defect, test) — a bug re-linked on every retest
+    // of the same test shouldn't count that test twice.
+    const defects = new Map();
+    results.forEach((r) => {
+        if (!r.defects) return;
+        String(r.defects).split(',').map((d) => d.trim()).filter(Boolean).forEach((id) => {
+            const info = (r.defects_data && !Array.isArray(r.defects_data) && r.defects_data[id]) || {};
+            if (!defects.has(id)) defects.set(id, { id, summary: info.summary || null, status: info.status || null, assignee: info.assignee || null, issueType: info.issue_type || null, tests: new Map() });
+            const d = defects.get(id);
+            if (!d.summary && info.summary) Object.assign(d, { summary: info.summary, status: info.status || null, assignee: info.assignee || null, issueType: info.issue_type || null });
+            tester(r.created_by).defects.add(id);
+            const prev = d.tests.get(r.test_id);
+            if (prev && prev.linkedAt <= r.created_on) return;
+            const test = testById.get(r.test_id);
+            d.tests.set(r.test_id, {
+                testId: r.test_id,
+                caseId: test ? test.case_id : r.case_id,
+                title: test ? test.title : r.case_title,
+                statusId: test ? test.status_id : r.status_id,
+                linkedBy: r.created_by,
+                linkedAt: r.created_on,
+            });
+        });
+    });
+
+    const assignees = new Map();
+    tests.forEach((t) => {
+        const key = t.assignedto_id || 0;
+        if (!assignees.has(key)) assignees.set(key, { userId: t.assignedto_id || null, total: 0, statusCounts: {} });
+        const a = assignees.get(key);
+        a.total += 1;
+        trrBump(a.statusCounts, t.status_id);
+    });
+
+    const daily = new Map();
+    statusResults.forEach((r) => {
+        const day = trrLocalDate(r.created_on);
+        if (!daily.has(day)) daily.set(day, { date: day, total: 0, counts: {} });
+        const d = daily.get(day);
+        d.total += 1;
+        trrBump(d.counts, r.status_id);
+    });
+
+    const priorities = new Map();
+    tests.forEach((t) => {
+        const key = t.priority_id || 0;
+        if (!priorities.has(key)) priorities.set(key, { priorityId: t.priority_id || null, total: 0, counts: {} });
+        const p = priorities.get(key);
+        p.total += 1;
+        trrBump(p.counts, t.status_id);
+    });
+
+    const automation = { automated: { total: 0, counts: {} }, manual: { total: 0, counts: {} } };
+    tests.forEach((t) => {
+        const bucket = t.custom_automation ? automation.automated : automation.manual;
+        bucket.total += 1;
+        trrBump(bucket.counts, t.status_id);
+    });
+
+    const versions = new Map();
+    statusResults.forEach((r) => {
+        const v = (r.version || '').trim().replace(/^version\s*/i, '');
+        if (v) versions.set(v, (versions.get(v) || 0) + 1);
+    });
+
+    // Anything whose current status isn't Passed or untested-ish: failed,
+    // retest, blocked, and custom statuses like Not Applicable.
+    const attention = tests
+        .filter((t) => t.status_id !== passedId && !untestedIds.has(t.status_id))
+        .map((t) => {
+            const r = latestByTest.get(t.id);
+            const linked = [];
+            defects.forEach((d) => { if (d.tests.has(t.id)) linked.push(d.id); });
+            return {
+                testId: t.id,
+                caseId: t.case_id,
+                title: t.title,
+                statusId: t.status_id,
+                testerId: r ? r.created_by : null,
+                at: r ? r.created_on : null,
+                comment: r ? trrPlainText(r.comment, 240) : '',
+                version: r ? r.version || null : null,
+                defects: linked,
+            };
+        })
+        .sort((a, b) => (b.at || 0) - (a.at || 0));
+
+    return {
+        runId: run.id,
+        name: run.name,
+        description: run.description || null,
+        url: run.url,
+        milestone: milestoneName,
+        planId: run.plan_id || null,
+        isCompleted: !!run.is_completed,
+        completedOn: run.completed_on || null,
+        createdOn: run.created_on,
+        createdBy: run.created_by,
+        updatedOn: run.updated_on || null,
+        fetchedAt: new Date().toISOString(),
+        statuses: meta.statuses,
+        priorityNames: Object.fromEntries(meta.priorities.map((p) => [p.id, p.name])),
+        total,
+        executed,
+        untested,
+        statusCounts,
+        resultCount: statusResults.length,
+        commentOnlyCount: results.length - statusResults.length,
+        testers: [...testers.values()]
+            .map((t) => ({ userId: t.userId, tested: t.tested, statusCounts: t.statusCounts, results: t.results, testsTouched: t.testsTouched.size, defects: t.defects.size, activeDays: t.days.size, firstAt: t.firstAt, lastAt: t.lastAt }))
+            .sort((a, b) => b.tested - a.tested || b.results - a.results),
+        assignees: [...assignees.values()].sort((a, b) => b.total - a.total),
+        defects: [...defects.values()]
+            .map((d) => ({ ...d, tests: [...d.tests.values()].sort((a, b) => b.linkedAt - a.linkedAt) }))
+            .sort((a, b) => b.tests.length - a.tests.length || a.id.localeCompare(b.id)),
+        daily: [...daily.values()].sort((a, b) => a.date.localeCompare(b.date)),
+        priorities: [...priorities.values()].sort((a, b) => (a.priorityId || 99) - (b.priorityId || 99)),
+        automation,
+        versions: [...versions.entries()].map(([version, count]) => ({ version, count })).sort((a, b) => b.count - a.count).slice(0, 12),
+        attention: attention.slice(0, TRR_ATTENTION_LIMIT),
+        attentionTotal: attention.length,
+    };
+}
+
+async function trrFetchRun(runId) {
+    const job = trrJobs.get(runId);
+    const setJob = (patch) => Object.assign(job, patch);
+    setJob({ state: 'running', phase: 'Fetching run details', done: 0, total: 0, error: null });
+
+    const [run, meta] = await Promise.all([trrGet(`/index.php?/api/v2/get_run/${runId}`), trrGetMeta()]);
+    const milestone = run.milestone_id
+        ? await trrGet(`/index.php?/api/v2/get_milestone/${run.milestone_id}`).catch(() => null)
+        : null;
+
+    const total = Object.keys(run).filter((k) => k.endsWith('_count')).reduce((s, k) => s + (run[k] || 0), 0);
+    setJob({ phase: 'Fetching tests', total });
+    const tests = await trrFetchAllTests(runId, total, (done) => setJob({ done }));
+
+    // Result count isn't known up front — the client shows a running count
+    // rather than a percentage for this phase.
+    setJob({ phase: 'Fetching results', done: 0, total: 0 });
+    const results = await trrFetchAllResults(runId, (done) => setJob({ done }));
+
+    setJob({ phase: 'Summarizing' });
+    const summary = trrBuildSummary(run, milestone ? milestone.name : null, tests, results, meta);
+    writeJsonAtomic(trrRunPath(runId), summary);
+}
+
+async function trrPumpQueue() {
+    if (trrWorking) return;
+    trrWorking = true;
+    try {
+        while (trrQueue.length) {
+            const runId = trrQueue.shift();
+            try {
+                await trrFetchRun(runId);
+                Object.assign(trrJobs.get(runId), { state: 'done', phase: 'Done' });
+            } catch (err) {
+                Object.assign(trrJobs.get(runId), { state: 'error', error: String(err && err.message || err) });
+            }
+        }
+    } finally {
+        trrWorking = false;
+    }
+}
+
+function trrParseRunId(req, res) {
+    const runId = Number(req.params.runId);
+    if (!Number.isInteger(runId) || runId <= 0) {
+        res.status(400).json({ error: 'Run ID must be a positive number' });
+        return null;
+    }
+    return runId;
+}
+
+app.get('/api/test-runs/settings', async (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    const settings = trrLoadSettings();
+    let testrailUrl = null;
+    try { testrailUrl = tcdLoadTrConfig().url; } catch (e) { /* not configured yet */ }
+    // Seed the API key owner's own name — get_current_user is the one user
+    // lookup a non-admin key is allowed.
+    if (testrailUrl && !settings.currentUserId) {
+        try {
+            const me = await tcdTrGet('/index.php?/api/v2/get_current_user');
+            settings.currentUserId = me.id;
+            settings.userNames = settings.userNames || {};
+            if (!settings.userNames[me.id]) settings.userNames[me.id] = me.name;
+            writeJsonAtomic(TRR_SETTINGS_PATH, settings);
+        } catch (e) { /* offline — try again next load */ }
+    }
+    res.json({ ...settings, testrailUrl });
+});
+
+app.post('/api/test-runs/settings', (req, res) => {
+    const { jiraUrl, userNames, savedRunIds } = req.body || {};
+    const settings = trrLoadSettings();
+    if (typeof jiraUrl === 'string') settings.jiraUrl = jiraUrl.trim().replace(/\/+$/, '');
+    if (userNames && typeof userNames === 'object') {
+        settings.userNames = settings.userNames || {};
+        Object.entries(userNames).forEach(([id, name]) => {
+            const trimmed = String(name || '').trim();
+            if (trimmed) settings.userNames[id] = trimmed;
+            else delete settings.userNames[id];
+        });
+    }
+    if (Array.isArray(savedRunIds)) settings.savedRunIds = savedRunIds.map(Number).filter((n) => Number.isInteger(n) && n > 0);
+    writeJsonAtomic(TRR_SETTINGS_PATH, settings);
+    res.json(settings);
+});
+
+app.get('/api/test-runs/:runId', (req, res) => {
+    const runId = trrParseRunId(req, res);
+    if (runId === null) return;
+    res.set('Cache-Control', 'no-store');
+    let summary = null;
+    try { summary = JSON.parse(fs.readFileSync(trrRunPath(runId), 'utf8')); } catch (e) { /* never fetched */ }
+    const job = trrJobs.get(runId) || null;
+    const queuePosition = trrQueue.indexOf(runId);
+    res.json({ runId, summary, job: job && { ...job, queuePosition: queuePosition >= 0 ? queuePosition + 1 : null } });
+});
+
+app.post('/api/test-runs/:runId/refresh', (req, res) => {
+    const runId = trrParseRunId(req, res);
+    if (runId === null) return;
+    const job = trrJobs.get(runId);
+    if (job && (job.state === 'queued' || job.state === 'running')) return res.status(202).json({ alreadyQueued: true });
+    trrJobs.set(runId, { state: 'queued', phase: 'Queued', done: 0, total: 0, error: null });
+    trrQueue.push(runId);
+    trrPumpQueue();
+    res.status(202).json({ queued: true });
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// FILTER RAIL — one TestRail run's full test list, filterable/sortable
+// ─────────────────────────────────────────────────────────────────────────
+// Unlike Test Runs (which caches only a computed summary), this keeps one
+// slim row per test so the page can filter and sort client-side, plus the
+// suite's section tree for the TestRail-style folder sidebar. Tests don't
+// carry their section, so a case_id -> section_id map is built from
+// get_cases and cached per suite (it rarely changes, and a 12k-case suite
+// takes a while to page through). Fetches reuse trrGet's 429 back-off and
+// run one at a time, like Test Runs.
+const FRL_DIR = path.join(__dirname, 'data', 'filter-rail');
+const FRL_INDEX_PATH = path.join(FRL_DIR, 'index.json');
+const FRL_SUITE_TTL_MS = 12 * 60 * 60 * 1000;
+fs.mkdirSync(FRL_DIR, { recursive: true });
+
+const frlJobs = new Map(); // runId -> { state, phase, done, total, error }
+const frlQueue = [];
+let frlWorking = false;
+let frlCaseTypesCache = null;
+
+function frlRunPath(runId) { return path.join(FRL_DIR, `run-${runId}.json`); }
+function frlSuitePath(suiteId) { return path.join(FRL_DIR, `suite-${suiteId}.json`); }
+
+function frlLoadIndex() {
+    try { return JSON.parse(fs.readFileSync(FRL_INDEX_PATH, 'utf8')); } catch (e) { return { runs: [] }; }
+}
+function frlSaveIndexEntry(entry) {
+    const index = frlLoadIndex();
+    index.runs = [entry, ...index.runs.filter((r) => r.id !== entry.id)];
+    writeJsonAtomic(FRL_INDEX_PATH, index);
+}
+
+// Pages through a TestRail list endpoint in waves of TRR_PAGE_CONCURRENCY
+// until a wave returns a short page (no total count is given up front).
+async function frlFetchPaged(endpoint, key, onProgress) {
+    const all = [];
+    let offset = 0;
+    for (;;) {
+        const offsets = Array.from({ length: TRR_PAGE_CONCURRENCY }, (_, i) => offset + i * TCD_PAGE_SIZE);
+        const pages = await Promise.all(offsets.map((o) =>
+            trrGet(`${endpoint}&limit=${TCD_PAGE_SIZE}&offset=${o}`).then((p) => (Array.isArray(p) ? p : (p[key] || [])))));
+        pages.forEach((p) => all.push(...p));
+        if (onProgress) onProgress(all.length);
+        if (pages.some((p) => p.length < TCD_PAGE_SIZE)) return all;
+        offset += TRR_PAGE_CONCURRENCY * TCD_PAGE_SIZE;
+    }
+}
+
+async function frlLoadSuite(projectId, suiteId, caseIds, force, setJob) {
+    let cached = null;
+    try { cached = JSON.parse(fs.readFileSync(frlSuitePath(suiteId), 'utf8')); } catch (e) { /* first fetch */ }
+    const fresh = cached && Date.now() - cached.fetchedAt < FRL_SUITE_TTL_MS;
+    if (cached && fresh && !force && caseIds.every((id) => cached.caseSection[id] !== undefined)) return cached;
+
+    setJob({ step: 4, phase: 'Fetching folder structure', done: 0, total: 0 });
+    const sections = await frlFetchPaged(`/index.php?/api/v2/get_sections/${projectId}&suite_id=${suiteId}`, 'sections', (done) => setJob({ done }));
+    setJob({ step: 4, phase: 'Mapping cases to folders', done: 0, total: 0 });
+    const cases = await frlFetchPaged(`/index.php?/api/v2/get_cases/${projectId}&suite_id=${suiteId}`, 'cases', (done) => setJob({ done }));
+    const suite = {
+        suiteId,
+        fetchedAt: Date.now(),
+        sections: sections.map((s) => ({ id: s.id, name: s.name, parentId: s.parent_id || null, depth: s.depth || 0, order: s.display_order || 0 })),
+        caseSection: Object.fromEntries(cases.map((c) => [c.id, c.section_id])),
+    };
+    writeJsonAtomic(frlSuitePath(suiteId), suite);
+    return suite;
+}
+
+async function frlGetCaseTypes() {
+    if (frlCaseTypesCache) return frlCaseTypesCache;
+    const types = await trrGet('/index.php?/api/v2/get_case_types').catch(() => []);
+    frlCaseTypesCache = (Array.isArray(types) ? types : []).map((t) => ({ id: t.id, name: t.name }));
+    return frlCaseTypesCache;
+}
+
+function frlLabelNames(labels) {
+    return (Array.isArray(labels) ? labels : [])
+        .map((l) => (l && typeof l === 'object' ? (l.title || l.name || String(l.id)) : String(l)))
+        .filter(Boolean);
+}
+
+async function frlFetchRun(runId, force) {
+    const job = frlJobs.get(runId);
+    const setJob = (patch) => Object.assign(job, patch);
+    setJob({ state: 'running', step: 1, steps: 5, startedAt: Date.now(), phase: 'Fetching run details', done: 0, total: 0, error: null });
+
+    const [run, meta, types] = await Promise.all([trrGet(`/index.php?/api/v2/get_run/${runId}`), trrGetMeta(), frlGetCaseTypes()]);
+    const milestone = run.milestone_id ? await trrGet(`/index.php?/api/v2/get_milestone/${run.milestone_id}`).catch(() => null) : null;
+
+    const total = Object.keys(run).filter((k) => k.endsWith('_count')).reduce((s, k) => s + (run[k] || 0), 0);
+    setJob({ step: 2, phase: 'Fetching tests', done: 0, total });
+    const tests = await trrFetchAllTests(runId, total, (done) => setJob({ done }));
+
+    // No total is known for results — a run's history can be several times
+    // its test count, so the client shows a running count + elapsed time.
+    setJob({ step: 3, phase: 'Fetching results', done: 0, total: 0 });
+    const results = await trrFetchAllResults(runId, (done) => setJob({ done }));
+
+    const suite = await frlLoadSuite(run.project_id, run.suite_id, tests.map((t) => t.case_id), force, setJob);
+
+    setJob({ step: 5, phase: 'Building rows', done: 0, total: 0 });
+    const byTest = new Map();
+    results.forEach((r) => {
+        const e = byTest.get(r.test_id) || { count: 0, latest: null, defects: new Set() };
+        e.count++;
+        if (r.defects) String(r.defects).split(',').map((d) => d.trim()).filter(Boolean).forEach((d) => e.defects.add(d));
+        // Only results that set a status count as "tested" — the rest are
+        // comment-only or reassignment entries.
+        if (r.status_id && (!e.latest || r.created_on > e.latest.created_on || (r.created_on === e.latest.created_on && r.id > e.latest.id))) e.latest = r;
+        byTest.set(r.test_id, e);
+    });
+
+    const rows = tests.map((t) => {
+        const e = byTest.get(t.id);
+        const latest = e && e.latest;
+        return {
+            id: t.id,
+            caseId: t.case_id,
+            title: t.title,
+            sectionId: suite.caseSection[t.case_id] ?? null,
+            order: t.cases_display_order || 0,
+            statusId: t.status_id,
+            assignedTo: t.assignedto_id ?? null,
+            priorityId: t.priority_id ?? null,
+            typeId: t.type_id ?? null,
+            refs: t.refs || '',
+            estimate: t.estimate || '',
+            labels: frlLabelNames(t.labels),
+            automation: !!t.custom_automation,
+            testedBy: latest ? latest.created_by : null,
+            testedOn: latest ? latest.created_on : null,
+            elapsed: latest ? (latest.elapsed || '') : '',
+            version: latest ? (latest.version || '') : '',
+            comment: latest ? trrPlainText(latest.comment, 240) : '',
+            defects: e ? [...e.defects] : [],
+            resultCount: e ? e.count : 0,
+        };
+    });
+
+    // Only the sections that hold a test in this run (and their ancestors),
+    // the way TestRail's own run view trims the tree.
+    const sectionById = new Map(suite.sections.map((s) => [s.id, s]));
+    const keep = new Set();
+    rows.forEach((r) => {
+        let s = sectionById.get(r.sectionId);
+        while (s && !keep.has(s.id)) { keep.add(s.id); s = sectionById.get(s.parentId); }
+    });
+
+    const data = {
+        run: {
+            id: run.id, name: run.name, url: run.url, suiteId: run.suite_id, projectId: run.project_id, planId: run.plan_id || null,
+            description: trrPlainText(run.description, 600), isCompleted: !!run.is_completed,
+            createdOn: run.created_on, completedOn: run.completed_on || null,
+            milestone: milestone ? milestone.name : null, config: run.config || null,
+        },
+        fetchedAt: new Date().toISOString(),
+        statuses: meta.statuses,
+        priorities: meta.priorities,
+        types,
+        sections: suite.sections.filter((s) => keep.has(s.id)),
+        rows,
+    };
+    writeJsonAtomic(frlRunPath(runId), data);
+    frlSaveIndexEntry({ id: run.id, name: run.name, total: rows.length, fetchedAt: data.fetchedAt });
+}
+
+async function frlPumpQueue() {
+    if (frlWorking) return;
+    frlWorking = true;
+    try {
+        while (frlQueue.length) {
+            const { runId, force } = frlQueue.shift();
+            try {
+                await frlFetchRun(runId, force);
+                Object.assign(frlJobs.get(runId), { state: 'done', phase: 'Done' });
+            } catch (err) {
+                Object.assign(frlJobs.get(runId), { state: 'error', error: String(err && err.message || err) });
+            }
+        }
+    } finally {
+        frlWorking = false;
+    }
+}
+
+// HTML fields (preconditions/steps/comments) as plain text with line breaks
+// kept, so the client never has to render TestRail's HTML.
+function frlHtmlToText(html) {
+    if (!html) return '';
+    return String(html)
+        .replace(/<br\s*\/?>/gi, '\n').replace(/<\/(p|div|li|h\d)>/gi, '\n').replace(/<li[^>]*>/gi, '• ')
+        .replace(/<[^>]+>/g, '')
+        .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'")
+        .replace(/[ \t]+/g, ' ').replace(/\n\s*\n+/g, '\n').trim();
+}
+
+app.get('/api/filter-rail/runs', (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    const index = frlLoadIndex();
+    const jobs = {};
+    frlJobs.forEach((j, id) => { jobs[id] = j; });
+    res.json({ runs: index.runs, jobs });
+});
+
+app.get('/api/filter-rail/runs/:runId', (req, res) => {
+    const runId = trrParseRunId(req, res);
+    if (runId === null) return;
+    res.set('Cache-Control', 'no-store');
+    const job = frlJobs.get(runId) || null;
+    const queuePosition = frlQueue.findIndex((q) => q.runId === runId);
+    const jobOut = job && {
+        ...job,
+        queuePosition: queuePosition >= 0 ? queuePosition + 1 : null,
+        elapsedMs: job.startedAt && job.state === 'running' ? Date.now() - job.startedAt : null,
+    };
+    if (req.query.jobOnly) return res.json({ runId, job: jobOut });
+    let data = null;
+    try { data = JSON.parse(fs.readFileSync(frlRunPath(runId), 'utf8')); } catch (e) { /* never fetched */ }
+    res.json({ runId, data, job: jobOut });
+});
+
+app.post('/api/filter-rail/runs/:runId/refresh', (req, res) => {
+    const runId = trrParseRunId(req, res);
+    if (runId === null) return;
+    const job = frlJobs.get(runId);
+    if (job && (job.state === 'queued' || job.state === 'running')) return res.status(202).json({ alreadyQueued: true });
+    frlJobs.set(runId, { state: 'queued', phase: 'Queued', done: 0, total: 0, error: null });
+    frlQueue.push({ runId, force: !!(req.body && req.body.refreshSections) });
+    frlPumpQueue();
+    res.status(202).json({ queued: true });
+});
+
+app.delete('/api/filter-rail/runs/:runId', (req, res) => {
+    const runId = trrParseRunId(req, res);
+    if (runId === null) return;
+    try { fs.unlinkSync(frlRunPath(runId)); } catch (e) { /* already gone */ }
+    const index = frlLoadIndex();
+    index.runs = index.runs.filter((r) => r.id !== runId);
+    writeJsonAtomic(FRL_INDEX_PATH, index);
+    frlJobs.delete(runId);
+    res.json({ removed: true });
+});
+
+// One test's full case content and result history, fetched on demand when
+// a row is opened (too heavy to keep for every test in the run cache).
+app.get('/api/filter-rail/tests/:testId', async (req, res) => {
+    const testId = Number(req.params.testId);
+    if (!Number.isInteger(testId) || testId <= 0) return res.status(400).json({ error: 'Invalid test id' });
+    try {
+        const [test, resultsPage] = await Promise.all([
+            trrGet(`/index.php?/api/v2/get_test/${testId}`),
+            trrGet(`/index.php?/api/v2/get_results/${testId}&limit=50`),
+        ]);
+        const results = Array.isArray(resultsPage) ? resultsPage : (resultsPage.results || []);
+        res.json({
+            preconds: frlHtmlToText(test.custom_preconds),
+            steps: frlHtmlToText(test.custom_steps),
+            expected: frlHtmlToText(test.custom_expected),
+            results: results.map((r) => ({
+                id: r.id, statusId: r.status_id, createdBy: r.created_by, createdOn: r.created_on,
+                assignedTo: r.assignedto_id, comment: frlHtmlToText(r.comment), defects: r.defects || '',
+                elapsed: r.elapsed || '', version: r.version || '',
+            })),
+        });
+    } catch (err) {
+        res.status(502).json({ error: String(err && err.message || err) });
+    }
+});
+
+// ── FilterRail edits: status / assignee (as results) and test labels ──
+// Writes go straight to TestRail, then the same change is patched into the
+// cached run file so the page updates without a full re-fetch. Labels here
+// are TestRail's *test* labels (per run), not case labels — editing them
+// never touches the case in the suite or any other run.
+const FRL_WRITE_CHUNK = 250;
+const FRL_MAX_LABELS = 10; // TestRail's per-test limit
+const frlRunLocks = new Map();
+
+// Serializes cache-file read/patch/write per run so two edits can't race.
+function frlWithRunLock(runId, fn) {
+    const prev = frlRunLocks.get(runId) || Promise.resolve();
+    const next = prev.catch(() => {}).then(fn);
+    frlRunLocks.set(runId, next.catch(() => {}));
+    return next;
+}
+
+// Only 429 is retried: TestRail rejects a rate-limited request without
+// applying it, while any other failure may have been partly applied.
+async function frlTrPost(endpoint, body, attempt) {
+    attempt = attempt || 1;
+    const { url, auth } = tcdLoadTrConfig();
+    const res = await tcdHttpRequest(`${url}${endpoint}`, {
+        method: 'POST',
+        headers: { Authorization: `Basic ${auth}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+        timeoutMs: 60000,
+    });
+    if (res.statusCode === 429 && attempt < 5) {
+        await tcdSleep(5000 * attempt);
+        return frlTrPost(endpoint, body, attempt + 1);
+    }
+    if (res.statusCode < 200 || res.statusCode >= 300) throw new Error(`TestRail ${res.statusCode}: ${res.body.slice(0, 300)}`);
+    try { return JSON.parse(res.body); } catch (e) { return null; }
+}
+
+function frlReadRun(runId) {
+    try { return JSON.parse(fs.readFileSync(frlRunPath(runId), 'utf8')); } catch (e) { return null; }
+}
+
+async function frlCurrentUserId() {
+    const settings = trrLoadSettings();
+    if (settings.currentUserId) return settings.currentUserId;
+    const me = await tcdTrGet('/index.php?/api/v2/get_current_user');
+    return me.id;
+}
+
+const frlLabelCache = new Map(); // projectId -> { at, labels }
+async function frlProjectLabels(projectId, force) {
+    const cached = frlLabelCache.get(projectId);
+    if (cached && !force && Date.now() - cached.at < 5 * 60 * 1000) return cached.labels;
+    const all = await frlFetchPaged(`/index.php?/api/v2/get_labels/${projectId}`, 'labels');
+    const labels = all.map((l) => ({ id: l.id, name: l.name || l.title })).sort((a, b) => a.name.localeCompare(b.name));
+    frlLabelCache.set(projectId, { at: Date.now(), labels });
+    return labels;
+}
+
+app.get('/api/filter-rail/runs/:runId/edit-options', async (req, res) => {
+    const runId = trrParseRunId(req, res);
+    if (runId === null) return;
+    const data = frlReadRun(runId);
+    if (!data) return res.status(404).json({ error: 'Load the run first' });
+    try {
+        const [labels, currentUserId, projectUsers] = await Promise.all([
+            frlProjectLabels(data.run.projectId, !!req.query.refresh),
+            frlCurrentUserId().catch(() => null),
+            // A non-admin key only sees a partial list here — merged with
+            // everyone seen in the run below.
+            trrGet(`/index.php?/api/v2/get_users/${data.run.projectId}`).then((p) => (Array.isArray(p) ? p : (p.users || []))).catch(() => []),
+        ]);
+        const names = trrLoadSettings().userNames || {};
+        const ids = new Set();
+        data.rows.forEach((r) => { if (r.assignedTo != null) ids.add(r.assignedTo); if (r.testedBy != null) ids.add(r.testedBy); });
+        projectUsers.forEach((u) => { if (u.is_active !== 0) ids.add(u.id); });
+        if (currentUserId) ids.add(currentUserId);
+        Object.keys(names).forEach((id) => ids.add(Number(id)));
+        const byId = Object.fromEntries(projectUsers.map((u) => [u.id, u.name]));
+        const users = [...ids].map((id) => ({ id, name: names[id] || byId[id] || null }));
+        res.json({ labels, users, currentUserId, maxLabels: FRL_MAX_LABELS });
+    } catch (err) {
+        res.status(502).json({ error: String(err && err.message || err) });
+    }
+});
+
+function frlValidTestIds(data, testIds) {
+    if (!Array.isArray(testIds) || testIds.length === 0) throw new Error('Pick at least one test');
+    const inRun = new Set(data.rows.map((r) => r.id));
+    const ids = [...new Set(testIds.map(Number))];
+    const stray = ids.filter((id) => !inRun.has(id));
+    if (stray.length) throw new Error(`${stray.length} test(s) aren't in this run`);
+    return ids;
+}
+
+// Status and/or assignee as TestRail results. A result with only
+// assignedto_id is TestRail's own "reassign" entry (no status change).
+app.post('/api/filter-rail/runs/:runId/results', (req, res) => {
+    const runId = trrParseRunId(req, res);
+    if (runId === null) return;
+    const { testIds, statusId, assignedTo, comment, defects } = req.body || {};
+    frlWithRunLock(runId, async () => {
+        const data = frlReadRun(runId);
+        if (!data) throw Object.assign(new Error('Load the run first'), { status: 404 });
+        const ids = frlValidTestIds(data, testIds);
+        const status = statusId != null ? data.statuses.find((s) => s.id === Number(statusId)) : null;
+        if (statusId != null && (!status || status.isUntested)) throw new Error('Pick a status other than Untested');
+        const assignee = assignedTo != null && assignedTo !== '' ? Number(assignedTo) : null;
+        if (!status && assignee == null && !String(comment || '').trim()) throw new Error('Nothing to change');
+
+        const base = {};
+        if (status) base.status_id = status.id;
+        if (assignee != null) base.assignedto_id = assignee;
+        if (String(comment || '').trim()) base.comment = String(comment).trim();
+        if (String(defects || '').trim()) base.defects = String(defects).trim();
+
+        const me = status ? await frlCurrentUserId().catch(() => null) : null;
+        const now = Math.floor(Date.now() / 1000);
+        const newDefects = String(defects || '').split(',').map((d) => d.trim()).filter(Boolean);
+        const rowById = new Map(data.rows.map((r) => [r.id, r]));
+        const changed = [];
+        const patch = (chunk) => chunk.forEach((id) => {
+            const r = rowById.get(id);
+            r.resultCount++;
+            if (assignee != null) r.assignedTo = assignee;
+            if (status) {
+                r.statusId = status.id;
+                r.testedBy = me;
+                r.testedOn = now;
+                r.comment = trrPlainText(base.comment || '', 240);
+            }
+            if (newDefects.length) r.defects = [...new Set([...r.defects, ...newDefects])];
+            changed.push(r);
+        });
+
+        try {
+            for (let i = 0; i < ids.length; i += FRL_WRITE_CHUNK) {
+                const chunk = ids.slice(i, i + FRL_WRITE_CHUNK);
+                await frlTrPost(`/index.php?/api/v2/add_results/${runId}`, { results: chunk.map((id) => ({ test_id: id, ...base })) });
+                patch(chunk);
+            }
+        } catch (err) {
+            if (changed.length) err.message = `${err.message} (the first ${changed.length} of ${ids.length} were saved)`;
+            throw err;
+        } finally {
+            // Save whatever TestRail accepted, even if a later chunk failed.
+            if (changed.length) writeJsonAtomic(frlRunPath(runId), data);
+        }
+        return { updated: changed.length, rows: changed };
+    })
+        .then((out) => res.json(out))
+        .catch((err) => res.status(err.status || 400).json({ error: String(err.message || err) }));
+});
+
+// Adds/removes labels on tests. update_tests sets one label list for every
+// test in the call, so tests are grouped by their resulting label set.
+app.post('/api/filter-rail/runs/:runId/labels', (req, res) => {
+    const runId = trrParseRunId(req, res);
+    if (runId === null) return;
+    const { testIds, add, remove } = req.body || {};
+    frlWithRunLock(runId, async () => {
+        const data = frlReadRun(runId);
+        if (!data) throw Object.assign(new Error('Load the run first'), { status: 404 });
+        const ids = frlValidTestIds(data, testIds);
+        const projectLabels = await frlProjectLabels(data.run.projectId);
+        const byId = new Map(projectLabels.map((l) => [l.id, l]));
+        const byName = new Map(projectLabels.map((l) => [l.name, l]));
+        const addIds = (Array.isArray(add) ? add : []).map(Number).filter((id) => byId.has(id));
+        const removeIds = new Set((Array.isArray(remove) ? remove : []).map(Number).filter((id) => byId.has(id)));
+        if (!addIds.length && !removeIds.size) throw new Error('Pick a label to add or remove');
+
+        const rowById = new Map(data.rows.map((r) => [r.id, r]));
+        const groups = new Map(); // "1,4,9" -> { labelIds, testIds }
+        const tooMany = [];
+        ids.forEach((id) => {
+            const r = rowById.get(id);
+            // Rows only store names; a name no longer in the project (deleted
+            // label) is dropped, the same as TestRail would show it.
+            const current = r.labels.map((n) => byName.get(n)).filter(Boolean).map((l) => l.id);
+            const next = [...new Set([...current.filter((l) => !removeIds.has(l)), ...addIds])].sort((a, b) => a - b);
+            if (next.length > FRL_MAX_LABELS) { tooMany.push(id); return; }
+            if (next.join(',') === [...current].sort((a, b) => a - b).join(',')) return; // nothing changes
+            const key = next.join(',');
+            if (!groups.has(key)) groups.set(key, { labelIds: next, testIds: [] });
+            groups.get(key).testIds.push(id);
+        });
+        if (tooMany.length) throw new Error(`${tooMany.length} test(s) would end up with more than ${FRL_MAX_LABELS} labels (TestRail's limit). Remove some first.`);
+
+        const changed = [];
+        let calls = 0;
+        try {
+            for (const g of groups.values()) {
+                for (let i = 0; i < g.testIds.length; i += FRL_WRITE_CHUNK) {
+                    const chunk = g.testIds.slice(i, i + FRL_WRITE_CHUNK);
+                    await frlTrPost('/index.php?/api/v2/update_tests', { test_ids: chunk, labels: g.labelIds });
+                    calls++;
+                    const names = g.labelIds.map((l) => byId.get(l).name);
+                    chunk.forEach((id) => { const r = rowById.get(id); r.labels = names; changed.push(r); });
+                }
+            }
+        } finally {
+            // Save whatever TestRail accepted, even if a later call failed.
+            if (changed.length) writeJsonAtomic(frlRunPath(runId), data);
+        }
+        return { updated: changed.length, unchanged: ids.length - changed.length, calls, rows: changed };
+    })
+        .then((out) => res.json(out))
+        .catch((err) => res.status(err.status || 400).json({ error: String(err.message || err) }));
 });
 
 app.use((req, res) => {

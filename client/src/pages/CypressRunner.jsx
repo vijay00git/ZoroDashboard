@@ -5,7 +5,6 @@ import { showConfirm, showPrompt } from '../utils/Alerts';
 import ModalPortal from './testcase-dashboard/ModalPortal';
 import FileTree from './testcase-dashboard/FileTree';
 import ManifestModal from './testcase-dashboard/ManifestModal';
-import CaseTrackingHistoryModal from './testcase-dashboard/CaseTrackingHistoryModal';
 import TagModal from './testcase-dashboard/TagModal';
 import BulkTagBar from './testcase-dashboard/BulkTagBar';
 import StatsBar from './testcase-dashboard/StatsBar';
@@ -23,6 +22,7 @@ import BugsCard from './cypress-runner/BugsCard';
 import QueueProgress from './cypress-runner/QueueProgress';
 import CompareRunsModal from './cypress-runner/CompareRunsModal';
 import FileHistoryModal from './cypress-runner/FileHistoryModal';
+import CaseTrackerPanel from './cypress-runner/CaseTrackerPanel';
 import {
   latestCaseResultsForPaths, latestCaseResultsByPath, latestRunStatusByPath,
   localCaseStatus, localRunTally, buildCyrReportText, buildCyrDateReportText, mergeManualIntoResultMap, activeManualStatus,
@@ -63,7 +63,7 @@ const CypressRunner = () => {
   const [selectedCases, setSelectedCases] = useState(new Set());
   const [tagModal, setTagModal] = useState(null); // { caseId, caseTitle }
   const [manifestModalOpen, setManifestModalOpen] = useState(false);
-  const [caseHistoryOpen, setCaseHistoryOpen] = useState(false);
+  const [trackerTab, setTrackerTab] = useState('missing');
   const [activeCats, setActiveCats] = useState({ OFFLINE: true, ONLINE: true, E2E: true });
   const [issueFilter, setIssueFilter] = useState(null);
   const [searchTerm, setSearchTerm] = useState(() => localStorage.getItem('cyr_search_term') || '');
@@ -109,6 +109,7 @@ const CypressRunner = () => {
   const pollRef = useRef(null);
   const testrailRunIdInputRef = useRef(null);
   const searchInputRef = useRef(null);
+  const trackerRef = useRef(null);
 
   // Tracks every run id that's entered the queue/active slot since it was
   // last empty — the "batch" the Queue Progress card reports on. State
@@ -1113,15 +1114,21 @@ const CypressRunner = () => {
 
       <StatsBar data={manifestData} activeCats={activeCats} onToggleCat={toggleCat} issueFilter={issueFilter} onToggleIssue={toggleIssue} statusCounts={statusCounts} flakyCount={flakySpecCaseCount} />
 
-      {manifestData.missingCases && manifestData.missingCases.length > 0 && (
-        <div className="tcd-banner">
-          <AlertTriangle size={16} />
-          <div>
-            <strong>{manifestData.missingCases.length} test ID{manifestData.missingCases.length === 1 ? '' : 's'}</strong> tracked previously {manifestData.missingCases.length === 1 ? "is" : "are"} no longer found in the codebase — open{' '}
-            <button type="button" className="tcd-link-btn" onClick={() => setCaseHistoryOpen(true)}>Test ID history</button> for details.
-          </div>
-        </div>
-      )}
+      <div ref={trackerRef}>
+        <CaseTrackerPanel
+          generatedAt={manifestData.generatedAt}
+          tab={trackerTab}
+          onTabChange={setTrackerTab}
+          rows={manifestData.rows}
+          caseResultsByPath={caseResultsByPath}
+          statusByPath={runStatusByPath}
+          manualStatus={effectiveManualStatus}
+          testrailUrl={envConfig.testrailUrl}
+          onRescan={fetchManifestData}
+          onFocusCase={(caseId) => { setSearchTerm(caseId); searchInputRef.current?.focus(); }}
+          onQueueFile={(path, cat) => enqueuePaths([{ path, cat: cat ? normCat(cat) : null }])}
+        />
+      </div>
 
       {manifestData.missing && manifestData.missing.length > 0 && (
         <div className="tcd-banner">
@@ -1192,7 +1199,7 @@ const CypressRunner = () => {
                 type="button"
                 className={`cyr-btn small${manifestData.missingCases && manifestData.missingCases.length > 0 ? ' warn' : ''}`}
                 title="Test IDs remembered from the manifest's spec files, and any that have gone missing from the codebase"
-                onClick={() => setCaseHistoryOpen(true)}
+                onClick={() => { setTrackerTab('missing'); trackerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }}
               >
                 <History size={12} /> Test ID history {manifestData.missingCases && manifestData.missingCases.length > 0 ? `(${manifestData.missingCases.length})` : ''}
               </button>
@@ -1407,10 +1414,6 @@ const CypressRunner = () => {
           onClose={() => setTagModal(null)}
           onSave={handleSaveTags}
         />
-      )}
-
-      {caseHistoryOpen && (
-        <CaseTrackingHistoryModal missingCases={manifestData.missingCases} onClose={() => setCaseHistoryOpen(false)} />
       )}
 
       {manifestModalOpen && (

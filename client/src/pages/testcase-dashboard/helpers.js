@@ -97,6 +97,13 @@ export function dateHeadingLabel(ms) {
   });
 }
 
+// Why a tracked case id went missing (case-tracking.json's `reason`).
+export const MISSING_REASON_LABEL = {
+  file_deleted: 'file deleted from disk',
+  id_removed: 'removed from its spec file',
+  not_in_manifest: 'file no longer in the manifest',
+};
+
 export function timeAgo(iso) {
   const secs = Math.round((Date.now() - new Date(iso).getTime()) / 1000);
   if (secs < 60) return `${secs}s ago`;
