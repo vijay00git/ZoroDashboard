@@ -13,7 +13,7 @@ const RunModal = ({ filesToRun, jenkinsConfig, currentRunId, onClose, onSubmit }
     localStorage.setItem('tcd_last_env', environment);
     setSubmitting(true);
     await onSubmit(
-      filesToRun.map((f) => ({ path: f.path, category: f.cat, pinnedJob: pinByCat[f.cat] || null })),
+      filesToRun.map((f) => ({ path: f.path, category: f.cat, pinnedJob: pinByCat[f.cat] || null, cases: f.cases || undefined })),
       environment,
       runId.trim()
     );
@@ -26,7 +26,7 @@ const RunModal = ({ filesToRun, jenkinsConfig, currentRunId, onClose, onSubmit }
       <div className="tcd-modal" role="dialog" aria-modal="true">
         <h3>Run on Jenkins{filesToRun.length > 1 ? ` — ${filesToRun.length} files` : ''}</h3>
         <div className="tcd-modal-path" style={filesToRun.length > 1 ? { maxHeight: '8rem', overflowY: 'auto' } : undefined}>
-          {filesToRun.length === 1 ? filesToRun[0].path : filesToRun.map((f) => f.path).join('\n')}
+          {filesToRun.map((f) => f.path + (f.cases && f.cases.length ? `  [${f.cases.join(', ')}]` : '')).join('\n')}
         </div>
 
         {cats.map((cat) => {

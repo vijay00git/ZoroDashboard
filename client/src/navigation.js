@@ -21,6 +21,7 @@ import {
   Filter,
   Wrench,
   Settings,
+  Bot,
 } from 'lucide-react';
 
 export const MAIN_NAV = [
@@ -38,6 +39,7 @@ export const MAIN_NAV = [
   { path: '/ss-bucket',      label: 'SS Bucket',     icon: GalleryHorizontalEnd },
   { path: '/testcase-dashboard', label: 'Jenkins Runner', icon: ListChecks },
   { path: '/cypress-runner', label: 'Cypress Runner', icon: TerminalSquare },
+  { path: '/runmytcs',       label: 'RunMyTCs',      icon: Bot },
   { path: '/automation-finder', label: 'Automation Finder', icon: Radar },
   { path: '/test-runs',      label: 'Test Runs',     icon: ChartColumnStacked },
   { path: '/filter-rail',    label: 'FilterRail',    icon: Filter },

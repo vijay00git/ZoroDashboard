@@ -5,6 +5,9 @@ import { showConfirm, showPrompt } from '../utils/Alerts';
 import ModalPortal from './testcase-dashboard/ModalPortal';
 import FileTree from './testcase-dashboard/FileTree';
 import ManifestModal from './testcase-dashboard/ManifestModal';
+import CaseManifestModal from './testcase-dashboard/CaseManifestModal';
+import CaseTable from './testcase-dashboard/CaseTable';
+import { mergeVersionTags } from './testcase-dashboard/helpers';
 import TagModal from './testcase-dashboard/TagModal';
 import BulkTagBar from './testcase-dashboard/BulkTagBar';
 import StatsBar from './testcase-dashboard/StatsBar';
@@ -59,8 +62,12 @@ const CypressRunner = () => {
   const [manifestData, setManifestData] = useState(EMPTY_MANIFEST);
   const [manualStatus, setManualStatus] = useState({});
   const [tags, setTags] = useState({});
+  // Store tags + version tags from the spec folder (4.2_5.0 → 4.0/5.0, 5.0 → 5.0); display only.
+  const displayTags = useMemo(() => mergeVersionTags(tags, manifestData.rows), [tags, manifestData.rows]);
   const [bugLinks, setBugLinks] = useState({});
   const [selectedCases, setSelectedCases] = useState(new Set());
+  const [viewMode, setViewMode] = useState(() => { try { return localStorage.getItem('cyr-view-mode') || 'ids'; } catch { return 'ids'; } });
+  const changeViewMode = (m) => { setViewMode(m); try { localStorage.setItem('cyr-view-mode', m); } catch { /* storage unavailable */ } };
   const [tagModal, setTagModal] = useState(null); // { caseId, caseTitle }
   const [manifestModalOpen, setManifestModalOpen] = useState(false);
   const [trackerTab, setTrackerTab] = useState('missing');
@@ -134,7 +141,7 @@ const CypressRunner = () => {
       const tag = document.activeElement?.tagName || '';
       if (e.key === '/' && tag !== 'INPUT' && tag !== 'TEXTAREA') {
         e.preventDefault();
-        searchInputRef.current?.focus();
+        (searchInputRef.current || document.querySelector('.ct-search'))?.focus();
       } else if (e.key === 'Escape' && document.activeElement === searchInputRef.current) {
         setSearchTerm('');
         searchInputRef.current.blur();
@@ -552,15 +559,15 @@ const CypressRunner = () => {
   // running "N selected cases" really means running every file that contains
   // one of them.
   const handleRunSelectedCases = () => {
-    const seenPaths = new Set();
-    const items = [];
+    // One run per spec, narrowed to just the selected cases in it (grepTags + @setup).
+    const byPath = new Map();
     manifestData.rows.forEach((r) => {
-      if (selectedCases.has(r.id) && !seenPaths.has(r.path)) {
-        seenPaths.add(r.path);
-        items.push({ path: r.path, cat: normCat(r.cat) });
-      }
+      if (!selectedCases.has(r.id) || r.commented) return;
+      if (!byPath.has(r.path)) byPath.set(r.path, { path: r.path, cat: normCat(r.cat), cases: [] });
+      const it = byPath.get(r.path);
+      if (!it.cases.includes(r.id)) it.cases.push(r.id);
     });
-    enqueuePaths(items);
+    enqueuePaths(Array.from(byPath.values()));
   };
 
   // Applies (or removes) one tag across every currently-selected case in a
@@ -1130,6 +1137,16 @@ const CypressRunner = () => {
         />
       </div>
 
+      {manifestData.mode === 'cases' && manifestData.unresolvedCases && manifestData.unresolvedCases.length > 0 && (
+        <div className="tcd-banner">
+          <AlertTriangle size={16} />
+          <div>
+            <strong>{manifestData.unresolvedCases.length} owned case{manifestData.unresolvedCases.length === 1 ? '' : 's'}</strong> not found in any spec ({manifestData.unresolvedCases.slice(0, 8).map((c) => c.id).join(', ')}{manifestData.unresolvedCases.length > 8 ? '…' : ''}) — open{' '}
+            <button type="button" className="tcd-link-btn" onClick={() => setManifestModalOpen(true)}>Manifest</button>.
+          </div>
+        </div>
+      )}
+
       {manifestData.missing && manifestData.missing.length > 0 && (
         <div className="tcd-banner">
           <AlertTriangle size={16} />
@@ -1152,7 +1169,7 @@ const CypressRunner = () => {
         />
       )}
 
-      <div className={`cyr-layout${(active || !runsHidden) ? '' : ' cyr-layout-single'}`}>
+      <div className={`cyr-layout${(active || !runsHidden) ? '' : ' cyr-layout-single'}${active ? ' cyr-layout-live' : ''}`}>
         <div className="cyr-col-left">
           <div className="cyr-card">
             <h3><span className="cyr-icon-chip" style={{ '--chip-accent': 'var(--accent-cyan)' }}><ListChecks size={15} /></span> Test cases</h3>
@@ -1161,6 +1178,8 @@ const CypressRunner = () => {
                 Queued runs use the same E2E project as Test Cases: <code>{manifestData.e2eRoot}</code>
               </p>
             )}
+            {/* The Test IDs view has its own search; this one only drives the Specs view. */}
+            {!(manifestData.mode === 'cases' && viewMode === 'ids') && (
             <div className="cyr-search-row">
               <Search size={14} className="cyr-search-icon" />
               <input
@@ -1171,6 +1190,7 @@ const CypressRunner = () => {
                 onChange={(e) => setSearchTerm(e.target.value)}
               />
             </div>
+            )}
             <div className="cyr-tree-actions">
               <span className="cyr-sub" style={{ margin: 0 }}>{manifestData.totalCases} test cases across {manifestData.totalFiles} files</span>
               <button
@@ -1192,6 +1212,12 @@ const CypressRunner = () => {
                 <RotateCcw size={12} /> Retry failed {failedFileItems.length > 0 ? `(${failedFileItems.length})` : ''}
                 {failedFileItems.length > 0 && <span className="cyr-eta-badge">{formatEta(animRetryEtaMs)}</span>}
               </button>
+              {manifestData.mode === 'cases' && (
+                <>
+                  <button type="button" className={`cyr-btn small${viewMode === 'ids' ? ' active' : ''}`} onClick={() => changeViewMode('ids')} title="One row per owned test ID">Test IDs</button>
+                  <button type="button" className={`cyr-btn small${viewMode === 'specs' ? ' active' : ''}`} onClick={() => changeViewMode('specs')} title="Owned test IDs grouped under their spec files">Specs</button>
+                </>
+              )}
               <button type="button" className="cyr-btn small" title="View, add, remove, and download manifest entries" onClick={() => setManifestModalOpen(true)}>
                 <FilePlus2 size={12} /> Manifest
               </button>
@@ -1226,6 +1252,21 @@ const CypressRunner = () => {
                 <span className="cyr-runs-count">{(runState.queue?.length || 0) + (runState.history?.length || 0)}</span>
               </button>
             </div>
+            {manifestData.mode === 'cases' && viewMode === 'ids' ? (
+              <CaseTable
+                storageKey="cyr-case-table"
+                statusOf={(c) => getCaseStatus({ id: c.id, path: c.path })}
+                statusSource="manual mark › last local run"
+                testrailUrl={envConfig.testrailUrl}
+                runLabel="Run locally"
+                runTarget="local"
+                environment={environment}
+                onRunCases={(items) => enqueuePaths(items)}
+                onOpenHistory={() => { setTrackerTab('activity'); trackerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }}
+                showToast={showToast}
+                refreshKey={manifestData.generatedAt}
+              />
+            ) : (<>
             {selectedCases.size > 0 && (
               <BulkTagBar
                 count={selectedCases.size}
@@ -1264,7 +1305,7 @@ const CypressRunner = () => {
               onSyncCategory={(paths, cat) => handleSyncPaths(paths, `${cat} (${paths.length} file${paths.length === 1 ? '' : 's'})`)}
               caseResultsByPath={caseResultsByPath}
               manualStatus={effectiveManualStatus}
-              tags={tags}
+              tags={displayTags}
               onOpenTagModal={(caseId, caseTitle) => setTagModal({ caseId, caseTitle })}
               onRemoveTag={handleRemoveTag}
               bugLinks={bugLinks}
@@ -1277,6 +1318,7 @@ const CypressRunner = () => {
               getCaseStatus={getCaseStatus}
               onViewHistory={(path) => setHistoryModalPath(path)}
             />
+            </>)}
           </div>
         </div>
 
@@ -1416,7 +1458,10 @@ const CypressRunner = () => {
         />
       )}
 
-      {manifestModalOpen && (
+      {manifestModalOpen && manifestData.mode === 'cases' && (
+        <CaseManifestModal onClose={() => setManifestModalOpen(false)} onChanged={fetchManifestData} />
+      )}
+      {manifestModalOpen && manifestData.mode !== 'cases' && (
         <ManifestModal data={manifestData} onClose={() => setManifestModalOpen(false)} onAdd={addManifestFile} onRemove={removeManifestFile} onDownload={handleDownloadManifest} />
       )}
     </div>

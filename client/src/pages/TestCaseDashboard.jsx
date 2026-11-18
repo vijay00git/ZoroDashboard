@@ -16,6 +16,9 @@ import BugsCard from './testcase-dashboard/BugsCard';
 import FileTree from './testcase-dashboard/FileTree';
 import RunsPanel from './testcase-dashboard/RunsPanel';
 import ManifestModal from './testcase-dashboard/ManifestModal';
+import CaseManifestModal from './testcase-dashboard/CaseManifestModal';
+import CaseTable from './testcase-dashboard/CaseTable';
+import { mergeVersionTags } from './testcase-dashboard/helpers';
 import RunModal from './testcase-dashboard/RunModal';
 import NoteModal from './testcase-dashboard/NoteModal';
 import TagModal from './testcase-dashboard/TagModal';
@@ -93,10 +96,14 @@ const TestCaseDashboard = () => {
   const [batchStart, setBatchStart] = useState(null);
   const [notes, setNotes] = useState({});
   const [tags, setTags] = useState({});
+  // Store tags + version tags from the spec folder (4.2_5.0 → 4.0/5.0, 5.0 → 5.0); display only.
+  const displayTags = useMemo(() => mergeVersionTags(tags, data.rows), [tags, data.rows]);
   const [manualStatus, setManualStatus] = useState({});
   const [bugLinks, setBugLinks] = useState({});
   const [selectedCases, setSelectedCases] = useState(new Set());
 
+  const [viewMode, setViewMode] = useState(() => { try { return localStorage.getItem('tcd-view-mode') || 'ids'; } catch { return 'ids'; } });
+  const changeViewMode = (m) => { setViewMode(m); try { localStorage.setItem('tcd-view-mode', m); } catch { /* storage unavailable */ } };
   const [modal, setModal] = useState(null); // { type: 'addManifest'|'run'|'note'|'runDetails', ...props }
   const [historyModalPath, setHistoryModalPath] = useState(null);
 
@@ -333,7 +340,7 @@ const TestCaseDashboard = () => {
       const tag = document.activeElement?.tagName || '';
       if (e.key === '/' && tag !== 'INPUT' && tag !== 'TEXTAREA') {
         e.preventDefault();
-        searchInputRef.current?.focus();
+        (searchInputRef.current || document.querySelector('.ct-search'))?.focus();
       } else if (e.key === 'Escape' && document.activeElement === searchInputRef.current) {
         setSearchTerm('');
         savePrefs({ searchTerm: '' });
@@ -874,6 +881,8 @@ const TestCaseDashboard = () => {
 
       <div className="tcd-toolbar">
         <div className="tcd-toolbar-row">
+          {/* The Test IDs view has its own search; this one only drives the Specs view. */}
+          {!(data.mode === 'cases' && viewMode === 'ids') ? (
           <div style={{ position: 'relative', flex: 1, minWidth: 180 }}>
             <Search size={14} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
             <input
@@ -885,6 +894,7 @@ const TestCaseDashboard = () => {
               onChange={handleSearchChange}
             />
           </div>
+          ) : <div style={{ flex: 1 }} />}
           <select className="tcd-sort-select" value={sortMode} onChange={handleSortChange} title="Sort files by">
             {SORT_OPTIONS.map((o) => <option key={o.key} value={o.key}>Sort: {o.label}</option>)}
           </select>
@@ -907,6 +917,12 @@ const TestCaseDashboard = () => {
             <RotateCcw size={14} /> Retry failed {failedFileItems.length > 0 ? `(${failedFileItems.length})` : ''}
             {failedFileItems.length > 0 && <span className="tcd-eta-badge">{formatEta(retryEtaMs)}</span>}
           </button>
+          {data.mode === 'cases' && (
+            <span style={{ display: 'inline-flex', gap: 0 }}>
+              <button className={`tcd-btn${viewMode === 'ids' ? ' primary' : ''}`} onClick={() => changeViewMode('ids')} title="One row per owned test ID">Test IDs</button>
+              <button className={`tcd-btn${viewMode === 'specs' ? ' primary' : ''}`} onClick={() => changeViewMode('specs')} title="Owned test IDs grouped under their spec files">Specs</button>
+            </span>
+          )}
           <button className="tcd-btn primary" title="View, add, remove, and download manifest entries" onClick={() => setModal({ type: 'manifest' })}><FilePlus2 size={14} /> Manifest</button>
           <button
             className={`tcd-btn${data.missingCases && data.missingCases.length > 0 ? ' warn' : ''}`}
@@ -1004,6 +1020,16 @@ const TestCaseDashboard = () => {
         </div>
       )}
 
+      {data.mode === 'cases' && data.unresolvedCases && data.unresolvedCases.length > 0 && (
+        <div className="tcd-banner">
+          <AlertTriangle size={16} />
+          <div>
+            <strong>{data.unresolvedCases.length} owned case{data.unresolvedCases.length === 1 ? '' : 's'}</strong> not found in any spec ({data.unresolvedCases.slice(0, 8).map((c) => c.id).join(', ')}{data.unresolvedCases.length > 8 ? '…' : ''}) — open{' '}
+            <button type="button" className="tcd-link-btn" onClick={() => setModal({ type: 'manifest' })}>Manifest</button>.
+          </div>
+        </div>
+      )}
+
       {data.missing && data.missing.length > 0 && (
         <div className="tcd-banner">
           <AlertTriangle size={16} />
@@ -1053,6 +1079,21 @@ const TestCaseDashboard = () => {
           )}
 
           <div className="tcd-layout">
+            {data.mode === 'cases' && viewMode === 'ids' ? (
+              <CaseTable
+                storageKey="tcd-case-table"
+                statusOf={(c) => getCaseStatus({ id: c.id, path: c.path })}
+                statusSource={runStatus ? `manual mark › TestRail run ${runStatus.runId}${runStatus.runName ? ` (${runStatus.runName})` : ''}` : 'manual marks — pull a TestRail run for run statuses'}
+                testrailUrl={jenkinsConfig.testrailUrl}
+                runLabel="Run on Jenkins"
+                runTarget="jenkins"
+                environment={jenkinsConfig.defaultEnvironment}
+                onRunCases={(items) => setModal({ type: 'run', filesToRun: items })}
+                onOpenHistory={() => setModal({ type: 'caseHistory' })}
+                showToast={showToast}
+                refreshKey={data.generatedAt}
+              />
+            ) : (
             <FileTree
               data={data}
               activeCats={activeCats}
@@ -1081,7 +1122,7 @@ const TestCaseDashboard = () => {
               showToast={showToast}
               sortMode={sortMode}
               testrailUrl={jenkinsConfig.testrailUrl}
-              tags={tags}
+              tags={displayTags}
               onOpenTagModal={(caseId, caseTitle) => setModal({ type: 'tag', caseId, caseTitle })}
               onRemoveTag={removeTag}
               selectedCases={selectedCases}
@@ -1095,6 +1136,7 @@ const TestCaseDashboard = () => {
               onClearBugLink={handleClearBugLink}
               onViewHistory={(path) => setHistoryModalPath(path)}
             />
+            )}
             <RunsPanel
               runsState={runsState}
               collapsed={runsCollapsed}
@@ -1144,7 +1186,10 @@ const TestCaseDashboard = () => {
         </>
       )}
 
-      {modal?.type === 'manifest' && (
+      {modal?.type === 'manifest' && data.mode === 'cases' && (
+        <CaseManifestModal onClose={() => setModal(null)} onChanged={fetchData} />
+      )}
+      {modal?.type === 'manifest' && data.mode !== 'cases' && (
         <ManifestModal data={data} onClose={() => setModal(null)} onAdd={addManifestFile} onRemove={removeManifestFile} onDownload={handleDownloadManifest} />
       )}
       {modal?.type === 'sendReport' && (

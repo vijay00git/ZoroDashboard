@@ -30,6 +30,7 @@ import {
   HelpCircle,
   FlaskConical,
   Server,
+  Bot,
   CloudDownload,
   Eye,
 } from 'lucide-react';
@@ -303,6 +304,13 @@ const SyncHub = () => {
   const [jkVaultFolder, setJkVaultFolder] = useState('');
   const [jkSavedVault, setJkSavedVault] = useState([]);
 
+  const [rmPulled, setRmPulled] = useState(null);
+  const [rmPulledAt, setRmPulledAt] = useState(null);
+  const [rmPulling, setRmPulling] = useState(false);
+  const [rmVaultName, setRmVaultName] = useState('');
+  const [rmVaultFolder, setRmVaultFolder] = useState('');
+  const [rmSavedVault, setRmSavedVault] = useState([]);
+
   // Sync success animation
   const [syncSuccessAnim, setSyncSuccessAnim] = useState(null);
   const [syncAnimCounts, setSyncAnimCounts] = useState({ total: 0, PASSED: 0, FAILED: 0, BLOCKED: 0, UNTESTED: 0, RETEST: 0 });
@@ -342,6 +350,7 @@ const SyncHub = () => {
     fetchSavedStates();
     fetchRunnerVault('cypress');
     fetchRunnerVault('jenkins');
+    fetchRunnerVault('runmytcs');
   }, []);
 
   const fetchRunnerVault = async (runner) => {
@@ -350,6 +359,7 @@ const SyncHub = () => {
       if (!res.ok) return;
       const data = await res.json();
       if (runner === 'cypress') setCySavedVault(data.entries || []);
+      else if (runner === 'runmytcs') setRmSavedVault(data.entries || []);
       else setJkSavedVault(data.entries || []);
     } catch (e) {
       console.error(`Failed to load ${runner} runner vault:`, e);
@@ -436,16 +446,89 @@ const SyncHub = () => {
     };
   });
 
+  // RunMyTCs' own per-case verdict (caseTable in runmytcs-engine.js): a RunMyTCs mark made
+  // after the run's result wins, otherwise the case's status in the TestRail run RunMyTCs is
+  // pointed at. 'not in run' cases are left out of the chips, like the Jenkins vault does.
+  const rmtCaseStatus = (row) => {
+    const s = String(row.status || '').toLowerCase();
+    return s === 'not in run' || s === 'notinrun' ? null : s;
+  };
+
+  const summarizeRunMyTcsPull = (data) => {
+    const counts = { passed: 0, failed: 0, blocked: 0, retest: 0, untested: 0 };
+    (data.caseRows || []).forEach((r) => {
+      const s = rmtCaseStatus(r);
+      if (s && Object.prototype.hasOwnProperty.call(counts, s)) counts[s]++;
+    });
+    const rep = data.report || {};
+    return {
+      runStatus: data.state?.status || 'idle', batchCount: Object.keys(data.state?.cases || {}).length,
+      nowPassing: (rep.nowPassing || []).length, fixCount: (data.state?.fixes || []).length,
+      totalCases: (data.caseRows || []).length, ...counts,
+    };
+  };
+
+  const runMyTcsRowsToTestCases = (caseRows, pulled) => caseRows.map((row) => {
+    const s = rmtCaseStatus(row);
+    const upper = s ? s.toUpperCase() : null;
+    const extras = [row.bug && `Bug ${row.bug}`, row.cls && `Triage: ${row.cls}`, row.note].filter(Boolean).join(' · ');
+    return {
+      id: row.id || '', title: row.title || row.path || '(unknown spec)', tags: [row.cat, row.grp].filter(Boolean).join(', '),
+      notes: `Pulled from RunMyTCs · ${row.path || ''}${extras ? ` · ${extras}` : ''}`,
+      status: LEDGER_STATUSES.has(upper) ? upper : 'UNTESTED',
+      mapAction: row.id ? 'Map' : "Don't Map", syncStatus: 'Unsynced',
+      reason: s ? '' : (pulled.runId ? `Not in TestRail run ${pulled.runId}` : 'No TestRail run set on RunMyTCs'),
+    };
+  });
+
+  const RUNNER_LABEL = { cypress: 'Cypress Runner', jenkins: 'Jenkins Runner', runmytcs: 'RunMyTCs' };
+
   const handleViewRunnerInLedger = (runner) => {
-    const pulled = runner === 'cypress' ? cyPulled : jkPulled;
-    if (!pulled) { addLog(`Nothing pulled yet from ${runner === 'cypress' ? 'Cypress' : 'Jenkins'} Runner.`, 'error'); return; }
-    const rows = runner === 'cypress' ? cypressManifestToTestCases(pulled.manifestRows || [], pulled) : jenkinsManifestToTestCases(pulled.manifestRows || [], pulled);
+    const pulled = { cypress: cyPulled, jenkins: jkPulled, runmytcs: rmPulled }[runner];
+    if (!pulled) { addLog(`Nothing pulled yet from ${RUNNER_LABEL[runner]}.`, 'error'); return; }
+    const rows = runner === 'cypress' ? cypressManifestToTestCases(pulled.manifestRows || [], pulled)
+      : runner === 'runmytcs' ? runMyTcsRowsToTestCases(pulled.caseRows || [], pulled)
+      : jenkinsManifestToTestCases(pulled.manifestRows || [], pulled);
     const newCases = rows.map((tc, idx) => ({ ...tc, _uid: Date.now() + '_' + idx }));
     setTestCases(newCases);
     setLoadedFiles([]);
     setLoadedStateId(null);
-    setFileName(`Pulled from ${runner === 'cypress' ? 'Cypress Runner' : 'Jenkins Runner'}`);
-    addLog(`Loaded ${newCases.length} row${newCases.length === 1 ? '' : 's'} from the ${runner === 'cypress' ? 'Cypress' : 'Jenkins'} Runner Vault into the ledger.`, 'success');
+    setFileName(`Pulled from ${RUNNER_LABEL[runner]}`);
+    addLog(`Loaded ${newCases.length} row${newCases.length === 1 ? '' : 's'} from the ${RUNNER_LABEL[runner].replace(' Runner', '')} ${runner === 'runmytcs' ? 'Vault' : 'Runner Vault'} into the ledger.`, 'success');
+  };
+
+  // Same run the RunMyTCs page shows: the live/last run's TestRail run ID, else the run ID
+  // last entered in its settings. The case table is the page's own merged view.
+  const handlePullRunMyTcs = async () => {
+    setRmPulling(true);
+    try {
+      const [stateRes, defaultsRes, reportRes] = await Promise.all([
+        fetch('http://localhost:3000/api/runmytcs/state', { cache: 'no-store' }),
+        fetch('http://localhost:3000/api/runmytcs/defaults', { cache: 'no-store' }),
+        fetch('http://localhost:3000/api/runmytcs/report', { cache: 'no-store' }),
+      ]);
+      if (!stateRes.ok) throw new Error(`Server returned ${stateRes.status}`);
+      const state = await stateRes.json();
+      const defaults = defaultsRes.ok ? await defaultsRes.json() : {};
+      const report = reportRes.ok ? await reportRes.json() : {};
+      const runId = String((state && state.config && state.config.runId) || (defaults.last && defaults.last.runId) || '');
+      if (!runId) addLog('No TestRail run ID on RunMyTCs yet — only RunMyTCs marks will show a status.', 'warning');
+      const casesRes = await fetch(`http://localhost:3000/api/runmytcs/cases?runId=${encodeURIComponent(runId)}`, { cache: 'no-store' });
+      if (!casesRes.ok) throw new Error(`Case table returned ${casesRes.status}`);
+      const caseRows = await casesRes.json();
+      // Evidence (logs/screenshots) and per-case history stay on the RunMyTCs page; the vault keeps the verdicts.
+      const slimRows = (Array.isArray(caseRows) ? caseRows : []).map((r) => ({
+        id: r.id, title: r.title, path: r.path, cat: r.cat, grp: r.grp, commented: r.commented,
+        testrail: r.testrail, rmt: r.rmt, status: r.status, note: r.note, bug: r.bug, cls: r.cls, ref: r.ref, updatedAt: r.updatedAt, inRun: r.inRun,
+      }));
+      setRmPulled({ runId, state, report, caseRows: slimRows });
+      setRmPulledAt(Date.now());
+      addLog(`Pulled latest data from RunMyTCs${runId ? ` (TestRail run ${runId})` : ''}.`, 'success');
+    } catch (e) {
+      addLog(`Failed to pull RunMyTCs data: ${e.message}`, 'error');
+    } finally {
+      setRmPulling(false);
+    }
   };
 
   // Pulls both the runner's own run state AND the canonical test case
@@ -515,12 +598,13 @@ const SyncHub = () => {
 
   const handleSaveRunnerVault = async (runner) => {
     const isCy = runner === 'cypress';
-    const pulled = isCy ? cyPulled : jkPulled;
-    const name = (isCy ? cyVaultName : jkVaultName).trim();
-    const folder = isCy ? cyVaultFolder : jkVaultFolder;
-    if (!pulled) { addLog(`Nothing pulled yet from ${isCy ? 'Cypress' : 'Jenkins'} Runner to save.`, 'error'); return; }
+    const isRm = runner === 'runmytcs';
+    const pulled = isCy ? cyPulled : isRm ? rmPulled : jkPulled;
+    const name = (isCy ? cyVaultName : isRm ? rmVaultName : jkVaultName).trim();
+    const folder = isCy ? cyVaultFolder : isRm ? rmVaultFolder : jkVaultFolder;
+    if (!pulled) { addLog(`Nothing pulled yet from ${RUNNER_LABEL[runner]} to save.`, 'error'); return; }
     if (!name) { addLog('Give the snapshot a name before saving.', 'error'); return; }
-    const summary = isCy ? summarizeCypressPull(pulled) : summarizeJenkinsPull(pulled);
+    const summary = isCy ? summarizeCypressPull(pulled) : isRm ? summarizeRunMyTcsPull(pulled) : summarizeJenkinsPull(pulled);
     try {
       const res = await fetch('http://localhost:3000/api/runner-vault/save', {
         method: 'POST',
@@ -528,8 +612,8 @@ const SyncHub = () => {
         body: JSON.stringify({ runner, name, folder, snapshot: pulled, summary }),
       });
       if (!res.ok) throw new Error(`Server returned ${res.status}`);
-      addLog(`Saved "${name}" to the ${isCy ? 'Cypress' : 'Jenkins'} Runner Vault.`, 'success');
-      if (isCy) { setCyVaultName(''); setCyVaultFolder(''); } else { setJkVaultName(''); setJkVaultFolder(''); }
+      addLog(`Saved "${name}" to the ${isRm ? 'RunMyTCs Vault' : `${isCy ? 'Cypress' : 'Jenkins'} Runner Vault`}.`, 'success');
+      if (isCy) { setCyVaultName(''); setCyVaultFolder(''); } else if (isRm) { setRmVaultName(''); setRmVaultFolder(''); } else { setJkVaultName(''); setJkVaultFolder(''); }
       fetchRunnerVault(runner);
     } catch (e) {
       addLog(`Failed to save runner vault snapshot: ${e.message}`, 'error');
@@ -2778,6 +2862,37 @@ const SyncHub = () => {
             savedList={jkSavedVault}
             onDelete={(id) => handleDeleteRunnerVaultEntry('jenkins', id)}
             onViewInLedger={() => handleViewRunnerInLedger('jenkins')}
+          />
+
+          {/* RunMyTCs Vault — pull + optionally save a snapshot of RunMyTCs' run state and merged case verdicts */}
+          <RunnerVaultPanel
+            icon={Bot}
+            accent="#8b5cf6"
+            title="RunMyTCs Vault"
+            pulling={rmPulling}
+            pulled={rmPulled}
+            pulledAt={rmPulledAt}
+            computeSummary={summarizeRunMyTcsPull}
+            summaryFields={[
+              { key: 'runStatus', label: 'Run' },
+              { key: 'batchCount', label: 'In batch' },
+              { key: 'nowPassing', label: 'Now passing', color: '#10b981' },
+              { key: 'fixCount', label: 'Fixes' },
+              { key: 'passed', label: 'Passed', color: '#10b981' },
+              { key: 'failed', label: 'Failed', color: 'var(--accent-red)' },
+              { key: 'blocked', label: 'Blocked', color: '#f59e0b' },
+              { key: 'retest', label: 'Retest', color: '#f97316' },
+              { key: 'untested', label: 'Untested', color: '#6b7280' },
+            ]}
+            onPull={handlePullRunMyTcs}
+            name={rmVaultName}
+            onNameChange={setRmVaultName}
+            folder={rmVaultFolder}
+            onFolderChange={setRmVaultFolder}
+            onSave={() => handleSaveRunnerVault('runmytcs')}
+            savedList={rmSavedVault}
+            onDelete={(id) => handleDeleteRunnerVaultEntry('runmytcs', id)}
+            onViewInLedger={() => handleViewRunnerInLedger('runmytcs')}
           />
 
           {/* Sync Console Logs */}

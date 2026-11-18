@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  Radar, AlertTriangle, PlusCircle, CheckCircle2, History, FileX2, EyeOff, RefreshCw, Search, ChevronDown,
-  ChevronRight, Copy, Crosshair, PlayCircle, Download, CheckCheck, ExternalLink, FileCode2, ArrowRightLeft, Layers,
+  Radar, AlertTriangle, PlusCircle, CheckCircle2, History, FileX2, EyeOff, RefreshCw, Search, ChevronDown, ChevronRight, Copy, Crosshair, PlayCircle, Download, CheckCheck, ExternalLink, FileCode2, ArrowRightLeft, Layers, MoveRight, MessageSquareOff, MessageSquare, UserPlus, UserMinus,
 } from 'lucide-react';
 import { showConfirm } from '../../utils/Alerts';
 import { useToast } from '../../contexts/ToastContext';
@@ -28,6 +27,13 @@ const EVENT_META = {
   case_restored: { icon: CheckCircle2, label: 'Restored', color: 'var(--accent-green)' },
   file_untracked: { icon: FileX2, label: 'File removed from manifest', color: 'var(--text-muted)' },
   case_dismissed: { icon: EyeOff, label: 'Dismissed', color: 'var(--text-muted)' },
+  case_moved: { icon: MoveRight, label: 'Moved', color: 'var(--accent-orange)' },
+  case_commented: { icon: MessageSquareOff, label: 'Commented out', color: 'var(--accent-yellow)' },
+  case_uncommented: { icon: MessageSquare, label: 'Uncommented', color: 'var(--accent-green)' },
+  cases_owned: { icon: UserPlus, label: 'Owned', color: 'var(--accent-purple)' },
+  cases_disowned: { icon: UserMinus, label: 'Disowned', color: 'var(--text-muted)' },
+  case_retired: { icon: EyeOff, label: 'Retired', color: 'var(--text-muted)' },
+  case_unretired: { icon: CheckCircle2, label: 'Un-retired', color: 'var(--accent-green)' },
 };
 
 const STATUS_LABEL = { passed: 'Passed', failed: 'Failed', blocked: 'Blocked', retest: 'Retest', untested: 'Not run yet' };
@@ -271,7 +277,9 @@ const CaseTrackerPanel = ({
         <div className="cyr-trk-row-body">
           <div className="cyr-trk-row-title">
             <span className="cyr-trk-event" style={{ color: meta.color }}>{meta.label}</span>
-            {h.type === 'file_untracked'
+            {h.caseIds
+              ? <span className="cyr-trk-title-text">{h.count} test ID{h.count === 1 ? '' : 's'}: {h.caseIds.slice(0, 10).join(', ')}{h.caseIds.length > 10 ? '…' : ''}</span>
+              : h.type === 'file_untracked'
               ? <span className="cyr-trk-title-text">{h.count} test ID{h.count === 1 ? '' : 's'}</span>
               : <>{renderCaseId(h.caseId)}<span className="cyr-trk-title-text" title={h.title}>{h.title}</span></>}
           </div>
@@ -280,7 +288,8 @@ const CaseTrackerPanel = ({
             {h.reason && <span className={`cyr-trk-pill reason-${h.reason}`}>{MISSING_REASON_LABEL[h.reason] || h.reason}</span>}
             {h.cat && <span className="cyr-trk-pill cat">{CAT_LABELS[normCat(h.cat)] || h.cat}</span>}
           </div>
-          {h.path && <div className="cyr-trk-path" title={h.path}><FileCode2 size={11} /> {h.path}</div>}
+          {h.type === 'case_moved' && h.from && <div className="cyr-trk-path" title={h.from}><FileCode2 size={11} /> from {h.from}</div>}
+          {h.path && <div className="cyr-trk-path" title={h.path}><FileCode2 size={11} /> {h.type === 'case_moved' ? 'to ' : ''}{h.path}</div>}
         </div>
       </li>
     );

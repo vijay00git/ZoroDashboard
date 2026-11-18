@@ -58,9 +58,19 @@ cd client && npm install
 
 ## Architecture
 
-### Backend (`server.js`)
+### Backend (`server.js` + `routes/`)
 
-Single Express.js file — all API routes are defined here. No separate router files. Uses CommonJS (`require`). Key patterns:
+Express.js, CommonJS (`require`). `server.js` holds only the shared setup (middleware, `data/` directories, `writeFileAtomic`/`writeJsonAtomic`, multer), the SPA fallback and `listen`. Each feature area lives in `routes/<area>.js` as `module.exports = function register(app, ctx)`:
+
+- `ctx` carries the shared setup plus the helpers other areas export (each module `return`s the names others use). Modules that others depend on — `jenkinsRunner`, `testrail`, `helperTools`, `testRuns` — are registered first; the list is in `server.js`.
+- No two areas share a route path prefix, so registration order doesn't affect routing. Keep it that way when adding routes.
+- In a route module use `ROOT` (the app folder, from `ctx`) instead of `__dirname`, and `require('../x')` for files at the app root.
+- A module-level `let` must only be reassigned inside its own module — export a function instead (e.g. `tcdResetConfigCaches()` in `jenkinsRunner.js`, used by the restore route).
+- **Case mode (since 2026-11-17)**: when `~/.claude/ic-tokyo-case-manifest.json` (`TCD_CASE_MANIFEST_PATH`) exists at boot, Jenkins Runner, Cypress Runner and RunMyTCs work from owned TestRail case IDs instead of the spec manifest. `tcdBuildCaseData()` scans every spec under `cypress/e2e` (mtime-cached) and builds `/api/testcases/data` rows for owned cases only, wherever they currently live. Every run is narrowed with `grepTags="@C… @setup"`: locally via `envExtra` (plus `grepOmitFiltered`), on Jenkins via a `GREP_TAGS` build parameter, which the jobs must define. Queue items may carry `cases` to narrow further. Endpoints: `/api/testcases/case-manifest` (+ `/add`, `/remove`, `/update`, `/download`), `/api/testcases/jenkins-param-check`. Case tracking uses its own `case-tracking-owned*.json` files and logs `case_moved`. Delete the case manifest and restart to go back to spec mode.
+- **Test-ID view**: `routes/caseView.js` (registered after `cypress`) serves `/api/cases/overview` (one record per owned case: specs, tracker state, local results and last 10 local runs, last Jenkins job, manual marks, tags, bugs, notes, setup warnings) and `/api/cases/history/:id` (that case's full timeline). Both pages render it with `testcase-dashboard/CaseTable.jsx` + `CaseDetailDrawer.jsx`, behind a Test IDs / Specs toggle. A run of cases always adds the spec's setup-like tags (`tcdSetupTagsForSpec`) and the manifest `deps`. Tracker changes are logged with dates, shown as a page banner until "Mark reviewed" (no Telegram, by choice). Also in `caseView.js`: `POST /api/cases/testrail-sync` stores every owned case's status in a TestRail run (`data/testcase-dashboard/testrail-sync.json`, newest first per case; re-syncing a run replaces it) and powers the TestRail column, filters and per-case run history. `/api/cases/locate/:id` (git log -S --all + git grep) and `/api/cases/retire` handle missing IDs; retired cases stay in the manifest but are hidden, not run and not tracked. `/api/cases/run-preview` shows each spec's grepTags and the it() blocks they select; the table always previews before queueing. Saved filter views live in localStorage (`<storageKey>-views`).
+- Biggest module: `routes/jenkinsRunner.js` (manifest, case tracking, TestRail/Jenkins config, job queue, integrations, Telegram) — a candidate for a further split.
+
+Key patterns:
 
 - **File-based storage**: All persistence is raw `fs.readFileSync`/`fs.writeFileSync` on JSON/CSV/Markdown files in `data/`. No ORM or database.
 - **AI proxy**: `/api/ai/chat` and `/api/ai/models` proxy requests to either Gemini (`generativelanguage.googleapis.com`) or Groq (`api.groq.com`) depending on the `provider` field in the request body. API keys come from the client — the server never stores them.

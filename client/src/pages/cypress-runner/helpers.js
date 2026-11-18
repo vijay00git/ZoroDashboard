@@ -10,13 +10,22 @@ export const MANUAL_STATUS_TO_ID = { passed: 1, blocked: 2, retest: 4, failed: 5
 // Per-path variant of latestCaseResultsForPaths, but keeping the *overall*
 // verdict (h.status) of that file's most recent run instead of its
 // case-level results — used by localRunTally's fallback below.
+// A run started with an absolute spec path is stored under that path; key every
+// run by its cypress/e2e/... form so it still matches the manifest row.
+export function specKey(p) {
+  if (!p) return p;
+  const i = p.indexOf('cypress/e2e/');
+  return i > 0 ? p.slice(i) : p;
+}
+
 export function latestRunStatusByPath(history) {
   const seenPaths = new Set();
   const byPath = {};
   (history || []).forEach((h) => {
-    if (!h.specPath || seenPaths.has(h.specPath)) return;
-    seenPaths.add(h.specPath);
-    byPath[h.specPath] = h.status;
+    const k = specKey(h.specPath);
+    if (!k || seenPaths.has(k)) return;
+    seenPaths.add(k);
+    byPath[k] = h.status;
   });
   return byPath;
 }
@@ -127,17 +136,16 @@ export function cyrStatusClass(status) {
   }
 }
 
-// history is newest-first (unshift order), so the first entry seen for a
-// given spec path is that file's most recent run — later (older) entries
-// for the same path are skipped rather than merged over it.
+// history is newest-first (unshift order): each case takes its result from the
+// newest run of its file that ran it, so a tag-filtered rerun doesn't hide
+// the file's other cases.
 export function latestCaseResultsForPaths(history, paths) {
   const pathSet = new Set(paths);
-  const seenPaths = new Set();
   const merged = {};
   (history || []).forEach((h) => {
-    if (!h.specPath || !pathSet.has(h.specPath) || seenPaths.has(h.specPath)) return;
-    seenPaths.add(h.specPath);
-    if (h.caseResults) Object.assign(merged, h.caseResults);
+    const k = specKey(h.specPath);
+    if (!k || !pathSet.has(k) || !h.caseResults) return;
+    Object.keys(h.caseResults).forEach((cid) => { if (!(cid in merged)) merged[cid] = h.caseResults[cid]; });
   });
   return merged;
 }
@@ -152,8 +160,9 @@ export function activeManualStatus(manualStatus, rows, history) {
   if (!manualStatus) return manualStatus;
   const lastRunAtByPath = {};
   (history || []).forEach((h) => {
-    if (!h.specPath || h.specPath in lastRunAtByPath) return;
-    lastRunAtByPath[h.specPath] = h.completedAt || h.startedAt || 0;
+    const k = specKey(h.specPath);
+    if (!k || k in lastRunAtByPath) return;
+    lastRunAtByPath[k] = h.completedAt || h.startedAt || 0;
   });
   const out = { ...manualStatus };
   (rows || []).forEach((r) => {
@@ -186,13 +195,18 @@ export function mergeManualIntoResultMap(resultMap, rows, manualStatus) {
 // file card by its OWN most recent run, rather than merging many files'
 // results into one combined map (that merge is only right for the batch
 // sync-to-TestRail button, not for per-file display).
+// Each case's result comes from the newest run of its file that actually ran it.
+// Taking only the file's newest run broke on tag-filtered (grepTags) runs: every
+// case the filter skipped fell back to that run's overall status.
 export function latestCaseResultsByPath(history) {
-  const seenPaths = new Set();
   const byPath = {};
-  (history || []).forEach((h) => {
-    if (!h.specPath || seenPaths.has(h.specPath)) return;
-    seenPaths.add(h.specPath);
-    if (h.caseResults) byPath[h.specPath] = h.caseResults;
+  (history || []).forEach((h) => {                       // history is newest-first
+    const k = specKey(h.specPath);
+    if (!k || !h.caseResults) return;
+    const merged = byPath[k] || (byPath[k] = {});
+    Object.keys(h.caseResults).forEach((cid) => {
+      if (!(cid in merged)) merged[cid] = h.caseResults[cid];
+    });
   });
   return byPath;
 }

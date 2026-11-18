@@ -30,6 +30,7 @@ const CSVOrganizer = lazy(() => import('./pages/CSVOrganizer'));
 const SSBucket = lazy(() => import('./pages/SSBucket'));
 const TestCaseDashboard = lazy(() => import('./pages/TestCaseDashboard'));
 const CypressRunner = lazy(() => import('./pages/CypressRunner'));
+const RunMyTCs = lazy(() => import('./pages/RunMyTCs'));
 const AutomationFinder = lazy(() => import('./pages/AutomationFinder'));
 const HelperTools = lazy(() => import('./pages/HelperTools'));
 const TestRuns = lazy(() => import('./pages/TestRuns'));
@@ -51,6 +52,7 @@ const PAGE_TITLES = {
   '/ss-bucket':      'SS Bucket',
   '/testcase-dashboard': 'Jenkins Runner',
   '/cypress-runner': 'Cypress Runner',
+  '/runmytcs':       'RunMyTCs',
   '/automation-finder': 'Automation Finder',
   '/test-runs':      'Test Runs',
   '/filter-rail':    'FilterRail',
@@ -187,6 +189,7 @@ function App() {
                 <Route path="/ss-bucket"    element={<SSBucket />} />
                 <Route path="/testcase-dashboard" element={<TestCaseDashboard />} />
                 <Route path="/cypress-runner" element={<CypressRunner />} />
+                <Route path="/runmytcs" element={<RunMyTCs />} />
                 <Route path="/automation-finder" element={<AutomationFinder />} />
                 <Route path="/test-runs"     element={<TestRuns />} />
                 <Route path="/filter-rail"   element={<FilterRail />} />

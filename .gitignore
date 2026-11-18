@@ -37,3 +37,12 @@ Thumbs.db
 # optimized, actually-used copies live under client/src/assets/illustrations/
 # and client/src/assets/lottie/)
 /sources/
+
+# Personal run data / tool output (case ownership, RunMyTCs state, EOD reports)
+data/ownership/
+data/runmytcs/
+data/eod-reports/
+.playwright-mcp/
+client/log.html
+client/output.xml
+client/report.html

@@ -6,10 +6,11 @@ import { sanitizeHtml } from '../utils/sanitizeHtml';
 import {
   FileText, Sparkles, Copy, Download, Trash2, Plus,
   Eye, Edit3, CheckCircle2, Check, Mail, DatabaseBackup, X, Send,
-  ChevronDown, MoreHorizontal, ArrowRight, Save, History, AlertTriangle, Wand2, CalendarDays
+  ChevronDown, MoreHorizontal, ArrowRight, Save, History, AlertTriangle, Wand2, CalendarDays, Bot, PenLine
 } from 'lucide-react';
 import { showAlert, showConfirm } from '../utils/Alerts';
 import { getAIConfig, noKeyMessage } from '../utils/ai';
+import ClaudeEodPanel from './status/ClaudeEodPanel';
 import './Status.css';
 import statusHero from '../assets/hero-banners/status-hero.webp';
 import statusHeroLight from '../assets/hero-banners/status-hero-light.webp';
@@ -62,6 +63,10 @@ const Status = () => {
       if (i >= words.length) clearInterval(timer);
     }, intervalMs);
   };
+
+  // Mode: 'manual' = template + notes + AI (the original flow), 'claude' = Claude EOD report
+  const [mode, setMode] = useState(() => localStorage.getItem('tr-status-mode') || 'manual');
+  useEffect(() => { localStorage.setItem('tr-status-mode', mode); }, [mode]);
 
   // Past generated reports — quick lookback without regenerating
   const [reportHistory, setReportHistory] = useState(() => {
@@ -497,8 +502,17 @@ const Status = () => {
         <p style={{ color: 'var(--text-secondary)', fontSize: '0.95rem' }}>Auto-compile your tasks, hours, and health data into a professional standup report.</p>
       </div>
 
+      <div className="dsw-mode-switch" role="tablist" aria-label="Report mode">
+        <button type="button" role="tab" aria-selected={mode === 'manual'} className={`dsw-mode-btn ${mode === 'manual' ? 'is-active' : ''}`} onClick={() => setMode('manual')}>
+          <PenLine size={15} /> Manual (notes + AI)
+        </button>
+        <button type="button" role="tab" aria-selected={mode === 'claude'} className={`dsw-mode-btn ${mode === 'claude' ? 'is-active' : ''}`} onClick={() => setMode('claude')}>
+          <Bot size={15} /> Claude EOD report
+        </button>
+      </div>
+
       {/* Workflow Stepper */}
-      <div className="dsw-stepper">
+      {mode === 'manual' && <div className="dsw-stepper">
         {[1, 2, 3, 4].map((id, idx) => {
           const meta = STEP_META[id];
           const isDone = stepStatus[id] === 'done';
@@ -521,12 +535,21 @@ const Status = () => {
             </React.Fragment>
           );
         })}
-      </div>
+      </div>}
 
       <div className="dsw-grid">
 
         {/* Left Column: Config & Inputs */}
         <div className="dsw-left">
+          {mode === 'claude' ? (
+            <ClaudeEodPanel
+              onReport={(text, date) => {
+                setReport(text);
+                setViewMode('preview');
+                pushReportToHistory(text, `Claude EOD · ${date}`);
+              }}
+            />
+          ) : (<>
 
           {/* Step 1: Template Configuration */}
           <div className={`glass-panel dsw-card ${openStep === 1 ? 'is-open' : ''}`} style={{ '--step-color': STEP_META[1].color }}>
@@ -732,6 +755,7 @@ const Status = () => {
               </p>
             )}
           </div>
+          </>)}
         </div>
 
         {/* Right Column: Output / Preview — Step 4 */}

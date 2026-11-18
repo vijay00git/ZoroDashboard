@@ -385,3 +385,39 @@ export function buildReportText(jobs, headerLabel) {
   jobs.forEach((h) => { lines.push(buildJobReportBlock(h)); lines.push(''); });
   return { text: lines.join('\n').trim(), count: jobs.length };
 }
+
+// Case-mode run items: one per spec, each narrowed to the given cases (a case
+// pinned to specific specs only runs there). The server adds @setup tags and deps.
+export function caseRunItems(cases) {
+  const byPath = new Map();
+  cases.forEach((c) => {
+    const paths = c.pinned && c.pinned.length ? c.pinned.filter((p) => c.livePaths.includes(p)) : c.livePaths;
+    paths.forEach((p) => {
+      if (!byPath.has(p)) byPath.set(p, { path: p, cat: normCat((c.pathCats || {})[p] || c.cat || ''), cases: [] });
+      const item = byPath.get(p);
+      if (!item.cases.includes(c.id)) item.cases.push(c.id);
+    });
+  });
+  return Array.from(byPath.values());
+}
+
+// Version tags implied by where a spec lives: e2e_device/4.2_5.0 → 4.0 + 5.0,
+// e2e_device/5.0 → 5.0. Derived on the fly (not stored), so they follow a case
+// when it moves.
+export function versionTagsForPath(p) {
+  const s = String(p || '');
+  if (s.includes('/e2e_device/4.2_5.0/')) return ['4.0', '5.0'];
+  if (s.includes('/e2e_device/5.0/')) return ['5.0'];
+  return [];
+}
+
+// The tag store merged with folder-derived version tags, keyed by case ID.
+export function mergeVersionTags(tags, rows) {
+  const out = { ...(tags || {}) };
+  (rows || []).forEach((r) => {
+    const v = [r.path, ...(r.otherPaths || [])].flatMap(versionTagsForPath);
+    if (!v.length) return;
+    out[r.id] = Array.from(new Set([...(out[r.id] || []), ...v]));
+  });
+  return out;
+}

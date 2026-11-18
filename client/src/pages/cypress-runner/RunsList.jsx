@@ -47,7 +47,7 @@ const HistoryItem = ({ h, previous, onViewLog, onViewScreenshots, onSendTelegram
       />
     )}
     <RunStatusPill status={h.status} />
-    <span className="cyr-history-spec">{h.specPath || 'all specs'}</span>
+    <span className="cyr-history-spec">{h.label && <span className="cyr-run-label" title="Started by RunMyTCs to check a fix — not posted to TestRail">{h.label}</span>}{h.specPath || 'all specs'}</span>
     {h.category && <span className="cyr-badge">{h.category}</span>}
     {h.browser && <span className="cyr-badge">{h.browser}</span>}
     <span className="cyr-badge">{h.headed ? 'headed' : 'headless'}</span>
