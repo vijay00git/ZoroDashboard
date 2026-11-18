@@ -3,7 +3,7 @@ import { Play, Copy, Download, X, RefreshCw, History, CheckCheck, ExternalLink, 
 import CaseDetailDrawer from './CaseDetailDrawer';
 import RunPreviewModal from './RunPreviewModal';
 import { showPrompt, showConfirm } from '../../utils/Alerts';
-import { testRailCaseUrl, copyText, normCat, CAT_ORDER, CAT_LABELS, versionTagsForPath, caseRunItems } from './helpers';
+import { testRailCaseUrl, copyText, normCat, CAT_ORDER, CAT_LABELS, versionTagsForPath, caseRunItems, CASE_EVENT_STYLE, CAT_COLOR } from './helpers';
 import './CaseTable.css';
 
 const short = (p) => String(p || '').replace('cypress/e2e/functional_tests/Regression/', '');
@@ -15,10 +15,8 @@ const ago = (ms, now) => {
   return `${Math.round(d)}d ago`;
 };
 const STATUSES = ['passed', 'failed', 'blocked', 'retest', 'untested', 'none'];
-const EVENT_TEXT = {
-  case_moved: 'moved', case_missing: 'removed', case_added: 'added', case_restored: 'restored',
-  case_commented: 'commented out', case_uncommented: 'uncommented',
-};
+const EVENT_TEXT = Object.fromEntries(Object.entries(CASE_EVENT_STYLE).map(([k, v]) => [k, v.short]));
+const evColor = (t) => (CASE_EVENT_STYLE[t] || {}).color || 'var(--text-secondary)';
 // TestRail status label → our status chip class.
 const trClass = (s) => {
   const v = String(s || '').toLowerCase();
@@ -282,7 +280,9 @@ const CaseTable = ({ storageKey, statusOf, statusSource, testrailUrl, onRunCases
           <div className="ct-alerts-head">
             <strong>{alerts.length} test ID change{alerts.length === 1 ? '' : 's'} since you last reviewed</strong>
             <span className="ct-muted">
-              {Object.entries(alerts.reduce((m, a) => { m[a.type] = (m[a.type] || 0) + 1; return m; }, {})).map(([t, n]) => `${n} ${EVENT_TEXT[t] || t}`).join(' · ')}
+              {Object.entries(alerts.reduce((m, a) => { m[a.type] = (m[a.type] || 0) + 1; return m; }, {})).map(([t, n]) => (
+                <span key={t} className="ct-ev-chip" style={{ color: evColor(t), marginRight: 4 }}>{n} {EVENT_TEXT[t] || t}</span>
+              ))}
             </span>
             <span style={{ flex: 1 }} />
             <button type="button" className="tcd-btn" onClick={() => setAlertsOpen((v) => !v)}>{alertsOpen ? 'Hide' : 'Show'}</button>
@@ -293,7 +293,7 @@ const CaseTable = ({ storageKey, statusOf, statusSource, testrailUrl, onRunCases
             <ul>
               {alerts.map((a) => (
                 <li key={a.id}>
-                  <code>{a.caseId}</code> {EVENT_TEXT[a.type] || a.type}
+                  <code>{a.caseId}</code> <span className="ct-ev" style={{ color: evColor(a.type) }}>{EVENT_TEXT[a.type] || a.type}</span>
                   {a.type === 'case_moved' ? <> — <code>{short(a.from)}</code> → <code>{short(a.path)}</code></> : <> — <code>{short(a.path)}</code></>}
                   {a.reason ? ` (${a.reason})` : ''} <span className="ct-muted">· {new Date(a.detectedAt).toLocaleString()}</span>
                 </li>
@@ -306,12 +306,12 @@ const CaseTable = ({ storageKey, statusOf, statusSource, testrailUrl, onRunCases
       <div className="ct-stats">
         <span className={`ct-stat${!filters.status && !filters.flags.length ? ' active' : ''}`} onClick={() => { set('status', ''); set('flags', []); }}>Owned <b>{stats.total}</b></span>
         {['passed', 'failed', 'blocked', 'retest', 'untested', 'none'].map((s) => (
-          <span key={s} className={`ct-stat${s === 'passed' ? ' pass' : s === 'failed' ? ' fail' : ''}${filters.status === s ? ' active' : ''}`} onClick={() => set('status', filters.status === s ? '' : s)}>
+          <span key={s} className={`ct-stat s-${s}${filters.status === s ? ' active' : ''}`} onClick={() => set('status', filters.status === s ? '' : s)}>
             {s === 'none' ? 'No status' : s[0].toUpperCase() + s.slice(1)} <b>{stats[s] || 0}</b>
           </span>
         ))}
         {['moved', 'missing', 'flaky', 'never', 'shared', 'multi'].map((k) => (
-          <span key={k} className={`ct-stat warn${filters.flags.includes(k) ? ' active' : ''}`} onClick={() => toggleIn('flags', k)}>
+          <span key={k} className={`ct-stat f-${k}${filters.flags.includes(k) ? ' active' : ''}`} onClick={() => toggleIn('flags', k)}>
             {FLAGS.find(([x]) => x === k)[1]} <b>{stats[k]}</b>
           </span>
         ))}
@@ -397,7 +397,7 @@ const CaseTable = ({ storageKey, statusOf, statusSource, testrailUrl, onRunCases
       </div>
       <div className="ct-chips">
         {CAT_ORDER.map((cat) => (
-          <span key={cat} className={`ct-chip${filters.cats.includes(cat) ? ' on' : ''}`} onClick={() => toggleIn('cats', cat)}>{CAT_LABELS[cat]}</span>
+          <span key={cat} className={`ct-chip${filters.cats.includes(cat) ? ' on' : ''}`} style={filters.cats.includes(cat) ? undefined : { color: CAT_COLOR[cat], borderColor: CAT_COLOR[cat] }} onClick={() => toggleIn('cats', cat)}>{CAT_LABELS[cat]}</span>
         ))}
         <span className="ct-muted" style={{ fontSize: '0.74rem' }}>|</span>
         {FLAGS.map(([k, label]) => (
@@ -444,7 +444,7 @@ const CaseTable = ({ storageKey, statusOf, statusSource, testrailUrl, onRunCases
           </thead>
           <tbody>
             {rowsWithHeaders.map((c) => (c.header !== undefined ? (
-              <tr key={`h-${c.header}`} className="ct-group-row"><td colSpan={9}>{c.header} <span className="ct-muted">({c.count})</span></td></tr>
+              <tr key={`h-${c.header}`} className="ct-group-row"><td colSpan={9}>{c.header}<span className="ct-count">{c.count}</span></td></tr>
             ) : (
               <tr key={c.id} className={`ct-row${selected.has(c.id) ? ' sel' : ''}`} onClick={() => setDetailId(c.id)}>
                 <td onClick={(e) => e.stopPropagation()}>
@@ -457,7 +457,7 @@ const CaseTable = ({ storageKey, statusOf, statusSource, testrailUrl, onRunCases
                       <ExternalLink size={11} />
                     </a>
                   )}
-                  <div className="ct-sub">{c.cat || '—'}</div>
+                  <div><span className="ct-cat" style={{ color: CAT_COLOR[normCat(c.cat || '')] || 'var(--text-muted)' }}>{c.cat || '—'}</span></div>
                 </td>
                 <td className="ct-title">
                   {c.title || <span className="ct-muted">(not found in any spec)</span>}

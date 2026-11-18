@@ -2,10 +2,11 @@ import { useCallback, useEffect, useState } from 'react';
 import { X, ExternalLink, Play, Copy, Search, Trash2, Archive, ArchiveRestore, Bug } from 'lucide-react';
 import { showConfirm, showPrompt } from '../../utils/Alerts';
 import ModalPortal from './ModalPortal';
-import { testRailCaseUrl, copyText } from './helpers';
+import { testRailCaseUrl, copyText, CASE_EVENT_STYLE } from './helpers';
 
 const short = (p) => String(p || '').replace('cypress/e2e/functional_tests/Regression/', '');
 const fmt = (ms) => (ms ? new Date(ms).toLocaleString() : '—');
+const KIND_COLOR = { tracker: 'var(--accent-orange)', local: 'var(--accent-cyan)', jenkins: 'var(--accent-purple)', manual: 'var(--accent-yellow)', bug: 'var(--accent-red)', manifest: 'var(--accent-green)' };
 const KIND_LABEL = { tracker: 'Tracker', local: 'Local run', jenkins: 'Jenkins', manual: 'Manual mark', bug: 'Bug link', manifest: 'Manifest' };
 const TRACKER_LABEL = {
   case_added: 'Found in spec', case_missing: 'Removed from codebase', case_restored: 'Back in codebase',
@@ -218,11 +219,11 @@ const CaseDetailDrawer = ({ c, status, testrailUrl, onClose, onRun, onChanged, o
             {!timeline && <span className="ct-muted">Loading…</span>}
             {timeline && timeline.length === 0 && <span className="ct-muted">Nothing recorded yet.</span>}
             {timeline && timeline.map((t, i) => (
-              <div key={i} className="ct-tl-row">
+              <div key={i} className="ct-tl-row" style={{ '--tl-color': t.kind === 'tracker' ? ((CASE_EVENT_STYLE[t.type] || {}).color || KIND_COLOR.tracker) : KIND_COLOR[t.kind] }}>
                 <span className="when">{fmt(t.at)}</span>
                 <span className="kind">{KIND_LABEL[t.kind] || t.kind}</span>
                 <span>
-                  {t.kind === 'tracker' ? (TRACKER_LABEL[t.type] || t.type) : <span className={`ct-status ${t.type}`}>{t.type}</span>}
+                  {t.kind === 'tracker' ? <span className="ct-ev" style={{ color: (CASE_EVENT_STYLE[t.type] || {}).color }}>{(CASE_EVENT_STYLE[t.type] || {}).label || TRACKER_LABEL[t.type] || t.type}</span> : <span className={`ct-status ${t.type}`}>{t.type}</span>}
                   {t.kind === 'tracker' && t.type === 'case_moved' && <> — <code>{short(t.from)}</code> → <code>{short(t.path)}</code></>}
                   {t.kind === 'tracker' && t.type !== 'case_moved' && t.path && <> — <code>{short(t.path)}</code></>}
                   {t.reason && <> ({t.reason})</>}

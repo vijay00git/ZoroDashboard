@@ -20,7 +20,16 @@ module.exports = function register(app, ctx) {
 
     const AF_SHEET_URL = process.env.AUTOMATION_SHEET_URL
         || 'https://docs.google.com/spreadsheets/d/1EhoPw41bb1p2Tk47g8UD8fvEtYnX7TcZaa2pJXdjIt4/edit?usp=sharing';
-    const AF_REFERENCE_RUN_ID = Number(process.env.AUTOMATION_REFERENCE_RUN_ID) || 8095;
+    // The TestRail run synced against is chosen on the page and saved in
+    // settings.json (env var / 8095 is only the first-run default).
+    const AF_SETTINGS_PATH = path.join(AF_DIR, 'settings.json');
+    const AF_DEFAULT_RUN_ID = Number(process.env.AUTOMATION_REFERENCE_RUN_ID) || 8095;
+    function afLoadSettings() {
+        try { return JSON.parse(fs.readFileSync(AF_SETTINGS_PATH, 'utf8')); } catch (e) { return {}; }
+    }
+    function afReferenceRunId() {
+        return Number(afLoadSettings().referenceRunId) || AF_DEFAULT_RUN_ID;
+    }
     const AF_SHEET_SCAN_SCRIPT = path.join(ROOT, 'scripts', 'automation_sheet_scan.py');
     const AF_COVERAGE_PATH = path.join(AF_DIR, 'coverage.json');
     const AF_PROGRESS_PATH = path.join(AF_DIR, 'sync-progress.json');
@@ -246,8 +255,9 @@ module.exports = function register(app, ctx) {
 
             const cases = await afFetchAllCases(projectId, suiteId, (n) => afSetProgress({ done: n }));
 
-            afSetProgress({ phase: `Fetching reference run ${AF_REFERENCE_RUN_ID}`, total: cases.length, done: 0 });
-            const { byCase: runByCase } = await afFetchRunTests(AF_REFERENCE_RUN_ID, (done, total) => afSetProgress({ done, total }));
+            const refRunId = afReferenceRunId();
+            afSetProgress({ phase: `Fetching reference run ${refRunId}`, total: cases.length, done: 0 });
+            const { byCase: runByCase } = await afFetchRunTests(refRunId, (done, total) => afSetProgress({ done, total }));
 
             afSetProgress({ phase: 'Scanning ic-tokyo codebase', total: 0, done: 0 });
             const codebaseByCase = afScanCodebase();
@@ -368,8 +378,8 @@ module.exports = function register(app, ctx) {
             writeJsonAtomic(AF_COVERAGE_PATH, {
                 generatedAt: new Date().toISOString(),
                 testrailUrl: tcdLoadTrConfig().url,
-                referenceRunId: AF_REFERENCE_RUN_ID,
-                referenceRunName: (await tcdTrGet(`/index.php?/api/v2/get_run/${AF_REFERENCE_RUN_ID}`).catch(() => null) || {}).name || null,
+                referenceRunId: refRunId,
+                referenceRunName: (await tcdTrGet(`/index.php?/api/v2/get_run/${refRunId}`).catch(() => null) || {}).name || null,
                 sheetUrl: AF_SHEET_URL,
                 sheetScannedTabs: sheetResult.scannedTabs,
                 sheetSkippedTabs: sheetResult.skippedTabs,
@@ -384,8 +394,30 @@ module.exports = function register(app, ctx) {
         }
     }
 
-    app.post('/api/automation-finder/sync', (req, res) => {
+    app.get('/api/automation-finder/settings', (req, res) => {
+        res.set('Cache-Control', 'no-store');
+        res.json({ referenceRunId: afReferenceRunId(), defaultRunId: AF_DEFAULT_RUN_ID });
+    });
+
+    // Saves the reference run (checked against TestRail first). A sync can
+    // also pass { runId } to switch and sync in one step.
+    async function afSetReferenceRun(runId) {
+        const id = Number(String(runId || '').replace(/\D/g, ''));
+        if (!id) throw new Error('Enter a numeric TestRail run ID');
+        const run = await tcdTrGet(`/index.php?/api/v2/get_run/${id}`).catch(() => null);
+        if (!run || !run.id) throw new Error(`TestRail run ${id} not found`);
+        writeJsonAtomic(AF_SETTINGS_PATH, { ...afLoadSettings(), referenceRunId: id, referenceRunName: run.name || null, savedAt: new Date().toISOString() });
+        return { referenceRunId: id, referenceRunName: run.name || null };
+    }
+    app.post('/api/automation-finder/settings', async (req, res) => {
+        try { res.json(await afSetReferenceRun((req.body || {}).referenceRunId)); } catch (e) { res.status(400).json({ error: e.message }); }
+    });
+
+    app.post('/api/automation-finder/sync', async (req, res) => {
         if (afProgress.running) return res.status(409).json({ error: 'A sync is already running' });
+        if (req.body && req.body.runId) {
+            try { await afSetReferenceRun(req.body.runId); } catch (e) { return res.status(400).json({ error: e.message }); }
+        }
         afRunSync(); // fire-and-forget — client polls /progress
         res.status(202).json({ started: true });
     });

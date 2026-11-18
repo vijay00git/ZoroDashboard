@@ -26,6 +26,7 @@ import QueueProgress from './cypress-runner/QueueProgress';
 import CompareRunsModal from './cypress-runner/CompareRunsModal';
 import FileHistoryModal from './cypress-runner/FileHistoryModal';
 import CaseTrackerPanel from './cypress-runner/CaseTrackerPanel';
+import CaseTrackingHistoryModal from './testcase-dashboard/CaseTrackingHistoryModal';
 import {
   latestCaseResultsForPaths, latestCaseResultsByPath, latestRunStatusByPath,
   localCaseStatus, localRunTally, buildCyrReportText, buildCyrDateReportText, mergeManualIntoResultMap, activeManualStatus,
@@ -71,6 +72,7 @@ const CypressRunner = () => {
   const [tagModal, setTagModal] = useState(null); // { caseId, caseTitle }
   const [manifestModalOpen, setManifestModalOpen] = useState(false);
   const [trackerTab, setTrackerTab] = useState('missing');
+  const [historyOpen, setHistoryOpen] = useState(false);
   const [activeCats, setActiveCats] = useState({ OFFLINE: true, ONLINE: true, E2E: true });
   const [issueFilter, setIssueFilter] = useState(null);
   const [searchTerm, setSearchTerm] = useState(() => localStorage.getItem('cyr_search_term') || '');
@@ -1121,6 +1123,8 @@ const CypressRunner = () => {
 
       <StatsBar data={manifestData} activeCats={activeCats} onToggleCat={toggleCat} issueFilter={issueFilter} onToggleIssue={toggleIssue} statusCounts={statusCounts} flakyCount={flakySpecCaseCount} />
 
+      {/* Case mode uses one tracker: the Test IDs banner + Test ID history window. */}
+      {manifestData.mode !== 'cases' && (
       <div ref={trackerRef}>
         <CaseTrackerPanel
           generatedAt={manifestData.generatedAt}
@@ -1136,6 +1140,7 @@ const CypressRunner = () => {
           onQueueFile={(path, cat) => enqueuePaths([{ path, cat: cat ? normCat(cat) : null }])}
         />
       </div>
+      )}
 
       {manifestData.mode === 'cases' && manifestData.unresolvedCases && manifestData.unresolvedCases.length > 0 && (
         <div className="tcd-banner">
@@ -1225,7 +1230,7 @@ const CypressRunner = () => {
                 type="button"
                 className={`cyr-btn small${manifestData.missingCases && manifestData.missingCases.length > 0 ? ' warn' : ''}`}
                 title="Test IDs remembered from the manifest's spec files, and any that have gone missing from the codebase"
-                onClick={() => { setTrackerTab('missing'); trackerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }}
+                onClick={() => { if (manifestData.mode === 'cases') { setHistoryOpen(true); return; } setTrackerTab('missing'); trackerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }}
               >
                 <History size={12} /> Test ID history {manifestData.missingCases && manifestData.missingCases.length > 0 ? `(${manifestData.missingCases.length})` : ''}
               </button>
@@ -1262,7 +1267,7 @@ const CypressRunner = () => {
                 runTarget="local"
                 environment={environment}
                 onRunCases={(items) => enqueuePaths(items)}
-                onOpenHistory={() => { setTrackerTab('activity'); trackerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }}
+                onOpenHistory={() => setHistoryOpen(true)}
                 showToast={showToast}
                 refreshKey={manifestData.generatedAt}
               />
@@ -1458,6 +1463,9 @@ const CypressRunner = () => {
         />
       )}
 
+      {historyOpen && (
+        <CaseTrackingHistoryModal missingCases={manifestData.missingCases} onClose={() => setHistoryOpen(false)} />
+      )}
       {manifestModalOpen && manifestData.mode === 'cases' && (
         <CaseManifestModal onClose={() => setManifestModalOpen(false)} onChanged={fetchManifestData} />
       )}

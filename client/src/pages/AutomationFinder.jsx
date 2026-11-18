@@ -123,10 +123,25 @@ const AutomationFinder = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Reference run: chosen here, saved server-side, used by every sync.
+  const [runInput, setRunInput] = useState('');
+  const [savedRunId, setSavedRunId] = useState(null);
+  useEffect(() => {
+    fetch('/api/automation-finder/settings', { cache: 'no-store' })
+      .then((r) => r.json())
+      .then((s) => { setSavedRunId(s.referenceRunId); setRunInput(String(s.referenceRunId || '')); })
+      .catch(() => {});
+  }, []);
+
   const handleSync = async () => {
-    const res = await fetch('/api/automation-finder/sync', { method: 'POST' });
+    const runId = runInput.trim();
+    const res = await fetch('/api/automation-finder/sync', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(runId && runId !== String(savedRunId) ? { runId } : {}),
+    });
     if (res.status === 409) { showToast('A sync is already running', 'warning'); return; }
-    if (!res.ok) { showToast('Failed to start sync', 'error'); return; }
+    if (!res.ok) { const b = await res.json().catch(() => ({})); showToast(b.error || 'Failed to start sync', 'error'); return; }
+    if (runId) setSavedRunId(Number(runId));
     showToast('Sync started — this scans ~11k cases and can take a couple of minutes', 'info');
     clearTimeout(pollRef.current);
     pollProgress();
@@ -244,11 +259,23 @@ const AutomationFinder = () => {
       </div>
 
       <div className="af-card af-toolbar">
-        <button className="af-btn primary" onClick={handleSync} disabled={progress.running}>
-          <RefreshCw size={14} className={progress.running ? 'af-spin' : ''} /> {progress.running ? 'Syncing…' : 'Sync Now'}
+        <span className="af-last-synced">TestRail run</span>
+        <input
+          className="af-input"
+          style={{ width: 110 }}
+          value={runInput}
+          onChange={(e) => setRunInput(e.target.value.replace(/[^0-9]/g, ''))}
+          onKeyDown={(e) => { if (e.key === 'Enter' && !progress.running) handleSync(); }}
+          placeholder="Run ID"
+          title="The TestRail run whose pass/fail results decide the verdict — saved and reused for every sync"
+        />
+        <button className="af-btn primary" onClick={handleSync} disabled={progress.running || !runInput}>
+          <RefreshCw size={14} className={progress.running ? 'af-spin' : ''} /> {progress.running ? 'Syncing…' : (runInput && Number(runInput) !== Number(savedRunId) ? 'Switch run & sync' : 'Sync Now')}
         </button>
         <span className="af-last-synced">
           {data.generatedAt ? `Last synced ${timeAgo(data.generatedAt)}` : 'Never synced yet'}
+          {data.referenceRunId ? ` · against run #${data.referenceRunId}${data.referenceRunName ? ` (${data.referenceRunName})` : ''}` : ''}
+          {savedRunId && data.referenceRunId && Number(savedRunId) !== Number(data.referenceRunId) ? ' — run changed, sync to refresh' : ''}
         </span>
         {progress.error && <span className="af-error"><AlertTriangle size={13} /> {progress.error}</span>}
         <div className="af-spacer" />

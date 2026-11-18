@@ -421,3 +421,24 @@ export function mergeVersionTags(tags, rows) {
   });
   return out;
 }
+
+// One colour + label per tracker event type, shared by the Test ID history
+// window, the Test IDs change banner and the case detail timeline.
+export const CASE_EVENT_STYLE = {
+  case_moved: { label: 'Moved to another spec', short: 'moved', color: 'var(--accent-orange)' },
+  case_missing: { label: 'Removed from codebase', short: 'removed', color: 'var(--accent-red)' },
+  case_added: { label: 'Found in spec', short: 'added', color: 'var(--accent-green)' },
+  case_restored: { label: 'Back in codebase', short: 'restored', color: 'var(--accent-cyan)' },
+  case_commented: { label: 'Commented out', short: 'commented out', color: 'var(--accent-yellow)' },
+  case_uncommented: { label: 'Uncommented', short: 'uncommented', color: 'var(--accent-green)' },
+  copy_added: { label: 'Copy added in another spec', short: 'copy added', color: 'var(--accent-cyan)' },
+  copy_removed: { label: 'Copy removed from a spec', short: 'copy removed', color: 'var(--accent-pink)' },
+  cases_owned: { label: 'Added to case manifest', short: 'owned', color: 'var(--accent-purple)' },
+  cases_disowned: { label: 'Removed from case manifest', short: 'disowned', color: 'var(--text-muted)' },
+  case_retired: { label: 'Marked intentionally removed', short: 'retired', color: 'var(--text-muted)' },
+  case_unretired: { label: 'Un-retired', short: 'un-retired', color: 'var(--accent-green)' },
+  case_dismissed: { label: 'Dismissed', short: 'dismissed', color: 'var(--text-muted)' },
+  file_untracked: { label: 'File removed from manifest', short: 'file untracked', color: 'var(--text-muted)' },
+};
+// Category accent colours (match the coverage bar: Offline blue, Online amber, E2E pink).
+export const CAT_COLOR = { OFFLINE: 'var(--accent-cyan)', ONLINE: 'var(--accent-yellow)', E2E: 'var(--accent-pink)' };

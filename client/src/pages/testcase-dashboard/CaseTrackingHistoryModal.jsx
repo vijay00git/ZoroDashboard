@@ -2,7 +2,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { History, AlertTriangle, PlusCircle, CheckCircle2, FileX2, Trash2, EyeOff, MoveRight, MessageSquareOff, MessageSquare, UserPlus, UserMinus } from 'lucide-react';
 import ModalPortal from './ModalPortal';
 import { showConfirm } from '../../utils/Alerts';
-import { MISSING_REASON_LABEL as REASON_LABEL } from './helpers';
+import { MISSING_REASON_LABEL as REASON_LABEL, CASE_EVENT_STYLE } from './helpers';
+import './CaseTable.css';
 
 
 const EVENT_META = {
@@ -17,13 +18,16 @@ const EVENT_META = {
   cases_owned: { icon: UserPlus, label: 'Added to case manifest', color: 'var(--accent-purple)' },
   cases_disowned: { icon: UserMinus, label: 'Removed from case manifest', color: 'var(--text-muted)' },
   case_retired: { icon: EyeOff, label: 'Marked intentionally removed', color: 'var(--text-muted)' },
+  copy_added: { icon: PlusCircle, label: 'Copy added in another spec', color: 'var(--accent-cyan)' },
+  copy_removed: { icon: FileX2, label: 'Copy removed from a spec', color: 'var(--accent-pink)' },
   case_unretired: { icon: CheckCircle2, label: 'Un-retired', color: 'var(--accent-green)' },
 };
 const FILTERS = [
   ['all', 'All', null],
   ['case_moved', 'Moved', ['case_moved']],
-  ['case_missing', 'Removed', ['case_missing']],
-  ['case_added', 'Added', ['case_added', 'cases_owned']],
+  ['case_missing', 'Removed', ['case_missing', 'copy_removed']],
+  ['case_added', 'Added', ['case_added', 'cases_owned', 'copy_added']],
+  ['copies', 'Copies', ['copy_added', 'copy_removed']],
   ['case_restored', 'Restored', ['case_restored', 'case_uncommented']],
   ['case_commented', 'Commented out', ['case_commented']],
   ['manifest', 'Manifest edits', ['cases_owned', 'cases_disowned', 'file_untracked', 'case_dismissed', 'case_retired', 'case_unretired']],
@@ -111,7 +115,7 @@ const CaseTrackingHistoryModal = ({ missingCases, onClose }) => {
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem', margin: '0.4rem 0' }}>
               {FILTERS.map(([k, label, types]) => (
                 <button key={k} type="button" className={`tcd-btn${typeFilter === k ? ' primary' : ''}`} onClick={() => setTypeFilter(k)}>
-                  {label} ({countOf(types)})
+                  {types && <span style={{ color: (CASE_EVENT_STYLE[types[0]] || {}).color }}>●</span>} {label} ({countOf(types)})
                 </button>
               ))}
               <input className="tcd-search-input" style={{ maxWidth: 200 }} placeholder="Case ID…" value={idFilter} onChange={(e) => setIdFilter(e.target.value)} />
@@ -126,7 +130,7 @@ const CaseTrackingHistoryModal = ({ missingCases, onClose }) => {
                   const meta = EVENT_META[h.type] || { icon: History, label: h.type, color: 'var(--text-muted)' };
                   const Icon = meta.icon;
                   return (
-                    <div key={h.id} className="tcd-case-history-row">
+                    <div key={h.id} className="tcd-case-history-row ct-hist-row" style={{ '--ev-color': (CASE_EVENT_STYLE[h.type] || meta).color }}>
                       <Icon size={14} style={{ color: meta.color }} />
                       <div className="tcd-case-history-row-body">
                         <div>

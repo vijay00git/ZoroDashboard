@@ -250,7 +250,7 @@ module.exports = function register(app, ctx) {
     // contains without logging anything — otherwise every pre-existing case id
     // would look like a brand-new "added" event. After that, every transition
     // (new id, id gone missing, id back again) is logged to history.
-    function tcdTrackCaseIds(rows, missing, manifestPaths) {
+    function tcdTrackCaseIds(rows, missing, manifestPaths, locations) {
         const tracking = tcdLoadCaseTracking();
         const cases = tracking.cases;
         const now = new Date().toISOString();
@@ -274,6 +274,7 @@ module.exports = function register(app, ctx) {
             if (!existing) {
                 cases[r.id] = {
                     path: r.path, cat: r.cat, grp: r.grp, title: r.title, commented,
+                    paths: locations ? [...new Set((locations.get(r.id) || []).filter((l) => !l.commented).map((l) => l.path))].sort() : undefined,
                     status: 'present', firstSeenAt: now, lastSeenAt: now, missingSince: null, reason: null,
                 };
                 changed = true;
@@ -294,6 +295,18 @@ module.exports = function register(app, ctx) {
                 changed = true;
             }
             if (existing.commented !== commented) { existing.commented = commented; changed = true; }
+            // Every live copy (case mode): log a copy appearing in / dropping out
+            // of a spec even when the case's main copy stays put.
+            if (locations) {
+                const now2 = [...new Set((locations.get(r.id) || []).filter((l) => !l.commented).map((l) => l.path))].sort();
+                if (Array.isArray(existing.paths)) {
+                    const before = new Set(existing.paths);
+                    const after = new Set(now2);
+                    now2.filter((p) => !before.has(p)).forEach((p) => log({ type: 'copy_added', caseId: r.id, path: p, cat: r.cat, grp: r.grp, title: r.title }));
+                    existing.paths.filter((p) => !after.has(p)).forEach((p) => log({ type: 'copy_removed', caseId: r.id, path: p, cat: r.cat, grp: r.grp, title: r.title }));
+                }
+                if (JSON.stringify(existing.paths) !== JSON.stringify(now2)) { existing.paths = now2; changed = true; }
+            }
             if (existing.status === 'missing') {
                 existing.status = 'present';
                 existing.missingSince = null;
@@ -327,10 +340,13 @@ module.exports = function register(app, ctx) {
     }
 
     // Tracker events since the user last marked them reviewed (case mode).
-    const TCD_ALERT_TYPES = new Set(['case_moved', 'case_missing', 'case_added', 'case_restored', 'case_commented', 'case_uncommented']);
+    const TCD_ALERT_TYPES = new Set(['case_moved', 'case_missing', 'case_added', 'case_restored', 'case_commented', 'case_uncommented', 'copy_added', 'copy_removed']);
     function tcdUnreviewedEvents() {
         const since = tcdLoadCaseTracking().reviewedAt || '';
-        return tcdCaseTrackingHistory.filter((h) => TCD_ALERT_TYPES.has(h.type) && h.detectedAt > since);
+        // Only cases still owned — events for a case you've since disowned aren't alerts.
+        let owned = null;
+        try { owned = tcdLoadCaseManifest().cases; } catch (e) { /* no manifest */ }
+        return tcdCaseTrackingHistory.filter((h) => TCD_ALERT_TYPES.has(h.type) && h.detectedAt > since && (!owned || (owned[h.caseId] && !owned[h.caseId].retired)));
     }
 
     // Called when a file is deliberately removed from the manifest (as opposed
@@ -1568,7 +1584,7 @@ module.exports = function register(app, ctx) {
             caseIdCheck = { available: true, checkedAt: new Date(tcdCaseIdCacheAt).toISOString(), knownCount: tcdCaseIdCache.size };
         }
 
-        const caseTracking = tcdTrackCaseIds(rows, [], null);
+        const caseTracking = tcdTrackCaseIds(rows, [], null, locations);
 
         return {
             mode: 'cases',
